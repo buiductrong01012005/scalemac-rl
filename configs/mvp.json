@@ -1,0 +1,17 @@
+{
+  "num_ues": 1200,
+  "num_prbs": 273,
+  "max_selected_ues": 64,
+  "episode_slots": 1000,
+  "packet_size_bytes": 1500,
+  "full_buffer_base_bytes": 1000000,
+  "starvation_threshold_slots": 100,
+  "ewma_alpha": 0.02,
+  "harq_enabled": true,
+  "target_bler": 0.10,
+  "max_harq_retransmissions": 3,
+  "reward_throughput_weight": 0.60,
+  "reward_fairness_weight": 0.30,
+  "reward_delay_weight": 0.10,
+  "seed": 7
+}
