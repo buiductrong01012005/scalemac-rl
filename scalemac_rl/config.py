@@ -27,6 +27,9 @@ class ScaleMacConfig:
 
     # Dense tail-delay shaping starts before the hard P99 constraint is crossed.
     deadline_target_slots: float = 50.0
+    # Fixed reference target used for comparable logging/checkpoint ranking even
+    # while the training curriculum temporarily uses a looser active target.
+    reference_deadline_target_slots: float = 50.0
     deadline_risk_start_ratio: float = 0.60
     reward_deadline_risk_penalty_weight: float = 0.15
 
@@ -81,6 +84,8 @@ class ScaleMacConfig:
             raise ValueError("static_profile_seed must be non-negative when provided")
         if self.deadline_target_slots <= 0.0:
             raise ValueError("deadline_target_slots must be positive")
+        if self.reference_deadline_target_slots <= 0.0:
+            raise ValueError("reference_deadline_target_slots must be positive")
         if not 0.0 <= self.deadline_risk_start_ratio < 1.0:
             raise ValueError("deadline_risk_start_ratio must be in [0, 1)")
         if self.reward_deadline_risk_penalty_weight < 0.0:

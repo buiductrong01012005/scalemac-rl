@@ -11,7 +11,7 @@ def _has_option(name: str) -> bool:
 
 
 def main() -> None:
-    """Run the long single-profile upper-bound experiment.
+    """Run the approximately 200k-step single-profile upper-bound experiment.
 
     Defaults intentionally overfit one frozen 1,200-UE CQI/demand profile so the
     project can measure how far the current actor/projector design can optimize a
@@ -21,7 +21,7 @@ def main() -> None:
         "--single-seed-upper-bound",
         "--freeze-static-profiles",
         "--curriculum", "1200",
-        "--steps-per-stage", "524288",
+        "--steps-per-stage", "200192",
         "--workers", "1",
         "--rollout-steps", "256",
         "--episode-slots", "2000",
@@ -32,7 +32,7 @@ def main() -> None:
         "--validation-seeds", "1701",
         "--validation-repeats", "1",
         "--validation-slots", "5000",
-        "--validate-every", "32",
+        "--validate-every", "64",
         "--rollback-patience", "2",
         "--checkpoint-every", "64",
         "--seed", "1701",

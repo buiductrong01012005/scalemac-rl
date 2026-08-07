@@ -44,6 +44,34 @@ ELIGIBLE = 7
 OBSERVATION_FEATURES = 8
 
 
+def deadline_risk_score(
+    tail_waits: np.ndarray,
+    *,
+    target_slots: float,
+    start_ratio: float,
+) -> float:
+    """Return a dense, non-saturating tail-delay risk score.
+
+    The score is zero before ``start_ratio * target_slots``, equals one at the
+    target, and continues growing logarithmically beyond the target. This keeps
+    PPO able to distinguish moderately late and severely late states instead of
+    clipping both to the same penalty.
+    """
+    if target_slots <= 0.0:
+        raise ValueError("target_slots must be positive")
+    if not 0.0 <= start_ratio < 1.0:
+        raise ValueError("start_ratio must be in [0, 1)")
+    waits = np.asarray(tail_waits, dtype=np.float64)
+    if waits.size == 0:
+        return 0.0
+    start = start_ratio * target_slots
+    span = max(target_slots - start, 1e-9)
+    normalized = np.maximum((waits - start) / span, 0.0)
+    # log1p(x) / log(2) maps x=1 (the target) to risk=1 while remaining
+    # smooth and non-saturating for x>1.
+    return float(np.mean(np.log1p(normalized) / np.log(2.0)))
+
+
 @dataclass(slots=True)
 class StepResult:
     observation: np.ndarray
@@ -327,10 +355,16 @@ class ScaleMacDownlinkEnv:
         # the configured P99 deadline is crossed, giving PPO a less sparse signal.
         tail_count = max(1, int(np.ceil(0.01 * n)))
         tail_waits = np.partition(self.time_since_service, n - tail_count)[-tail_count:]
-        deadline_start = self.config.deadline_risk_start_ratio * self.config.deadline_target_slots
-        deadline_span = max(self.config.deadline_target_slots - deadline_start, 1e-9)
-        tail_risks = np.clip((tail_waits - deadline_start) / deadline_span, 0.0, 1.0)
-        deadline_risk = float(np.mean(tail_risks))
+        deadline_risk = deadline_risk_score(
+            tail_waits,
+            target_slots=self.config.deadline_target_slots,
+            start_ratio=self.config.deadline_risk_start_ratio,
+        )
+        reference_deadline_risk = deadline_risk_score(
+            tail_waits,
+            target_slots=self.config.reference_deadline_target_slots,
+            start_ratio=self.config.deadline_risk_start_ratio,
+        )
         tail_mean_wait_slots = float(np.mean(tail_waits))
 
         return {
@@ -350,6 +384,7 @@ class ScaleMacDownlinkEnv:
             "p99_wait_slots": safe_percentile(self.time_since_service, 99),
             "tail_mean_wait_slots": tail_mean_wait_slots,
             "deadline_risk": deadline_risk,
+            "reference_deadline_risk": reference_deadline_risk,
             "delay_penalty": delay_penalty,
             "service_score": service_score,
             "failed_transmissions": failed_transmissions,
@@ -379,25 +414,35 @@ class ScaleMacDownlinkEnv:
             (metrics["starvation_rate"] - tolerance) / max(1.0 - tolerance, 1e-9)
         )
         starvation_penalty = cfg.reward_starvation_penalty_weight * starvation_violation
-        deadline_risk_penalty = (
-            cfg.reward_deadline_risk_penalty_weight * float(metrics["deadline_risk"])
-        )
-        total = (
+        core_total = (
             throughput_component
             + fairness_component
             + service_component
             - starvation_penalty
-            - deadline_risk_penalty
         )
+        deadline_risk_penalty = (
+            cfg.reward_deadline_risk_penalty_weight * float(metrics["deadline_risk"])
+        )
+        reference_deadline_risk_penalty = (
+            cfg.reward_deadline_risk_penalty_weight
+            * float(metrics["reference_deadline_risk"])
+        )
+        total = core_total - deadline_risk_penalty
+        final_target_total = core_total - reference_deadline_risk_penalty
 
         return float(total), {
             "reward_total": float(total),
+            "reward_core_total": float(core_total),
+            "reward_final_target_total": float(final_target_total),
             "reward_throughput_component": float(throughput_component),
             "reward_fairness_component": float(fairness_component),
             "reward_service_component": float(service_component),
             "starvation_violation": float(starvation_violation),
             "reward_starvation_penalty": float(starvation_penalty),
             "reward_deadline_risk_penalty": float(deadline_risk_penalty),
+            "reward_reference_deadline_risk_penalty": float(
+                reference_deadline_risk_penalty
+            ),
         }
 
     def render(self) -> str:

@@ -21,6 +21,7 @@
   "freeze_static_profiles": false,
   "static_profile_seed": null,
   "deadline_target_slots": 50.0,
+  "reference_deadline_target_slots": 50.0,
   "deadline_risk_start_ratio": 0.6,
   "reward_deadline_risk_penalty_weight": 0.15
 }

@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scalemac-rl"
-version = "0.6.0"
+version = "0.6.1"
 description = "Constraint-aware scalable PPO downlink MAC scheduling simulator for massive-UE 5G NR experiments"
 readme = "docs/README.md"
 requires-python = ">=3.11"
 dependencies = [
   "numpy>=1.26",
   "torch>=2.2",
+  "tqdm>=4.66",
 ]
 
 [project.optional-dependencies]

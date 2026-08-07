@@ -22,6 +22,8 @@ from .schedulers.base import Scheduler
 
 _METRIC_KEYS = (
     "reward_total",
+    "reward_core_total",
+    "reward_final_target_total",
     "cell_goodput_bits",
     "throughput_score",
     "fairness_score",
@@ -33,7 +35,9 @@ _METRIC_KEYS = (
     "reward_service_component",
     "reward_starvation_penalty",
     "reward_deadline_risk_penalty",
+    "reward_reference_deadline_risk_penalty",
     "deadline_risk",
+    "reference_deadline_risk",
     "tail_mean_wait_slots",
     "forced_harq_count",
     "forced_long_wait_count",
@@ -61,6 +65,8 @@ def summarize_episode(
         "num_ues": config.num_ues,
         "slots": config.episode_slots,
         "mean_reward": mean(metrics["reward_total"]),
+        "mean_core_reward": mean(metrics["reward_core_total"]),
+        "mean_final_target_reward": mean(metrics["reward_final_target_total"]),
         "mean_goodput_bits_per_slot": mean(metrics["cell_goodput_bits"]),
         "mean_throughput_score": mean(metrics["throughput_score"]),
         "final_jain_fairness": float(final_info["jain_fairness"]),
@@ -77,7 +83,11 @@ def summarize_episode(
         "mean_reward_deadline_risk_penalty": mean(
             metrics["reward_deadline_risk_penalty"]
         ),
+        "mean_reward_reference_deadline_risk_penalty": mean(
+            metrics["reward_reference_deadline_risk_penalty"]
+        ),
         "mean_deadline_risk": mean(metrics["deadline_risk"]),
+        "mean_reference_deadline_risk": mean(metrics["reference_deadline_risk"]),
         "mean_tail_mean_wait_slots": mean(metrics["tail_mean_wait_slots"]),
         "mean_forced_harq_count": mean(metrics["forced_harq_count"]),
         "mean_forced_long_wait_count": mean(metrics["forced_long_wait_count"]),

@@ -5,11 +5,13 @@ import copy
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from statistics import mean
+from time import perf_counter
 from typing import Any
 
 import numpy as np
 import torch
 from torch import nn
+from tqdm.auto import tqdm
 
 from scalemac_rl import ScaleMacConfig, ScaleMacDownlinkEnv
 from scalemac_rl.candidates import (
@@ -219,6 +221,7 @@ def _checkpoint_payload(
             "fixed_profile_seed": args.fixed_profile_seed,
             "deadline_risk_start_ratio": args.deadline_risk_start_ratio,
             "deadline_risk_penalty_weight": args.deadline_risk_penalty_weight,
+            "reference_deadline_target_slots": args.max_p99_wait_slots,
             "learning_rate": args.lr,
             "gamma": args.gamma,
             "gae_lambda": args.gae_lambda,
@@ -322,6 +325,7 @@ def _validate(
     fixed_profile_seed: int | None,
     deadline_risk_start_ratio: float,
     deadline_risk_penalty_weight: float,
+    reference_deadline_target_slots: float,
     update_index: int,
     stage_index: int,
     global_env_steps: int,
@@ -336,6 +340,7 @@ def _validate(
         freeze_static_profiles=freeze_static_profiles,
         static_profile_seed=fixed_profile_seed,
         deadline_target_slots=constraints.max_p99_wait_slots,
+        reference_deadline_target_slots=reference_deadline_target_slots,
         deadline_risk_start_ratio=deadline_risk_start_ratio,
         reward_deadline_risk_penalty_weight=deadline_risk_penalty_weight,
     )
@@ -368,6 +373,10 @@ def _validate(
         "global_env_steps": global_env_steps,
         "validation_episodes": len(rows),
         "mean_reward": mean(float(row["mean_reward"]) for row in rows),
+        "mean_core_reward": mean(float(row["mean_core_reward"]) for row in rows),
+        "mean_final_target_reward": mean(
+            float(row["mean_final_target_reward"]) for row in rows
+        ),
         "mean_goodput_bits_per_slot": mean(
             float(row["mean_goodput_bits_per_slot"]) for row in rows
         ),
@@ -385,6 +394,12 @@ def _validate(
             float(row["mean_harq_retention_rate"]) for row in rows
         ),
         "mean_deadline_risk": mean(float(row["mean_deadline_risk"]) for row in rows),
+        "mean_reference_deadline_risk": mean(
+            float(row["mean_reference_deadline_risk"]) for row in rows
+        ),
+        "mean_reference_deadline_penalty": mean(
+            float(row["mean_reward_reference_deadline_risk_penalty"]) for row in rows
+        ),
         "mean_tail_mean_wait_slots": mean(
             float(row["mean_tail_mean_wait_slots"]) for row in rows
         ),
@@ -455,6 +470,13 @@ def main() -> None:
     parser.add_argument("--validate-every", type=int, default=16)
     parser.add_argument("--rollback-patience", type=int, default=2)
     parser.add_argument("--checkpoint-every", type=int, default=16)
+    parser.add_argument(
+        "--progress",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="show a tqdm progress bar with elapsed time and ETA",
+    )
+    parser.add_argument("--progress-refresh-seconds", type=float, default=0.5)
     parser.add_argument("--seed", type=int, default=1701)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     parser.add_argument("--output", type=Path, default=Path("artifacts/latest.pt"))
@@ -552,6 +574,17 @@ def main() -> None:
     best_feasible_saved = False
     target_num_ues = args.curriculum[-1]
     last_validation: dict[str, Any] | None = None
+    training_started_at = perf_counter()
+    total_requested_steps = args.steps_per_stage * len(args.curriculum)
+    progress = tqdm(
+        total=total_requested_steps,
+        desc="ScaleMAC PPO",
+        unit="step",
+        unit_scale=True,
+        dynamic_ncols=True,
+        mininterval=args.progress_refresh_seconds,
+        disable=not args.progress,
+    )
 
     for stage_index, num_ues in enumerate(args.curriculum, start=1):
         max_selected = min(64, num_ues, 273)
@@ -582,6 +615,7 @@ def main() -> None:
             freeze_static_profiles=args.freeze_static_profiles or args.single_seed_upper_bound,
             static_profile_seed=profile_seed,
             deadline_target_slots=initial_p99_limit,
+            reference_deadline_target_slots=args.max_p99_wait_slots,
             deadline_risk_start_ratio=args.deadline_risk_start_ratio,
             reward_deadline_risk_penalty_weight=args.deadline_risk_penalty_weight,
             seed=stage_seed,
@@ -626,8 +660,10 @@ def main() -> None:
             metric_window: dict[str, list[float]] = {
                 key: []
                 for key in (
-                    "base_reward", "constrained_reward", "constraint_penalty",
-                    "deadline_risk_penalty", "deadline_risk", "tail_mean_wait",
+                    "base_reward", "core_reward", "final_target_reward",
+                    "constrained_reward", "constraint_penalty",
+                    "deadline_risk_penalty", "reference_deadline_risk_penalty",
+                    "deadline_risk", "reference_deadline_risk", "tail_mean_wait",
                     "throughput", "fairness", "service", "starvation", "p99_wait",
                     "starvation_excess", "wait_excess", "goodput", "candidate_coverage",
                     "harq_retention", "long_wait_retention", "long_wait_missed",
@@ -675,10 +711,16 @@ def main() -> None:
                     dones[worker] = float(done)
                     values = {
                         "base_reward": float(info["reward_total"]),
+                        "core_reward": float(info["reward_core_total"]),
+                        "final_target_reward": float(info["reward_final_target_total"]),
                         "constrained_reward": constrained_reward,
                         "constraint_penalty": constraint_penalty,
                         "deadline_risk_penalty": float(info["reward_deadline_risk_penalty"]),
+                        "reference_deadline_risk_penalty": float(
+                            info["reward_reference_deadline_risk_penalty"]
+                        ),
                         "deadline_risk": float(info["deadline_risk"]),
+                        "reference_deadline_risk": float(info["reference_deadline_risk"]),
                         "tail_mean_wait": float(info["tail_mean_wait_slots"]),
                         "throughput": float(info["throughput_score"]),
                         "fairness": float(info["fairness_score"]),
@@ -779,10 +821,19 @@ def main() -> None:
                 "safety_reserve_ues": safety_reserve,
                 "stage_max_p99_wait_slots": active_constraints.max_p99_wait_slots,
                 "mean_reward": mean(metric_window["base_reward"]),
+                "mean_core_reward": mean(metric_window["core_reward"]),
+                "mean_final_target_reward": mean(metric_window["final_target_reward"]),
+                "mean_training_reward": mean(metric_window["constrained_reward"]),
                 "mean_constrained_reward": mean(metric_window["constrained_reward"]),
                 "mean_constraint_penalty": mean(metric_window["constraint_penalty"]),
                 "mean_deadline_risk_penalty": mean(metric_window["deadline_risk_penalty"]),
+                "mean_reference_deadline_risk_penalty": mean(
+                    metric_window["reference_deadline_risk_penalty"]
+                ),
                 "mean_deadline_risk": mean(metric_window["deadline_risk"]),
+                "mean_reference_deadline_risk": mean(
+                    metric_window["reference_deadline_risk"]
+                ),
                 "mean_tail_mean_wait_slots": mean(metric_window["tail_mean_wait"]),
                 "mean_goodput_bits_per_slot": mean(metric_window["goodput"]),
                 "mean_throughput_score": mean(metric_window["throughput"]),
@@ -804,18 +855,40 @@ def main() -> None:
                 "mean_oldest_selected_count": mean(metric_window["oldest_selected"]),
                 "mean_learned_selected_count": mean(metric_window["learned_selected"]),
                 "mean_learned_selection_fraction": mean(metric_window["learned_fraction"]),
+                "elapsed_seconds": perf_counter() - training_started_at,
+                "steps_per_second": global_env_steps
+                / max(perf_counter() - training_started_at, 1e-9),
+                "eta_seconds": (
+                    max(total_requested_steps - global_env_steps, 0)
+                    / max(
+                        global_env_steps
+                        / max(perf_counter() - training_started_at, 1e-9),
+                        1e-9,
+                    )
+                ),
                 **update_metrics,
                 "device": str(device),
             }
             log_rows.append(row)
-            print(
-                f"stage={stage_index}/{len(args.curriculum)} ues={num_ues:4d} "
-                f"steps={stage_env_steps:7d}/{args.steps_per_stage} "
-                f"reward={row['mean_reward']:.4f} constrained={row['mean_constrained_reward']:.4f} "
-                f"starvation={row['mean_starvation_rate']:.4f} p99={row['mean_p99_wait_slots']:.1f} "
-                f"grants=(safe {row['mean_safety_selected_count']:.1f}, learned {row['mean_learned_selected_count']:.1f}) "
-                f"lambda=({controller.starvation_multiplier:.2f},{controller.wait_multiplier:.2f})"
+            progress.update(collected)
+            progress.set_postfix(
+                stage=f"{stage_index}/{len(args.curriculum)}",
+                ues=num_ues,
+                core=f"{row['mean_core_reward']:.3f}",
+                final=f"{row['mean_final_target_reward']:.3f}",
+                train=f"{row['mean_training_reward']:.3f}",
+                p99=f"{row['mean_p99_wait_slots']:.1f}",
+                goodput=f"{row['mean_goodput_bits_per_slot'] / 1000.0:.1f}k",
             )
+            if not args.progress:
+                print(
+                    f"stage={stage_index}/{len(args.curriculum)} ues={num_ues:4d} "
+                    f"steps={stage_env_steps:7d}/{args.steps_per_stage} "
+                    f"core={row['mean_core_reward']:.4f} "
+                    f"final={row['mean_final_target_reward']:.4f} "
+                    f"train={row['mean_training_reward']:.4f} "
+                    f"p99={row['mean_p99_wait_slots']:.1f}"
+                )
 
             should_validate = update_index % args.validate_every == 0 or stage_env_steps >= args.steps_per_stage
             if should_validate:
@@ -836,6 +909,7 @@ def main() -> None:
                     fixed_profile_seed=config.static_profile_seed,
                     deadline_risk_start_ratio=args.deadline_risk_start_ratio,
                     deadline_risk_penalty_weight=args.deadline_risk_penalty_weight,
+                    reference_deadline_target_slots=args.max_p99_wait_slots,
                     update_index=update_index, stage_index=stage_index,
                     global_env_steps=global_env_steps,
                 )
@@ -909,14 +983,18 @@ def main() -> None:
                 validation_rows.extend(detailed)
                 validation_summary_rows.append(summary)
                 last_validation = summary
-                print(
-                    f"validation ues={num_ues} reward={summary['mean_reward']:.4f} "
+                validation_message = (
+                    f"validation ues={num_ues} active_reward={summary['mean_reward']:.4f} "
+                    f"final_reward={summary['mean_final_target_reward']:.4f} "
                     f"fairness={summary['mean_jain_fairness']:.4f} "
                     f"worst_starvation={summary['worst_starvation_rate']:.4f} "
                     f"worst_p99={summary['worst_p99_wait_slots']:.1f} "
-                    f"learned_grants={summary['mean_learned_selected_count']:.1f} "
                     f"feasible={summary['constraint_feasible']} rollback={summary['rolled_back']}"
                 )
+                if args.progress:
+                    progress.write(validation_message)
+                else:
+                    print(validation_message)
 
                 if num_ues == target_num_ues:
                     payload = _checkpoint_payload(
@@ -927,9 +1005,18 @@ def main() -> None:
                         controller=controller, constraints=final_constraints,
                         tag="validation", validation=summary,
                     )
+                    final_starvation_excess, final_wait_excess = final_constraints.excesses(
+                        starvation_rate=float(summary["worst_starvation_rate"]),
+                        p99_wait_slots=float(summary["worst_p99_wait_slots"]),
+                    )
+                    summary["final_target_starvation_excess"] = final_starvation_excess
+                    summary["final_target_wait_excess"] = final_wait_excess
+                    summary["final_target_total_constraint_excess"] = (
+                        final_starvation_excess + final_wait_excess
+                    )
                     final_score = (
-                        float(summary["total_constraint_excess"]),
-                        -float(summary["mean_reward"]),
+                        float(summary["final_target_total_constraint_excess"]),
+                        -float(summary["mean_final_target_reward"]),
                     )
                     if (
                         best_lowest_violation_score is None
@@ -940,8 +1027,8 @@ def main() -> None:
                         lowest_payload = copy.deepcopy(payload)
                         lowest_payload["checkpoint_tag"] = "best_lowest_violation"
                         _save_checkpoint(args.best_lowest_violation_output, lowest_payload)
-                    if float(summary["mean_reward"]) > best_reward:
-                        best_reward = float(summary["mean_reward"])
+                    if float(summary["mean_final_target_reward"]) > best_reward:
+                        best_reward = float(summary["mean_final_target_reward"])
                         payload["checkpoint_tag"] = "best_reward"
                         _save_checkpoint(args.best_reward_output, payload)
                     final_feasible = (
@@ -950,8 +1037,11 @@ def main() -> None:
                         and float(summary["worst_p99_wait_slots"])
                         <= final_constraints.max_p99_wait_slots + 1e-12
                     )
-                    if final_feasible and float(summary["mean_reward"]) > best_feasible_reward:
-                        best_feasible_reward = float(summary["mean_reward"])
+                    if (
+                        final_feasible
+                        and float(summary["mean_final_target_reward"]) > best_feasible_reward
+                    ):
+                        best_feasible_reward = float(summary["mean_final_target_reward"])
                         best_feasible_saved = True
                         payload["checkpoint_tag"] = "best_feasible"
                         _save_checkpoint(args.best_feasible_output, payload)
@@ -977,6 +1067,9 @@ def main() -> None:
             _restore(stage_best_candidate_snapshot, model, optimizer, controller)
             print(f"stage {num_ues}: no feasible checkpoint; continuing from lowest-violation checkpoint")
 
+    progress.close()
+    total_elapsed_seconds = perf_counter() - training_started_at
+
     latest_payload = _checkpoint_payload(
         model=model, optimizer=optimizer, args=args,
         initialized_from=initialized_from,
@@ -1001,7 +1094,8 @@ def main() -> None:
             f"Curriculum UE stages: {args.curriculum}",
             f"Environment steps per stage: {args.steps_per_stage}",
             f"Candidate pool: {args.max_candidates}; safety reserve: {args.safety_reserve_ues}; Top-K: 64",
-            f"Stage P99 limits: {args.stage_p99_wait_limits}; final target: {args.max_p99_wait_slots}",
+            f"Stage P99 limits: {args.stage_p99_wait_limits}; fixed comparison target: {args.max_p99_wait_slots}",
+            f"Total wall-clock training time: {total_elapsed_seconds:.1f} seconds",
             "Workers are vectorized environments in one process, not distributed RL.",
             "This remains the fast surrogate, not 5G-LENA.",
         ),
@@ -1035,6 +1129,10 @@ def main() -> None:
     print(f"saved: {args.log_output}")
     print(f"saved: {args.validation_output}")
     print(f"saved: {validation_summary_output}")
+    print(
+        f"training_time={total_elapsed_seconds:.1f}s "
+        f"throughput={global_env_steps / max(total_elapsed_seconds, 1e-9):.1f} env_steps/s"
+    )
 
 
 if __name__ == "__main__":
