@@ -8,12 +8,14 @@
   "starvation_threshold_slots": 100,
   "ewma_alpha": 0.02,
   "harq_enabled": true,
-  "target_bler": 0.10,
+  "target_bler": 0.1,
   "max_harq_retransmissions": 3,
   "reward_throughput_weight": 0.55,
-  "reward_fairness_weight": 0.30,
+  "reward_fairness_weight": 0.3,
   "reward_service_weight": 0.15,
-  "reward_starvation_penalty_weight": 0.50,
-  "starvation_tolerance": 0.00,
-  "seed": 7
+  "reward_starvation_penalty_weight": 0.5,
+  "starvation_tolerance": 0.0,
+  "seed": 7,
+  "safety_reserve_ues": 16,
+  "safety_wait_threshold_ratio": 0.8
 }

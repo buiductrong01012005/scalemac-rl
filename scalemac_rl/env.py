@@ -134,6 +134,9 @@ class ScaleMacDownlinkEnv:
             time_since_service=self.time_since_service,
             num_prbs=self.config.num_prbs,
             max_selected_ues=self.config.max_selected_ues,
+            safety_reserve_ues=self.config.safety_reserve_ues,
+            safety_wait_threshold_ratio=self.config.safety_wait_threshold_ratio,
+            starvation_threshold_slots=self.config.starvation_threshold_slots,
         )
         metrics = self._execute_grant(grant)
         reward, reward_breakdown = self._reward(metrics)
@@ -318,6 +321,12 @@ class ScaleMacDownlinkEnv:
             "failed_transmissions": failed_transmissions,
             "harq_drops": dropped_harq,
             "forced_harq_count": grant.forced_harq_count,
+            "forced_long_wait_count": grant.forced_long_wait_count,
+            "safety_selected_count": grant.safety_selected_count,
+            "learned_selected_count": grant.learned_selected_count,
+            "learned_selection_fraction": (
+                grant.learned_selected_count / max(int(grant.selected_ues.size), 1)
+            ),
             "harq_overflow_count": grant.harq_overflow_count,
             "prb_utilization": float(grant.prbs.sum() / self.config.num_prbs)
             if grant.prbs.size

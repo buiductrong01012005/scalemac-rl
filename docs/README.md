@@ -14,23 +14,23 @@ ScaleMAC-RL is a fast DRL training surrogate for **single-cell 5G NR downlink MA
 - required output: selected Top-K UEs and PRBs per selected UE;
 - KPIs: throughput, fairness/service, delay/starvation, candidate coverage, and inference latency.
 
-## What v0.4 adds
+## What v0.5 adds
 
-v0.3 proved that PPO training was running, but the policy could still trade a small amount of starvation and a large tail-wait increase for throughput. v0.4 makes service safety explicit:
+v0.5 addresses the v0.4 validation mismatch and the weak Top-K learning claim:
 
-- Lagrangian penalties for starvation-rate and P99-wait constraint excess;
-- feasibility-first checkpoint selection on held-out seeds;
-- `latest.pt`, `best_reward.pt`, `best_feasible.pt`, and periodic checkpoints;
-- compact candidate-set inference: the neural policy now processes only selected candidates, not all 1,200 UEs;
-- mandatory retention of HARQ and near-starvation UEs when candidate capacity permits;
-- candidate coverage, HARQ retention, and long-wait retention reports;
-- component-level latency profiling;
-- performance and latency ablations for 64/128/256 candidates;
-- CSV output under `artifacts/` and Markdown reports under `docs/reports/`.
+- a 128-UE candidate pool feeds a 64-UE scheduler output;
+- up to 16 grants are reserved for HARQ and long-waiting UEs;
+- PPO ranks the remaining grants and predicts PRB demand;
+- training defaults to 32,768 environment steps per curriculum stage;
+- repeated held-out validation updates the Lagrange controller;
+- unsafe validation streaks trigger rollback to the best feasible stage checkpoint;
+- every curriculum stage saves its lowest-violation and best-feasible checkpoints;
+- grant-attribution reports distinguish deterministic safety selection from learned selection;
+- the final official constraint remains zero starvation and P99 waiting time no greater than 50 slots.
 
 ## Current roadmap status
 
-| Roadmap block | Status in v0.4 |
+| Roadmap block | Status in v0.5 |
 |---|---|
 | Fix DL scenario, active UEs, PRBs, traffic | Done in fast surrogate |
 | RR, PF, Max-CQI baselines | Done in fast surrogate |
@@ -41,8 +41,8 @@ v0.3 proved that PPO training was running, but the policy could still trade a sm
 | UE curriculum | Implemented for PPO |
 | Candidate filtering and action masking | Implemented with compact candidate tensors |
 | Actor priority and RB-demand scores | Done |
-| Constraint-aware action projector | Done |
-| RL training | Constrained PPO implemented |
+| Hybrid safety-reserve action projector | Done |
+| RL training | Long-run constrained PPO with validation rollback implemented |
 | Feasibility-first checkpoint selection | Implemented with held-out validation seeds |
 | Distributed RL | Partial: vectorized workers in one Python process |
 | OOD evaluation | Not yet automated |
@@ -94,13 +94,13 @@ python -m scalemac_rl.scripts.run_baselines --num-ues 1200 --slots 1000 --seeds 
 python -m scalemac_rl.scripts.train_imitation --num-ues 1200 --steps 2000
 
 # Constrained PPO training with held-out validation
-python -m scalemac_rl.scripts.train_ppo --init-checkpoint .\artifacts\pf_imitation.pt --curriculum 128,256,600,1200 --steps-per-stage 4096 --workers 4 --rollout-steps 64 --max-candidates 256 --validation-seeds 9001,9002,9003 --validation-slots 500 --validate-every 4 --max-starvation-rate 0 --max-p99-wait-slots 50
+python -m scalemac_rl.scripts.train_ppo --init-checkpoint .\artifacts\pf_imitation.pt --curriculum 128,256,600,1200 --steps-per-stage 32768 --workers 4 --rollout-steps 64 --episode-slots 500 --max-candidates 128 --safety-reserve-ues 16 --stage-p99-wait-limits 80,80,80,50 --validation-seeds 9001,9002,9003 --validation-repeats 2 --validation-slots 1000 --validate-every 16 --rollback-patience 2 --max-starvation-rate 0 --max-p99-wait-slots 50
 
 # Evaluate the feasibility-first checkpoint
-python -m scalemac_rl.scripts.evaluate_ppo .\artifacts\best_feasible.pt --num-ues 1200 --slots 1000 --seeds 3 --max-candidates 256 --max-starvation-rate 0 --max-p99-wait-slots 50
+python -m scalemac_rl.scripts.evaluate_ppo .\artifacts\best_feasible.pt --num-ues 1200 --slots 1000 --seeds 3 --max-starvation-rate 0 --max-p99-wait-slots 50
 
 # Paired comparison with RR, Max-CQI, and PF
-python -m scalemac_rl.scripts.run_paired_evaluation .\artifacts\best_feasible.pt --num-ues 1200 --slots 1000 --seeds 5 --max-candidates 256 --max-starvation-rate 0 --max-p99-wait-slots 50
+python -m scalemac_rl.scripts.run_paired_evaluation .\artifacts\best_feasible.pt --num-ues 1200 --slots 1000 --seeds 5 --max-starvation-rate 0 --max-p99-wait-slots 50
 
 # Candidate-count performance ablation
 python -m scalemac_rl.scripts.run_candidate_ablation .\artifacts\best_feasible.pt --candidate-counts 64,128,256 --num-ues 1200 --slots 1000 --seeds 5
@@ -112,15 +112,15 @@ python -m scalemac_rl.scripts.benchmark_inference .\artifacts\best_feasible.pt -
 For a quick CPU smoke run:
 
 ```powershell
-python -m scalemac_rl.scripts.train_ppo --init-checkpoint .\artifacts\pf_imitation.pt --curriculum 64,128 --steps-per-stage 128 --workers 1 --rollout-steps 16 --episode-slots 80 --max-candidates 64 --validation-seeds 9101 --validation-slots 80 --validate-every 1 --checkpoint-every 2 --output .\artifacts\smoke_latest.pt --best-feasible-output .\artifacts\smoke_best_feasible.pt --best-reward-output .\artifacts\smoke_best_reward.pt --log-output .\artifacts\smoke_ppo_training.csv --validation-output .\artifacts\smoke_ppo_validation.csv
+python -m scalemac_rl.scripts.train_ppo --init-checkpoint .\artifacts\pf_imitation.pt --curriculum 64,128 --stage-p99-wait-limits 100,100 --steps-per-stage 256 --workers 1 --rollout-steps 16 --episode-slots 80 --max-candidates 128 --safety-reserve-ues 8 --validation-seeds 9101 --validation-repeats 1 --validation-slots 80 --validate-every 1 --checkpoint-every 2 --output .\artifacts\smoke_latest.pt --best-feasible-output .\artifacts\smoke_best_feasible.pt --best-reward-output .\artifacts\smoke_best_reward.pt --log-output .\artifacts\smoke_ppo_training.csv --validation-output .\artifacts\smoke_ppo_validation.csv
 ```
 
-## Files to send back after v0.4
+## Files to send back after v0.5
 
 Include both numeric artifacts and generated readable reports:
 
 ```powershell
-Compress-Archive -Path .\artifacts\*,.\docs\reports\* -DestinationPath .\scalemac_artifacts_v04.zip -Force
+Compress-Archive -Path .\artifacts\*,.\docs\reports\* -DestinationPath .\scalemac_results_v05.zip -Force
 ```
 
 Most important files:

@@ -32,6 +32,11 @@ _METRIC_KEYS = (
     "reward_fairness_component",
     "reward_service_component",
     "reward_starvation_penalty",
+    "forced_harq_count",
+    "forced_long_wait_count",
+    "safety_selected_count",
+    "learned_selected_count",
+    "learned_selection_fraction",
 )
 
 
@@ -65,6 +70,11 @@ def summarize_episode(
         "mean_reward_fairness_component": mean(metrics["reward_fairness_component"]),
         "mean_reward_service_component": mean(metrics["reward_service_component"]),
         "mean_reward_starvation_penalty": mean(metrics["reward_starvation_penalty"]),
+        "mean_forced_harq_count": mean(metrics["forced_harq_count"]),
+        "mean_forced_long_wait_count": mean(metrics["forced_long_wait_count"]),
+        "mean_safety_selected_count": mean(metrics["safety_selected_count"]),
+        "mean_learned_selected_count": mean(metrics["learned_selected_count"]),
+        "mean_learned_selection_fraction": mean(metrics["learned_selection_fraction"]),
     }
     if candidate_metrics:
         for key, values in candidate_metrics.items():

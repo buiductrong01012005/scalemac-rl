@@ -42,7 +42,8 @@ def main() -> None:
     parser.add_argument("--slots", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=501)
     parser.add_argument("--seeds", type=int, default=5)
-    parser.add_argument("--long-wait-threshold", type=float, default=0.8)
+    parser.add_argument("--safety-reserve-ues", type=int, default=None)
+    parser.add_argument("--long-wait-threshold", type=float, default=None)
     parser.add_argument("--max-starvation-rate", type=float, default=0.0)
     parser.add_argument("--max-p99-wait-slots", type=float, default=50.0)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
@@ -59,6 +60,17 @@ def main() -> None:
         input_dim=checkpoint.get("input_dim", 8), hidden_dim=checkpoint["hidden_dim"]
     ).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
+    training = checkpoint.get("training", {})
+    safety_reserve = int(
+        args.safety_reserve_ues
+        if args.safety_reserve_ues is not None
+        else training.get("safety_reserve_ues", 16)
+    )
+    long_wait_threshold = float(
+        args.long_wait_threshold
+        if args.long_wait_threshold is not None
+        else training.get("long_wait_threshold", 0.8)
+    )
     constraints = ServiceConstraints(
         max_starvation_rate=args.max_starvation_rate,
         max_p99_wait_slots=args.max_p99_wait_slots,
@@ -68,6 +80,8 @@ def main() -> None:
         num_ues=args.num_ues,
         max_selected_ues=min(64, args.num_ues),
         episode_slots=args.slots,
+        safety_reserve_ues=min(safety_reserve, min(64, args.num_ues) - 1),
+        safety_wait_threshold_ratio=long_wait_threshold,
     )
     config.validate()
 
@@ -82,7 +96,7 @@ def main() -> None:
                 seed=args.seed + offset,
                 name=f"candidates_{effective}",
                 max_candidates=effective,
-                long_wait_threshold=args.long_wait_threshold,
+                long_wait_threshold=long_wait_threshold,
                 constraints=constraints,
             )
             row["candidate_setting"] = effective
@@ -113,6 +127,9 @@ def main() -> None:
             "mean_harq_retention_rate",
             "mean_long_wait_retention_rate",
             "mean_long_wait_missed_count",
+            "mean_safety_selected_count",
+            "mean_learned_selected_count",
+            "mean_learned_selection_fraction",
             "mean_inference_us",
             "p99_inference_us",
         ],

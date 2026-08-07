@@ -34,8 +34,9 @@ def main() -> None:
     parser.add_argument("--slots", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=201)
     parser.add_argument("--seeds", type=int, default=3)
-    parser.add_argument("--max-candidates", type=int, default=256)
-    parser.add_argument("--long-wait-threshold", type=float, default=0.8)
+    parser.add_argument("--max-candidates", type=int, default=None)
+    parser.add_argument("--safety-reserve-ues", type=int, default=None)
+    parser.add_argument("--long-wait-threshold", type=float, default=None)
     parser.add_argument("--max-starvation-rate", type=float, default=0.0)
     parser.add_argument("--max-p99-wait-slots", type=float, default=50.0)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
@@ -53,10 +54,24 @@ def main() -> None:
         hidden_dim=checkpoint["hidden_dim"],
     ).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
+    training = checkpoint.get("training", {})
+    max_candidates = int(args.max_candidates or training.get("max_candidates", 128))
+    safety_reserve = int(
+        args.safety_reserve_ues
+        if args.safety_reserve_ues is not None
+        else training.get("safety_reserve_ues", 16)
+    )
+    long_wait_threshold = float(
+        args.long_wait_threshold
+        if args.long_wait_threshold is not None
+        else training.get("long_wait_threshold", 0.8)
+    )
     config = ScaleMacConfig(
         num_ues=args.num_ues,
         max_selected_ues=min(64, args.num_ues),
         episode_slots=args.slots,
+        safety_reserve_ues=min(safety_reserve, min(64, args.num_ues) - 1),
+        safety_wait_threshold_ratio=long_wait_threshold,
     )
     config.validate()
     constraints = ServiceConstraints(
@@ -72,8 +87,8 @@ def main() -> None:
             config=config,
             seed=args.seed + offset,
             name=args.checkpoint.stem,
-            max_candidates=args.max_candidates,
-            long_wait_threshold=args.long_wait_threshold,
+            max_candidates=max_candidates,
+            long_wait_threshold=long_wait_threshold,
             constraints=constraints,
         )
         for offset in range(args.seeds)
@@ -114,6 +129,9 @@ def main() -> None:
             "mean_harq_retention_rate",
             "mean_long_wait_retention_rate",
             "mean_long_wait_missed_count",
+            "mean_safety_selected_count",
+            "mean_learned_selected_count",
+            "mean_learned_selection_fraction",
             "mean_inference_us",
             "p95_inference_us",
             "p99_inference_us",

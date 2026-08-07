@@ -10,6 +10,9 @@ class ProjectedGrant:
     prbs: np.ndarray
     prbs_per_ue: np.ndarray
     forced_harq_count: int
+    forced_long_wait_count: int
+    safety_selected_count: int
+    learned_selected_count: int
     harq_overflow_count: int
 
 
@@ -37,11 +40,16 @@ def project_action(
     time_since_service: np.ndarray,
     num_prbs: int,
     max_selected_ues: int,
+    safety_reserve_ues: int = 0,
+    safety_wait_threshold_ratio: float = 0.80,
+    starvation_threshold_slots: int = 100,
 ) -> ProjectedGrant:
-    """Convert raw policy scores into feasible Top-K UE grants.
+    """Convert policy scores into feasible Top-K grants with a safety reserve.
 
-    action[:, 0] is the priority score and action[:, 1] is the PRB-demand score.
-    Pending HARQ UEs are selected before new transmissions whenever capacity allows.
+    ``action[:, 0]`` is the learned priority score and ``action[:, 1]`` is the
+    PRB-demand score. HARQ retransmissions remain mandatory. Up to
+    ``safety_reserve_ues`` total grants are then reserved for the longest-waiting
+    eligible UEs. PPO selects the remaining grants from the candidate pool.
     """
     raw = np.asarray(action, dtype=np.float32)
     num_ues = eligible.size
@@ -49,19 +57,22 @@ def project_action(
         raise ValueError(f"action must have shape {(num_ues, 2)}, got {raw.shape}")
     if not np.isfinite(raw).all():
         raise ValueError("action contains NaN or infinity")
+    if not 0 <= safety_reserve_ues <= max_selected_ues:
+        raise ValueError("safety_reserve_ues must be in [0, max_selected_ues]")
+    if starvation_threshold_slots <= 0:
+        raise ValueError("starvation_threshold_slots must be positive")
+    if safety_wait_threshold_ratio < 0.0:
+        raise ValueError("safety_wait_threshold_ratio must be non-negative")
 
     priority = raw[:, 0]
     demand = np.clip(raw[:, 1], 0.0, 1.0)
     eligible = eligible.astype(bool, copy=False)
-    mandatory = np.flatnonzero(eligible & harq_pending.astype(bool, copy=False))
+    harq_bool = harq_pending.astype(bool, copy=False)
 
-    # Most retransmissions first, then longest waiting UE.
+    mandatory = np.flatnonzero(eligible & harq_bool)
     if mandatory.size:
         mandatory_order = np.lexsort(
-            (
-                -time_since_service[mandatory],
-                -harq_retx_count[mandatory],
-            )
+            (-time_since_service[mandatory], -harq_retx_count[mandatory])
         )
         mandatory = mandatory[mandatory_order]
 
@@ -69,12 +80,38 @@ def project_action(
     selected = list(mandatory[:max_selected_ues])
     forced_harq_count = len(selected)
 
+    # HARQ may consume more than the nominal reserve; otherwise fill the reserve
+    # with UEs approaching the configured starvation threshold.
+    safety_target = min(max_selected_ues, max(safety_reserve_ues, forced_harq_count))
+    safety_slots_left = max(0, safety_target - len(selected))
+    forced_long_wait_count = 0
+    if safety_slots_left > 0:
+        threshold_slots = safety_wait_threshold_ratio * starvation_threshold_slots
+        chosen = np.zeros(num_ues, dtype=bool)
+        if selected:
+            chosen[np.asarray(selected, dtype=np.int64)] = True
+        urgent = np.flatnonzero(
+            eligible & ~chosen & ~harq_bool & (time_since_service >= threshold_slots)
+        )
+        if urgent.size:
+            order = np.argsort(-time_since_service[urgent], kind="stable")
+            safety_ues = urgent[order[:safety_slots_left]]
+            selected.extend(safety_ues.tolist())
+            forced_long_wait_count = int(safety_ues.size)
+
+    safety_selected_count = len(selected)
     remaining = max_selected_ues - len(selected)
+    learned_selected_count = 0
     if remaining > 0:
-        candidates = np.flatnonzero(eligible & ~harq_pending.astype(bool, copy=False))
+        chosen = np.zeros(num_ues, dtype=bool)
+        if selected:
+            chosen[np.asarray(selected, dtype=np.int64)] = True
+        candidates = np.flatnonzero(eligible & ~chosen)
         if candidates.size:
             order = np.argsort(-priority[candidates], kind="stable")
-            selected.extend(candidates[order[:remaining]].tolist())
+            learned = candidates[order[:remaining]]
+            selected.extend(learned.tolist())
+            learned_selected_count = int(learned.size)
 
     selected_array = np.asarray(selected, dtype=np.int32)
     prbs_per_ue = np.zeros(num_ues, dtype=np.int32)
@@ -84,10 +121,12 @@ def project_action(
             prbs=np.empty(0, dtype=np.int32),
             prbs_per_ue=prbs_per_ue,
             forced_harq_count=0,
+            forced_long_wait_count=0,
+            safety_selected_count=0,
+            learned_selected_count=0,
             harq_overflow_count=harq_overflow,
         )
 
-    # Give every selected UE one PRB, then distribute the remainder by demand.
     base = np.ones(selected_array.size, dtype=np.int32)
     remaining_prbs = num_prbs - int(base.sum())
     extra = _largest_remainder_allocation(demand[selected_array] + 1e-3, remaining_prbs)
@@ -102,5 +141,8 @@ def project_action(
         prbs=grants,
         prbs_per_ue=prbs_per_ue,
         forced_harq_count=forced_harq_count,
+        forced_long_wait_count=forced_long_wait_count,
+        safety_selected_count=safety_selected_count,
+        learned_selected_count=learned_selected_count,
         harq_overflow_count=harq_overflow,
     )

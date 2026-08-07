@@ -15,6 +15,11 @@ class ScaleMacConfig:
     max_selected_ues: int = 64
     episode_slots: int = 1000
 
+    # Hybrid safety/learning split. The projector reserves up to this many
+    # grants for HARQ and long-waiting UEs; PPO ranks the remaining grants.
+    safety_reserve_ues: int = 0
+    safety_wait_threshold_ratio: float = 0.80
+
     packet_size_bytes: int = 1500
     full_buffer_base_bytes: int = 1_000_000
 
@@ -58,6 +63,10 @@ class ScaleMacConfig:
             )
         if self.episode_slots <= 0:
             raise ValueError("episode_slots must be positive")
+        if not 0 <= self.safety_reserve_ues <= self.max_selected_ues:
+            raise ValueError("safety_reserve_ues must be in [0, max_selected_ues]")
+        if self.safety_wait_threshold_ratio < 0.0:
+            raise ValueError("safety_wait_threshold_ratio must be non-negative")
         if self.starvation_threshold_slots <= 0:
             raise ValueError("starvation_threshold_slots must be positive")
         if not 0.0 < self.ewma_alpha <= 1.0:

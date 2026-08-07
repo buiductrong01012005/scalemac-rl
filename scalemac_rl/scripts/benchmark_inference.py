@@ -63,7 +63,8 @@ def main() -> None:
     parser.add_argument("--num-ues", type=int, default=1200)
     parser.add_argument("--candidate-counts", type=_parse_ints, default=[64, 128, 256])
     parser.add_argument("--max-candidates", type=int, default=None, help="Backward-compatible single-count override")
-    parser.add_argument("--long-wait-threshold", type=float, default=0.8)
+    parser.add_argument("--safety-reserve-ues", type=int, default=None)
+    parser.add_argument("--long-wait-threshold", type=float, default=None)
     parser.add_argument("--warmup", type=int, default=100)
     parser.add_argument("--repeats", type=int, default=1000)
     parser.add_argument("--deadlines-us", type=_parse_floats, default=[500.0, 1000.0])
@@ -88,11 +89,24 @@ def main() -> None:
     ).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
+    training = checkpoint.get("training", {})
+    safety_reserve = int(
+        args.safety_reserve_ues
+        if args.safety_reserve_ues is not None
+        else training.get("safety_reserve_ues", 16)
+    )
+    long_wait_threshold = float(
+        args.long_wait_threshold
+        if args.long_wait_threshold is not None
+        else training.get("long_wait_threshold", 0.8)
+    )
 
     config = ScaleMacConfig(
         num_ues=args.num_ues,
         max_selected_ues=min(64, args.num_ues),
         episode_slots=1,
+        safety_reserve_ues=min(safety_reserve, min(64, args.num_ues) - 1),
+        safety_wait_threshold_ratio=long_wait_threshold,
     )
     env = ScaleMacDownlinkEnv(config)
     observation, _ = env.reset(seed=777)
@@ -108,7 +122,7 @@ def main() -> None:
                 observation,
                 max_candidates=candidate_count,
                 min_candidates=config.max_selected_ues,
-                long_wait_threshold=args.long_wait_threshold,
+                long_wait_threshold=long_wait_threshold,
             )
             compact_observation, indices = gather_candidates(observation, mask)
 
@@ -124,6 +138,9 @@ def main() -> None:
                     time_since_service=env.time_since_service,
                     num_prbs=config.num_prbs,
                     max_selected_ues=config.max_selected_ues,
+                    safety_reserve_ues=config.safety_reserve_ues,
+                    safety_wait_threshold_ratio=config.safety_wait_threshold_ratio,
+                    starvation_threshold_slots=config.starvation_threshold_slots,
                 )
             _sync(device)
 
@@ -145,7 +162,7 @@ def main() -> None:
                     observation,
                     max_candidates=candidate_count,
                     min_candidates=config.max_selected_ues,
-                    long_wait_threshold=args.long_wait_threshold,
+                    long_wait_threshold=long_wait_threshold,
                 )
                 timings["candidate_filter"].append((perf_counter_ns() - start) / 1000.0)
 
@@ -183,6 +200,9 @@ def main() -> None:
                     time_since_service=env.time_since_service,
                     num_prbs=config.num_prbs,
                     max_selected_ues=config.max_selected_ues,
+                    safety_reserve_ues=config.safety_reserve_ues,
+                    safety_wait_threshold_ratio=config.safety_wait_threshold_ratio,
+                    starvation_threshold_slots=config.starvation_threshold_slots,
                 )
                 timings["scatter_and_project"].append((perf_counter_ns() - start) / 1000.0)
                 timings["end_to_end"].append((perf_counter_ns() - total_start) / 1000.0)

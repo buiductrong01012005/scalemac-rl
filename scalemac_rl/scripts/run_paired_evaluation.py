@@ -35,8 +35,9 @@ def main() -> None:
     parser.add_argument("--slots", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=301)
     parser.add_argument("--seeds", type=int, default=5)
-    parser.add_argument("--max-candidates", type=int, default=256)
-    parser.add_argument("--long-wait-threshold", type=float, default=0.8)
+    parser.add_argument("--max-candidates", type=int, default=None)
+    parser.add_argument("--safety-reserve-ues", type=int, default=None)
+    parser.add_argument("--long-wait-threshold", type=float, default=None)
     parser.add_argument("--max-starvation-rate", type=float, default=0.0)
     parser.add_argument("--max-p99-wait-slots", type=float, default=50.0)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
@@ -53,12 +54,32 @@ def main() -> None:
         input_dim=checkpoint.get("input_dim", 8), hidden_dim=checkpoint["hidden_dim"]
     ).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
-    config = ScaleMacConfig(
+    training = checkpoint.get("training", {})
+    max_candidates = int(args.max_candidates or training.get("max_candidates", 128))
+    safety_reserve = int(
+        args.safety_reserve_ues
+        if args.safety_reserve_ues is not None
+        else training.get("safety_reserve_ues", 16)
+    )
+    long_wait_threshold = float(
+        args.long_wait_threshold
+        if args.long_wait_threshold is not None
+        else training.get("long_wait_threshold", 0.8)
+    )
+    baseline_config = ScaleMacConfig(
         num_ues=args.num_ues,
         max_selected_ues=min(64, args.num_ues),
         episode_slots=args.slots,
     )
-    config.validate()
+    baseline_config.validate()
+    ppo_config = ScaleMacConfig(
+        num_ues=args.num_ues,
+        max_selected_ues=min(64, args.num_ues),
+        episode_slots=args.slots,
+        safety_reserve_ues=min(safety_reserve, min(64, args.num_ues) - 1),
+        safety_wait_threshold_ratio=long_wait_threshold,
+    )
+    ppo_config.validate()
     constraints = ServiceConstraints(
         max_starvation_rate=args.max_starvation_rate,
         max_p99_wait_slots=args.max_p99_wait_slots,
@@ -71,26 +92,26 @@ def main() -> None:
         rows.extend(
             [
                 evaluate_scheduler(
-                    scheduler=RoundRobinScheduler(config.max_selected_ues),
-                    config=config,
+                    scheduler=RoundRobinScheduler(baseline_config.max_selected_ues),
+                    config=baseline_config,
                     seed=seed,
                     name="rr",
                     constraints=constraints,
                 ),
                 evaluate_scheduler(
-                    scheduler=MaxCqiScheduler(), config=config, seed=seed, name="max_cqi", constraints=constraints
+                    scheduler=MaxCqiScheduler(), config=baseline_config, seed=seed, name="max_cqi", constraints=constraints
                 ),
                 evaluate_scheduler(
-                    scheduler=ProportionalFairScheduler(), config=config, seed=seed, name="pf", constraints=constraints
+                    scheduler=ProportionalFairScheduler(), config=baseline_config, seed=seed, name="pf", constraints=constraints
                 ),
                 evaluate_actor_critic(
                     model=model,
                     device=device,
-                    config=config,
+                    config=ppo_config,
                     seed=seed,
                     name="ppo",
-                    max_candidates=args.max_candidates,
-                    long_wait_threshold=args.long_wait_threshold,
+                    max_candidates=max_candidates,
+                    long_wait_threshold=long_wait_threshold,
                     constraints=constraints,
                 ),
             ]
@@ -121,6 +142,9 @@ def main() -> None:
             "max_starvation_rate",
             "final_p99_wait_slots",
             "max_p99_wait_slots",
+            "mean_safety_selected_count",
+            "mean_learned_selected_count",
+            "mean_learned_selection_fraction",
         ],
     )
     summary_csv = sibling_with_stem(args.output, "_summary", ".csv")
