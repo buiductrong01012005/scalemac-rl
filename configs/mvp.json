@@ -10,8 +10,10 @@
   "harq_enabled": true,
   "target_bler": 0.10,
   "max_harq_retransmissions": 3,
-  "reward_throughput_weight": 0.60,
+  "reward_throughput_weight": 0.55,
   "reward_fairness_weight": 0.30,
-  "reward_delay_weight": 0.10,
+  "reward_service_weight": 0.15,
+  "reward_starvation_penalty_weight": 0.50,
+  "starvation_tolerance": 0.00,
   "seed": 7
 }

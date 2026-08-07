@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 
 from .config import ScaleMacConfig
-from .metrics import jain_fairness, safe_percentile
+from .metrics import clip01, jain_fairness, safe_percentile
 from .projector import ProjectedGrant, project_action
 
 
@@ -70,7 +70,7 @@ class ScaleMacDownlinkEnv:
         self.slot = 0
         self.cqi = np.zeros(n, dtype=np.int16)
         self.demand_factor = np.ones(n, dtype=np.float32)
-        self.speed_mps = np.zeros(n, dtype=np.float32)  # metadata only in the static-CQI MVP
+        self.speed_mps = np.zeros(n, dtype=np.float32)  # metadata only in static-CQI MVP
         self.queue_bytes = np.zeros(n, dtype=np.float64)
         self.queue_target_bytes = np.zeros(n, dtype=np.float64)
         self.ewma_throughput_bits = np.zeros(n, dtype=np.float64)
@@ -136,7 +136,8 @@ class ScaleMacDownlinkEnv:
             max_selected_ues=self.config.max_selected_ues,
         )
         metrics = self._execute_grant(grant)
-        reward = self._reward(metrics)
+        reward, reward_breakdown = self._reward(metrics)
+        metrics.update(reward_breakdown)
 
         self.slot += 1
         terminated = self.slot >= self.config.episode_slots
@@ -198,6 +199,33 @@ class ScaleMacDownlinkEnv:
         observation[:, ELIGIBLE] = self.eligible.astype(np.float32)
         return observation
 
+    @staticmethod
+    def _bits_per_prb(efficiency: np.ndarray | float) -> np.ndarray | float:
+        # 12 subcarriers x 14 OFDM symbols with a simple 14% overhead abstraction.
+        return 12.0 * 14.0 * efficiency * 0.86
+
+    def _slot_oracle_expected_goodput_bits(self) -> float:
+        """Upper-bound expected goodput for the current static CQI population.
+
+        The oracle obeys the current Top-K and one-PRB-per-selected-UE contract,
+        then gives all remaining PRBs to the strongest selected UE. It is used
+        only to normalize throughput, not as a training baseline.
+        """
+        eligible_efficiency = _CQI_EFFICIENCY[self.cqi[self.eligible] - 1]
+        if eligible_efficiency.size == 0:
+            return 0.0
+        k = min(
+            self.config.max_selected_ues,
+            eligible_efficiency.size,
+            self.config.num_prbs,
+        )
+        strongest = np.sort(eligible_efficiency)[-k:][::-1]
+        grants = np.ones(k, dtype=np.float64)
+        grants[0] += self.config.num_prbs - k
+        attempted = float(np.sum(grants * self._bits_per_prb(strongest)))
+        success_probability = 1.0 - self.config.target_bler if self.config.harq_enabled else 1.0
+        return attempted * success_probability
+
     def _execute_grant(self, grant: ProjectedGrant) -> dict[str, Any]:
         n = self.config.num_ues
         selected = grant.selected_ues
@@ -214,9 +242,7 @@ class ScaleMacDownlinkEnv:
 
         if selected.size:
             efficiency = _CQI_EFFICIENCY[self.cqi[selected] - 1]
-            # 12 subcarriers x 14 OFDM symbols with a simple 14% overhead abstraction.
-            bits_per_prb = 12.0 * 14.0 * efficiency * 0.86
-            attempted = grant.prbs.astype(np.float64) * bits_per_prb
+            attempted = grant.prbs.astype(np.float64) * self._bits_per_prb(efficiency)
             attempted_bits[selected] = attempted
 
             if self.config.harq_enabled:
@@ -252,15 +278,14 @@ class ScaleMacDownlinkEnv:
         )
         self.cumulative_delivered_bits += delivered_bits
 
-        theoretical_max_bits = (
-            self.config.num_prbs * 12.0 * 14.0 * float(_CQI_EFFICIENCY[-1]) * 0.86
-        )
         cell_goodput_bits = float(delivered_bits.sum())
-        throughput_norm = cell_goodput_bits / max(theoretical_max_bits, 1.0)
-        fairness = jain_fairness(self.cumulative_delivered_bits)
+        oracle_goodput = self._slot_oracle_expected_goodput_bits()
+        throughput_score = clip01(cell_goodput_bits / max(oracle_goodput, 1.0))
+        fairness_score = jain_fairness(self.cumulative_delivered_bits)
+
         starvation_mask = self.time_since_service >= self.config.starvation_threshold_slots
         starvation_rate = float(starvation_mask.mean())
-        mean_wait_norm = float(
+        mean_wait_score = float(
             np.mean(
                 np.clip(
                     self.time_since_service
@@ -270,7 +295,8 @@ class ScaleMacDownlinkEnv:
                 )
             )
         )
-        delay_penalty = 0.5 * starvation_rate + 0.5 * mean_wait_norm
+        delay_penalty = clip01(0.5 * starvation_rate + 0.5 * mean_wait_score)
+        service_score = clip01(1.0 - delay_penalty)
 
         return {
             "selected_ues": selected.copy(),
@@ -278,13 +304,17 @@ class ScaleMacDownlinkEnv:
             "prbs_per_ue": grant.prbs_per_ue.copy(),
             "cell_goodput_bits": cell_goodput_bits,
             "cell_attempted_bits": float(attempted_bits.sum()),
-            "throughput_normalized": float(throughput_norm),
-            "jain_fairness": float(fairness),
+            "oracle_expected_goodput_bits": float(oracle_goodput),
+            "throughput_score": throughput_score,
+            "throughput_normalized": throughput_score,  # backward-compatible alias
+            "jain_fairness": fairness_score,
+            "fairness_score": fairness_score,
             "starvation_rate": starvation_rate,
             "mean_wait_slots": float(self.time_since_service.mean()),
             "p95_wait_slots": safe_percentile(self.time_since_service, 95),
             "p99_wait_slots": safe_percentile(self.time_since_service, 99),
-            "delay_penalty": float(delay_penalty),
+            "delay_penalty": delay_penalty,
+            "service_score": service_score,
             "failed_transmissions": failed_transmissions,
             "harq_drops": dropped_harq,
             "forced_harq_count": grant.forced_harq_count,
@@ -294,13 +324,27 @@ class ScaleMacDownlinkEnv:
             else 0.0,
         }
 
-    def _reward(self, metrics: dict[str, Any]) -> float:
+    def _reward(self, metrics: dict[str, Any]) -> tuple[float, dict[str, float]]:
         cfg = self.config
-        return float(
-            cfg.reward_throughput_weight * metrics["throughput_normalized"]
-            + cfg.reward_fairness_weight * metrics["jain_fairness"]
-            - cfg.reward_delay_weight * metrics["delay_penalty"]
+        throughput_component = cfg.reward_throughput_weight * metrics["throughput_score"]
+        fairness_component = cfg.reward_fairness_weight * metrics["fairness_score"]
+        service_component = cfg.reward_service_weight * metrics["service_score"]
+
+        tolerance = cfg.starvation_tolerance
+        starvation_violation = clip01(
+            (metrics["starvation_rate"] - tolerance) / max(1.0 - tolerance, 1e-9)
         )
+        starvation_penalty = cfg.reward_starvation_penalty_weight * starvation_violation
+        total = throughput_component + fairness_component + service_component - starvation_penalty
+
+        return float(total), {
+            "reward_total": float(total),
+            "reward_throughput_component": float(throughput_component),
+            "reward_fairness_component": float(fairness_component),
+            "reward_service_component": float(service_component),
+            "starvation_violation": float(starvation_violation),
+            "reward_starvation_penalty": float(starvation_penalty),
+        }
 
     def render(self) -> str:
         return (

@@ -6,4 +6,6 @@ dist/
 build/
 *.egg-info/
 artifacts/*.csv
+artifacts/*.md
+artifacts/*.json
 artifacts/*.pt

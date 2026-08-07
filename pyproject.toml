@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scalemac-rl"
-version = "0.1.0"
+version = "0.2.0"
 description = "Scalable DRL-ready downlink MAC scheduling simulator for massive-UE 5G NR experiments"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,3 +22,4 @@ include = ["scalemac_rl*"]
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+pythonpath = ["."]

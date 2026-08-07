@@ -25,9 +25,16 @@ class ScaleMacConfig:
     target_bler: float = 0.10
     max_harq_retransmissions: int = 3
 
-    reward_throughput_weight: float = 0.60
+    # All positive reward scores are normalized to [0, 1]. Throughput remains
+    # the main objective, while fairness and service regularize the solution.
+    reward_throughput_weight: float = 0.55
     reward_fairness_weight: float = 0.30
-    reward_delay_weight: float = 0.10
+    reward_service_weight: float = 0.15
+
+    # Starvation is a constraint-like penalty applied outside the convex
+    # combination above so a high-throughput policy cannot ignore most UEs.
+    reward_starvation_penalty_weight: float = 0.50
+    starvation_tolerance: float = 0.00
 
     seed: int = 7
 
@@ -46,9 +53,13 @@ class ScaleMacConfig:
         if not 1 <= self.max_selected_ues <= self.num_ues:
             raise ValueError("max_selected_ues must be in [1, num_ues]")
         if self.num_prbs < self.max_selected_ues:
-            raise ValueError("num_prbs must be >= max_selected_ues so every selected UE can receive at least 1 PRB")
+            raise ValueError(
+                "num_prbs must be >= max_selected_ues so every selected UE can receive at least 1 PRB"
+            )
         if self.episode_slots <= 0:
             raise ValueError("episode_slots must be positive")
+        if self.starvation_threshold_slots <= 0:
+            raise ValueError("starvation_threshold_slots must be positive")
         if not 0.0 < self.ewma_alpha <= 1.0:
             raise ValueError("ewma_alpha must be in (0, 1]")
         if not 0.0 <= self.target_bler < 1.0:
@@ -57,7 +68,11 @@ class ScaleMacConfig:
             raise ValueError("max_harq_retransmissions must be non-negative")
 
         cqi_sum = self.low_cqi_fraction + self.medium_cqi_fraction + self.high_cqi_fraction
-        demand_sum = self.low_demand_fraction + self.medium_demand_fraction + self.high_demand_fraction
+        demand_sum = (
+            self.low_demand_fraction
+            + self.medium_demand_fraction
+            + self.high_demand_fraction
+        )
         if abs(cqi_sum - 1.0) > 1e-6:
             raise ValueError("CQI fractions must sum to 1")
         if abs(demand_sum - 1.0) > 1e-6:
@@ -66,10 +81,14 @@ class ScaleMacConfig:
         reward_sum = (
             self.reward_throughput_weight
             + self.reward_fairness_weight
-            + self.reward_delay_weight
+            + self.reward_service_weight
         )
         if abs(reward_sum - 1.0) > 1e-6:
-            raise ValueError("reward weights must sum to 1")
+            raise ValueError("positive reward weights must sum to 1")
+        if self.reward_starvation_penalty_weight < 0.0:
+            raise ValueError("reward_starvation_penalty_weight must be non-negative")
+        if not 0.0 <= self.starvation_tolerance < 1.0:
+            raise ValueError("starvation_tolerance must be in [0, 1)")
 
     @classmethod
     def from_json(cls, path: str | Path) -> "ScaleMacConfig":
