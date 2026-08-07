@@ -7,6 +7,7 @@ from typing import Any
 
 from scalemac_rl import ScaleMacConfig, ScaleMacDownlinkEnv
 from scalemac_rl.reporting import (
+    markdown_report_path,
     sibling_with_stem,
     summarize_by_group,
     write_csv,
@@ -103,9 +104,9 @@ def main() -> None:
                 f"starvation={row['mean_starvation_rate']:.4f}"
             )
 
-    raw_md = args.output.with_suffix(".md")
+    raw_md = markdown_report_path(args.output)
     summary_csv = sibling_with_stem(args.output, "_summary", ".csv")
-    summary_md = sibling_with_stem(args.output, "_summary", ".md")
+    summary_md = markdown_report_path(args.output, suffix="_summary")
 
     write_csv(args.output, rows)
     write_markdown(

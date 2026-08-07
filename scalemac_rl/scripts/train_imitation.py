@@ -10,7 +10,7 @@ from torch import nn
 
 from scalemac_rl import ScaleMacConfig, ScaleMacDownlinkEnv
 from scalemac_rl.models import SharedSetPolicy
-from scalemac_rl.reporting import write_csv, write_markdown
+from scalemac_rl.reporting import markdown_report_path, write_csv, write_markdown
 from scalemac_rl.schedulers import ProportionalFairScheduler
 
 
@@ -142,7 +142,7 @@ def main() -> None:
 
     write_csv(args.log_output, log_rows)
     write_markdown(
-        args.log_output.with_suffix(".md"),
+        markdown_report_path(args.log_output),
         title="ScaleMAC-RL PF imitation training",
         description=(
             "Behavioral cloning of the proportional-fair teacher. The report includes "
@@ -157,7 +157,7 @@ def main() -> None:
 
     print(f"saved: {args.output}")
     print(f"saved: {args.log_output}")
-    print(f"saved: {args.log_output.with_suffix('.md')}")
+    print(f"saved: {markdown_report_path(args.log_output)}")
 
 
 if __name__ == "__main__":

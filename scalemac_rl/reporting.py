@@ -21,7 +21,7 @@ def write_csv(path: Path, rows: Sequence[Row]) -> None:
     if not rows:
         raise ValueError("cannot write an empty CSV report")
     path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = list(rows[0].keys())
+    fieldnames = list(dict.fromkeys(key for row in rows for key in row.keys()))
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
@@ -31,7 +31,7 @@ def write_csv(path: Path, rows: Sequence[Row]) -> None:
 def markdown_table(rows: Sequence[Row], columns: Sequence[str] | None = None) -> str:
     if not rows:
         return "_No rows._"
-    selected = list(columns or rows[0].keys())
+    selected = list(columns or dict.fromkeys(key for row in rows for key in row.keys()))
     header = "| " + " | ".join(selected) + " |"
     separator = "| " + " | ".join("---" for _ in selected) + " |"
     body = [
@@ -87,3 +87,13 @@ def summarize_by_group(
 
 def sibling_with_stem(path: Path, suffix: str, extension: str) -> Path:
     return path.with_name(f"{path.stem}{suffix}{extension}")
+
+
+def markdown_report_path(
+    data_path: Path,
+    *,
+    suffix: str = "",
+    docs_dir: Path = Path("docs/reports"),
+) -> Path:
+    """Return the repository documentation path for a generated Markdown report."""
+    return docs_dir / f"{data_path.stem}{suffix}.md"

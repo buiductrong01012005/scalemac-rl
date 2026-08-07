@@ -12,6 +12,7 @@ import torch
 from scalemac_rl import ScaleMacConfig, ScaleMacDownlinkEnv
 from scalemac_rl.models import SharedSetPolicy
 from scalemac_rl.reporting import (
+    markdown_report_path,
     sibling_with_stem,
     summarize_by_group,
     write_csv,
@@ -139,7 +140,7 @@ def main() -> None:
 
     write_csv(args.output, rows)
     write_markdown(
-        args.output.with_suffix(".md"),
+        markdown_report_path(args.output),
         title="ScaleMAC-RL policy evaluation",
         description=(
             "Evaluation results use mean goodput across all slots and expose each normalized reward component. "
@@ -153,7 +154,7 @@ def main() -> None:
     )
 
     summary_csv = sibling_with_stem(args.output, "_summary", ".csv")
-    summary_md = sibling_with_stem(args.output, "_summary", ".md")
+    summary_md = markdown_report_path(args.output, suffix="_summary")
     numeric_fields = [
         "mean_reward",
         "mean_goodput_bits_per_slot",
@@ -182,7 +183,7 @@ def main() -> None:
     )
 
     print(f"saved: {args.output}")
-    print(f"saved: {args.output.with_suffix('.md')}")
+    print(f"saved: {markdown_report_path(args.output)}")
     print(f"saved: {summary_csv}")
     print(f"saved: {summary_md}")
 

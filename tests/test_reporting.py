@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from scalemac_rl.reporting import summarize_by_group, write_csv, write_markdown
+from scalemac_rl.reporting import (
+    markdown_report_path,
+    summarize_by_group,
+    write_csv,
+    write_markdown,
+)
 
 
 def test_reports_are_created(tmp_path: Path) -> None:
@@ -18,3 +23,12 @@ def test_reports_are_created(tmp_path: Path) -> None:
     assert md_path.exists()
     assert summary[0]["score_mean"] == 0.6
     assert summary[0]["score_std"] > 0.0
+
+
+def test_markdown_reports_are_routed_to_docs() -> None:
+    assert markdown_report_path(Path("artifacts/ppo_training.csv")) == Path(
+        "docs/reports/ppo_training.md"
+    )
+    assert markdown_report_path(
+        Path("artifacts/evaluation.csv"), suffix="_summary"
+    ) == Path("docs/reports/evaluation_summary.md")
