@@ -17,3 +17,9 @@ def test_safety_reserve_must_leave_valid_top_k_range() -> None:
     cfg = ScaleMacConfig(safety_reserve_ues=65)
     with pytest.raises(ValueError):
         cfg.validate()
+
+
+def test_deadline_shaping_configuration_is_validated() -> None:
+    cfg = ScaleMacConfig(deadline_risk_start_ratio=1.0)
+    with pytest.raises(ValueError):
+        cfg.validate()

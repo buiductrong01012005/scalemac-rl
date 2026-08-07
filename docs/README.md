@@ -14,23 +14,29 @@ ScaleMAC-RL is a fast DRL training surrogate for **single-cell 5G NR downlink MA
 - required output: selected Top-K UEs and PRBs per selected UE;
 - KPIs: throughput, fairness/service, delay/starvation, candidate coverage, and inference latency.
 
-## What v0.5 adds
+## What v0.6 adds
 
-v0.5 addresses the v0.4 validation mismatch and the weak Top-K learning claim:
+v0.6 introduces a deliberately narrow **single-seed upper-bound experiment** to
+measure how far the current actor/projector design can optimize one known 1,200-UE
+scenario before testing generalization:
 
-- a 128-UE candidate pool feeds a 64-UE scheduler output;
-- up to 16 grants are reserved for HARQ and long-waiting UEs;
-- PPO ranks the remaining grants and predicts PRB demand;
-- training defaults to 32,768 environment steps per curriculum stage;
-- repeated held-out validation updates the Lagrange controller;
-- unsafe validation streaks trigger rollback to the best feasible stage checkpoint;
-- every curriculum stage saves its lowest-violation and best-feasible checkpoints;
-- grant-attribution reports distinguish deterministic safety selection from learned selection;
-- the final official constraint remains zero starvation and P99 waiting time no greater than 50 slots.
+- one frozen static CQI/demand profile is reused across episode resets;
+- HARQ outcomes remain stochastic because the transition RNG is not reset every episode;
+- the default upper-bound run uses 524,288 environment steps at 1,200 UEs;
+- all 16 safety grants are filled: HARQ first, then the oldest eligible UEs;
+- PPO still selects the remaining 48 grants from a 128-UE candidate pool;
+- dense tail-delay risk shaping starts before the P99 deadline is crossed;
+- the P99 target tightens progressively from 80 to 65 to 55 to 50 slots;
+- PPO training can resume from a full v0.5 checkpoint, including optimizer and dual state;
+- `best_lowest_violation.pt` is saved independently of `best_reward.pt`;
+- evaluation scripts recover the frozen-profile settings from checkpoint metadata.
+
+This mode estimates an in-scenario performance ceiling. It must not be presented as
+multi-seed robustness or OOD generalization.
 
 ## Current roadmap status
 
-| Roadmap block | Status in v0.5 |
+| Roadmap block | Status in v0.6 |
 |---|---|
 | Fix DL scenario, active UEs, PRBs, traffic | Done in fast surrogate |
 | RR, PF, Max-CQI baselines | Done in fast surrogate |
@@ -42,7 +48,7 @@ v0.5 addresses the v0.4 validation mismatch and the weak Top-K learning claim:
 | Candidate filtering and action masking | Implemented with compact candidate tensors |
 | Actor priority and RB-demand scores | Done |
 | Hybrid safety-reserve action projector | Done |
-| RL training | Long-run constrained PPO with validation rollback implemented |
+| RL training | Long-run constrained PPO plus a single-seed upper-bound mode |
 | Feasibility-first checkpoint selection | Implemented with held-out validation seeds |
 | Distributed RL | Partial: vectorized workers in one Python process |
 | OOD evaluation | Not yet automated |
@@ -59,6 +65,7 @@ The base reward remains normalized and interpretable:
 + 0.30 * fairness_score
 + 0.15 * service_score
 - 0.50 * starvation_violation
+- 0.15 * dense_tail_deadline_risk
 ```
 
 PPO additionally optimizes a constrained reward:
@@ -93,8 +100,14 @@ python -m scalemac_rl.scripts.run_baselines --num-ues 1200 --slots 1000 --seeds 
 # PF imitation pretraining
 python -m scalemac_rl.scripts.train_imitation --num-ues 1200 --steps 2000
 
-# Constrained PPO training with held-out validation
-python -m scalemac_rl.scripts.train_ppo --init-checkpoint .\artifacts\pf_imitation.pt --curriculum 128,256,600,1200 --steps-per-stage 32768 --workers 4 --rollout-steps 64 --episode-slots 500 --max-candidates 128 --safety-reserve-ues 16 --stage-p99-wait-limits 80,80,80,50 --validation-seeds 9001,9002,9003 --validation-repeats 2 --validation-slots 1000 --validate-every 16 --rollback-patience 2 --max-starvation-rate 0 --max-p99-wait-slots 50
+# Primary v0.6 experiment: one frozen 1,200-UE profile, 524,288 steps
+python -m scalemac_rl.scripts.train_single_seed
+
+# Override the long-run budget, for example one million steps
+python -m scalemac_rl.scripts.train_single_seed --steps-per-stage 1048576
+
+# General multi-seed curriculum remains available separately
+python -m scalemac_rl.scripts.train_ppo --init-checkpoint .\artifacts\pf_imitation.pt --curriculum 128,256,600,1200 --steps-per-stage 32768 --workers 4 --rollout-steps 64 --episode-slots 500 --max-candidates 128 --safety-reserve-ues 16 --stage-p99-wait-limits 80,80,80,50 --final-stage-p99-schedule 80,65,55,50 --validation-seeds 9001,9002,9003 --validation-repeats 2 --validation-slots 1000 --validate-every 16 --rollback-patience 2 --max-starvation-rate 0 --max-p99-wait-slots 50
 
 # Evaluate the feasibility-first checkpoint
 python -m scalemac_rl.scripts.evaluate_ppo .\artifacts\best_feasible.pt --num-ues 1200 --slots 1000 --seeds 3 --max-starvation-rate 0 --max-p99-wait-slots 50
@@ -115,12 +128,12 @@ For a quick CPU smoke run:
 python -m scalemac_rl.scripts.train_ppo --init-checkpoint .\artifacts\pf_imitation.pt --curriculum 64,128 --stage-p99-wait-limits 100,100 --steps-per-stage 256 --workers 1 --rollout-steps 16 --episode-slots 80 --max-candidates 128 --safety-reserve-ues 8 --validation-seeds 9101 --validation-repeats 1 --validation-slots 80 --validate-every 1 --checkpoint-every 2 --output .\artifacts\smoke_latest.pt --best-feasible-output .\artifacts\smoke_best_feasible.pt --best-reward-output .\artifacts\smoke_best_reward.pt --log-output .\artifacts\smoke_ppo_training.csv --validation-output .\artifacts\smoke_ppo_validation.csv
 ```
 
-## Files to send back after v0.5
+## Files to send back after v0.6
 
 Include both numeric artifacts and generated readable reports:
 
 ```powershell
-Compress-Archive -Path .\artifacts\*,.\docs\reports\* -DestinationPath .\scalemac_results_v05.zip -Force
+Compress-Archive -Path .\artifacts\*,.\docs\reports\* -DestinationPath .\scalemac_results_v06.zip -Force
 ```
 
 Most important files:
@@ -129,6 +142,7 @@ Most important files:
 artifacts/
 ├── latest.pt
 ├── best_reward.pt
+├── best_lowest_violation.pt
 ├── best_feasible.pt                 # only created when final-stage validation is feasible
 ├── checkpoints/
 ├── ppo_training.csv
@@ -152,7 +166,7 @@ docs/reports/
 └── inference_benchmark.md
 ```
 
-When `best_feasible.pt` is absent, send `latest.pt`, `best_reward.pt`, and the validation reports. The absence itself is an important result: the selected constraints were not met.
+When `best_feasible.pt` is absent, send the CSV/Markdown reports first. Send `best_lowest_violation.pt` only when direct checkpoint inspection is needed. The absence itself is an important result: the selected constraints were not met.
 
 ## Scope boundary
 

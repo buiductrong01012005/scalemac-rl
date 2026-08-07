@@ -38,3 +38,21 @@ def test_validation_feasibility_is_worst_seed_based() -> None:
         {"max_starvation_rate": 0.0, "max_p99_wait_slots": 55.0},
     ]
     assert not validation_feasible(rows, constraints)
+
+
+def test_progressive_p99_schedule_selects_expected_segments() -> None:
+    from scalemac_rl.scripts.train_ppo import _active_p99_limit
+
+    schedule = [80.0, 65.0, 55.0, 50.0]
+    assert _active_p99_limit(
+        stage_index=1, stage_count=1, stage_env_steps=0, steps_per_stage=400,
+        default_limit=50.0, final_stage_schedule=schedule,
+    ) == 80.0
+    assert _active_p99_limit(
+        stage_index=1, stage_count=1, stage_env_steps=200, steps_per_stage=400,
+        default_limit=50.0, final_stage_schedule=schedule,
+    ) == 55.0
+    assert _active_p99_limit(
+        stage_index=1, stage_count=1, stage_env_steps=399, steps_per_stage=400,
+        default_limit=50.0, final_stage_schedule=schedule,
+    ) == 50.0

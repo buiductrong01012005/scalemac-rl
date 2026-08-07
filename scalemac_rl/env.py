@@ -80,6 +80,9 @@ class ScaleMacDownlinkEnv:
         self.harq_retx_count = np.zeros(n, dtype=np.int16)
         self.eligible = np.ones(n, dtype=bool)
         self.last_grant = np.zeros(n, dtype=np.int32)
+        self._frozen_cqi: np.ndarray | None = None
+        self._frozen_demand_factor: np.ndarray | None = None
+        self._frozen_speed_mps: np.ndarray | None = None
 
         self.reset(seed=self.config.seed)
 
@@ -96,13 +99,32 @@ class ScaleMacDownlinkEnv:
             self.rng = np.random.default_rng(seed)
 
         self.slot = 0
-        self.cqi = self._sample_cqi_profiles()
-        self.demand_factor = self._sample_demand_profiles()
-        self.speed_mps = self.rng.choice(
-            np.asarray([0.0, 1.5, 5.0, 15.0, 25.0], dtype=np.float32),
-            size=self.config.num_ues,
-            replace=True,
-        )
+        if self.config.freeze_static_profiles:
+            if self._frozen_cqi is None:
+                profile_seed = (
+                    self.config.static_profile_seed
+                    if self.config.static_profile_seed is not None
+                    else self.config.seed
+                )
+                profile_rng = np.random.default_rng(profile_seed)
+                self._frozen_cqi = self._sample_cqi_profiles(profile_rng)
+                self._frozen_demand_factor = self._sample_demand_profiles(profile_rng)
+                self._frozen_speed_mps = profile_rng.choice(
+                    np.asarray([0.0, 1.5, 5.0, 15.0, 25.0], dtype=np.float32),
+                    size=self.config.num_ues,
+                    replace=True,
+                )
+            self.cqi = self._frozen_cqi.copy()
+            self.demand_factor = self._frozen_demand_factor.copy()
+            self.speed_mps = self._frozen_speed_mps.copy()
+        else:
+            self.cqi = self._sample_cqi_profiles(self.rng)
+            self.demand_factor = self._sample_demand_profiles(self.rng)
+            self.speed_mps = self.rng.choice(
+                np.asarray([0.0, 1.5, 5.0, 15.0, 25.0], dtype=np.float32),
+                size=self.config.num_ues,
+                replace=True,
+            )
 
         self.queue_target_bytes = (
             self.config.full_buffer_base_bytes * self.demand_factor
@@ -149,22 +171,22 @@ class ScaleMacDownlinkEnv:
         info = {"slot": self.slot, **metrics}
         return observation, reward, terminated, truncated, info
 
-    def _sample_cqi_profiles(self) -> np.ndarray:
+    def _sample_cqi_profiles(self, rng: np.random.Generator) -> np.ndarray:
         n = self.config.num_ues
         low = int(round(n * self.config.low_cqi_fraction))
         medium = int(round(n * self.config.medium_cqi_fraction))
         high = n - low - medium
         values = np.concatenate(
             [
-                self.rng.integers(1, 6, size=low),
-                self.rng.integers(6, 11, size=medium),
-                self.rng.integers(11, 16, size=high),
+                rng.integers(1, 6, size=low),
+                rng.integers(6, 11, size=medium),
+                rng.integers(11, 16, size=high),
             ]
         ).astype(np.int16)
-        self.rng.shuffle(values)
+        rng.shuffle(values)
         return values
 
-    def _sample_demand_profiles(self) -> np.ndarray:
+    def _sample_demand_profiles(self, rng: np.random.Generator) -> np.ndarray:
         n = self.config.num_ues
         low = int(round(n * self.config.low_demand_fraction))
         medium = int(round(n * self.config.medium_demand_fraction))
@@ -176,7 +198,7 @@ class ScaleMacDownlinkEnv:
                 np.full(high, 2.0, dtype=np.float32),
             ]
         )
-        self.rng.shuffle(values)
+        rng.shuffle(values)
         return values
 
     def _observation(self) -> np.ndarray:
@@ -301,6 +323,16 @@ class ScaleMacDownlinkEnv:
         delay_penalty = clip01(0.5 * starvation_rate + 0.5 * mean_wait_score)
         service_score = clip01(1.0 - delay_penalty)
 
+        # Dense risk for the worst-served 1% of UEs. It starts increasing before
+        # the configured P99 deadline is crossed, giving PPO a less sparse signal.
+        tail_count = max(1, int(np.ceil(0.01 * n)))
+        tail_waits = np.partition(self.time_since_service, n - tail_count)[-tail_count:]
+        deadline_start = self.config.deadline_risk_start_ratio * self.config.deadline_target_slots
+        deadline_span = max(self.config.deadline_target_slots - deadline_start, 1e-9)
+        tail_risks = np.clip((tail_waits - deadline_start) / deadline_span, 0.0, 1.0)
+        deadline_risk = float(np.mean(tail_risks))
+        tail_mean_wait_slots = float(np.mean(tail_waits))
+
         return {
             "selected_ues": selected.copy(),
             "prbs_per_selected_ue": grant.prbs.copy(),
@@ -316,12 +348,15 @@ class ScaleMacDownlinkEnv:
             "mean_wait_slots": float(self.time_since_service.mean()),
             "p95_wait_slots": safe_percentile(self.time_since_service, 95),
             "p99_wait_slots": safe_percentile(self.time_since_service, 99),
+            "tail_mean_wait_slots": tail_mean_wait_slots,
+            "deadline_risk": deadline_risk,
             "delay_penalty": delay_penalty,
             "service_score": service_score,
             "failed_transmissions": failed_transmissions,
             "harq_drops": dropped_harq,
             "forced_harq_count": grant.forced_harq_count,
             "forced_long_wait_count": grant.forced_long_wait_count,
+            "forced_oldest_wait_count": grant.forced_oldest_wait_count,
             "safety_selected_count": grant.safety_selected_count,
             "learned_selected_count": grant.learned_selected_count,
             "learned_selection_fraction": (
@@ -344,7 +379,16 @@ class ScaleMacDownlinkEnv:
             (metrics["starvation_rate"] - tolerance) / max(1.0 - tolerance, 1e-9)
         )
         starvation_penalty = cfg.reward_starvation_penalty_weight * starvation_violation
-        total = throughput_component + fairness_component + service_component - starvation_penalty
+        deadline_risk_penalty = (
+            cfg.reward_deadline_risk_penalty_weight * float(metrics["deadline_risk"])
+        )
+        total = (
+            throughput_component
+            + fairness_component
+            + service_component
+            - starvation_penalty
+            - deadline_risk_penalty
+        )
 
         return float(total), {
             "reward_total": float(total),
@@ -353,6 +397,7 @@ class ScaleMacDownlinkEnv:
             "reward_service_component": float(service_component),
             "starvation_violation": float(starvation_violation),
             "reward_starvation_penalty": float(starvation_penalty),
+            "reward_deadline_risk_penalty": float(deadline_risk_penalty),
         }
 
     def render(self) -> str:

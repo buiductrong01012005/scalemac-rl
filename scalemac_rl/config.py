@@ -20,6 +20,16 @@ class ScaleMacConfig:
     safety_reserve_ues: int = 0
     safety_wait_threshold_ratio: float = 0.80
 
+    # Optional upper-bound experiment mode: keep one static CQI/demand profile
+    # across episode resets while HARQ randomness continues to evolve.
+    freeze_static_profiles: bool = False
+    static_profile_seed: int | None = None
+
+    # Dense tail-delay shaping starts before the hard P99 constraint is crossed.
+    deadline_target_slots: float = 50.0
+    deadline_risk_start_ratio: float = 0.60
+    reward_deadline_risk_penalty_weight: float = 0.15
+
     packet_size_bytes: int = 1500
     full_buffer_base_bytes: int = 1_000_000
 
@@ -67,6 +77,14 @@ class ScaleMacConfig:
             raise ValueError("safety_reserve_ues must be in [0, max_selected_ues]")
         if self.safety_wait_threshold_ratio < 0.0:
             raise ValueError("safety_wait_threshold_ratio must be non-negative")
+        if self.static_profile_seed is not None and self.static_profile_seed < 0:
+            raise ValueError("static_profile_seed must be non-negative when provided")
+        if self.deadline_target_slots <= 0.0:
+            raise ValueError("deadline_target_slots must be positive")
+        if not 0.0 <= self.deadline_risk_start_ratio < 1.0:
+            raise ValueError("deadline_risk_start_ratio must be in [0, 1)")
+        if self.reward_deadline_risk_penalty_weight < 0.0:
+            raise ValueError("reward_deadline_risk_penalty_weight must be non-negative")
         if self.starvation_threshold_slots <= 0:
             raise ValueError("starvation_threshold_slots must be positive")
         if not 0.0 < self.ewma_alpha <= 1.0:

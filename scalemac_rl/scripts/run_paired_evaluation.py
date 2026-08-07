@@ -38,6 +38,8 @@ def main() -> None:
     parser.add_argument("--max-candidates", type=int, default=None)
     parser.add_argument("--safety-reserve-ues", type=int, default=None)
     parser.add_argument("--long-wait-threshold", type=float, default=None)
+    parser.add_argument("--fixed-profile-seed", type=int, default=None)
+    parser.add_argument("--freeze-static-profiles", action="store_true")
     parser.add_argument("--max-starvation-rate", type=float, default=0.0)
     parser.add_argument("--max-p99-wait-slots", type=float, default=50.0)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
@@ -66,10 +68,27 @@ def main() -> None:
         if args.long_wait_threshold is not None
         else training.get("long_wait_threshold", 0.8)
     )
+    freeze_static_profiles = bool(
+        args.freeze_static_profiles or training.get("freeze_static_profiles", False)
+    )
+    fixed_profile_seed = (
+        args.fixed_profile_seed
+        if args.fixed_profile_seed is not None
+        else training.get("fixed_profile_seed")
+    )
+    deadline_risk_start_ratio = float(training.get("deadline_risk_start_ratio", 0.60))
+    deadline_risk_penalty_weight = float(
+        training.get("deadline_risk_penalty_weight", 0.15)
+    )
     baseline_config = ScaleMacConfig(
         num_ues=args.num_ues,
         max_selected_ues=min(64, args.num_ues),
         episode_slots=args.slots,
+        freeze_static_profiles=freeze_static_profiles,
+        static_profile_seed=fixed_profile_seed,
+        deadline_target_slots=args.max_p99_wait_slots,
+        deadline_risk_start_ratio=deadline_risk_start_ratio,
+        reward_deadline_risk_penalty_weight=deadline_risk_penalty_weight,
     )
     baseline_config.validate()
     ppo_config = ScaleMacConfig(
@@ -78,6 +97,11 @@ def main() -> None:
         episode_slots=args.slots,
         safety_reserve_ues=min(safety_reserve, min(64, args.num_ues) - 1),
         safety_wait_threshold_ratio=long_wait_threshold,
+        freeze_static_profiles=freeze_static_profiles,
+        static_profile_seed=fixed_profile_seed,
+        deadline_target_slots=args.max_p99_wait_slots,
+        deadline_risk_start_ratio=deadline_risk_start_ratio,
+        reward_deadline_risk_penalty_weight=deadline_risk_penalty_weight,
     )
     ppo_config.validate()
     constraints = ServiceConstraints(
@@ -138,11 +162,14 @@ def main() -> None:
             "final_jain_fairness",
             "mean_fairness_score",
             "mean_service_score",
+            "mean_deadline_risk",
+            "mean_tail_mean_wait_slots",
             "mean_starvation_rate",
             "max_starvation_rate",
             "final_p99_wait_slots",
             "max_p99_wait_slots",
             "mean_safety_selected_count",
+            "mean_forced_oldest_wait_count",
             "mean_learned_selected_count",
             "mean_learned_selection_fraction",
         ],

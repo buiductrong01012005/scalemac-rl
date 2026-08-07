@@ -53,3 +53,31 @@ def test_projector_reserves_long_wait_grants_and_keeps_learned_selection() -> No
     assert result.learned_selected_count == 48
     assert set(np.arange(n - 16, n)).issubset(set(result.selected_ues.tolist()))
     assert int(result.prbs.sum()) == 273
+
+
+def test_projector_fills_entire_safety_reserve_before_urgency_threshold() -> None:
+    n = 128
+    action = np.zeros((n, 2), dtype=np.float32)
+    action[:, 0] = np.linspace(1.0, 0.0, n)
+    action[:, 1] = 0.5
+    waits = np.arange(n, dtype=np.int32) % 40
+
+    result = project_action(
+        action,
+        eligible=np.ones(n, dtype=bool),
+        harq_pending=np.zeros(n, dtype=bool),
+        harq_retx_count=np.zeros(n, dtype=np.int16),
+        time_since_service=waits,
+        num_prbs=273,
+        max_selected_ues=64,
+        safety_reserve_ues=16,
+        safety_wait_threshold_ratio=0.8,
+        starvation_threshold_slots=100,
+    )
+
+    expected_oldest = set(np.argsort(-waits, kind="stable")[:16].tolist())
+    assert result.safety_selected_count == 16
+    assert result.forced_oldest_wait_count == 16
+    assert result.forced_long_wait_count == 0
+    assert result.learned_selected_count == 48
+    assert expected_oldest.issubset(set(result.selected_ues.tolist()))

@@ -212,7 +212,13 @@ def _checkpoint_payload(
             "safety_reserve_ues": args.safety_reserve_ues,
             "long_wait_threshold": args.long_wait_threshold,
             "stage_p99_wait_limits": args.stage_p99_wait_limits,
+            "final_stage_p99_schedule": args.final_stage_p99_schedule,
             "validation_repeats": args.validation_repeats,
+            "single_seed_upper_bound": args.single_seed_upper_bound,
+            "freeze_static_profiles": args.freeze_static_profiles,
+            "fixed_profile_seed": args.fixed_profile_seed,
+            "deadline_risk_start_ratio": args.deadline_risk_start_ratio,
+            "deadline_risk_penalty_weight": args.deadline_risk_penalty_weight,
             "learning_rate": args.lr,
             "gamma": args.gamma,
             "gae_lambda": args.gae_lambda,
@@ -230,9 +236,69 @@ def _save_checkpoint(path: Path, payload: dict[str, Any]) -> None:
     torch.save(payload, path)
 
 
+
+def _active_p99_limit(
+    *,
+    stage_index: int,
+    stage_count: int,
+    stage_env_steps: int,
+    steps_per_stage: int,
+    default_limit: float,
+    final_stage_schedule: list[float],
+) -> float:
+    """Return the progressively tightened P99 target for the current update."""
+    if stage_index != stage_count or not final_stage_schedule:
+        return float(default_limit)
+    progress = min(max(stage_env_steps, 0), max(steps_per_stage - 1, 0))
+    segment = min(
+        len(final_stage_schedule) - 1,
+        int(progress * len(final_stage_schedule) / max(steps_per_stage, 1)),
+    )
+    return float(final_stage_schedule[segment])
+
+
+def _load_initial_state(
+    *,
+    model: SharedSetActorCritic,
+    optimizer: torch.optim.Optimizer,
+    controller: LagrangeController,
+    init_checkpoint: Path,
+    resume_checkpoint: Path | None,
+    device: torch.device,
+) -> str:
+    """Load either a full PPO checkpoint or an imitation actor checkpoint."""
+    if resume_checkpoint is not None:
+        if not resume_checkpoint.is_file():
+            raise FileNotFoundError(f"resume checkpoint does not exist: {resume_checkpoint}")
+        checkpoint = torch.load(resume_checkpoint, map_location=device, weights_only=False)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        if "optimizer_state_dict" in checkpoint:
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        for key, value in checkpoint.get("lagrange_controller", {}).items():
+            if hasattr(controller, key):
+                setattr(controller, key, value)
+        return str(resume_checkpoint)
+
+    if init_checkpoint.is_file():
+        checkpoint = torch.load(init_checkpoint, map_location=device, weights_only=False)
+        state_dict = checkpoint["model_state_dict"]
+        checkpoint_type = str(checkpoint.get("checkpoint_type", ""))
+        if "ppo_actor_critic" in checkpoint_type:
+            model.load_state_dict(state_dict)
+        else:
+            model.load_imitation_state_dict(state_dict)
+        return str(init_checkpoint)
+    return "random"
+
 def _validation_seed_list(
-    base_seeds: list[int], stage_index: int, repeats: int
+    base_seeds: list[int],
+    stage_index: int,
+    repeats: int,
+    *,
+    fixed_seed_mode: bool = False,
 ) -> list[int]:
+    if fixed_seed_mode:
+        return [seed for _ in range(repeats) for seed in base_seeds]
     stage_offset = stage_index * 100_000
     return [
         seed + stage_offset + repeat * 10_000
@@ -252,6 +318,10 @@ def _validate(
     safety_reserve_ues: int,
     long_wait_threshold: float,
     constraints: ServiceConstraints,
+    freeze_static_profiles: bool,
+    fixed_profile_seed: int | None,
+    deadline_risk_start_ratio: float,
+    deadline_risk_penalty_weight: float,
     update_index: int,
     stage_index: int,
     global_env_steps: int,
@@ -263,6 +333,11 @@ def _validate(
         episode_slots=slots,
         safety_reserve_ues=min(safety_reserve_ues, min(64, num_ues, 273)),
         safety_wait_threshold_ratio=long_wait_threshold,
+        freeze_static_profiles=freeze_static_profiles,
+        static_profile_seed=fixed_profile_seed,
+        deadline_target_slots=constraints.max_p99_wait_slots,
+        deadline_risk_start_ratio=deadline_risk_start_ratio,
+        reward_deadline_risk_penalty_weight=deadline_risk_penalty_weight,
     )
     rows: list[dict[str, Any]] = []
     for seed in seeds:
@@ -309,8 +384,15 @@ def _validate(
         "mean_harq_retention_rate": mean(
             float(row["mean_harq_retention_rate"]) for row in rows
         ),
+        "mean_deadline_risk": mean(float(row["mean_deadline_risk"]) for row in rows),
+        "mean_tail_mean_wait_slots": mean(
+            float(row["mean_tail_mean_wait_slots"]) for row in rows
+        ),
         "mean_safety_selected_count": mean(
             float(row["mean_safety_selected_count"]) for row in rows
+        ),
+        "mean_oldest_selected_count": mean(
+            float(row["mean_forced_oldest_wait_count"]) for row in rows
         ),
         "mean_learned_selected_count": mean(
             float(row["mean_learned_selected_count"]) for row in rows
@@ -329,6 +411,7 @@ def main() -> None:
         description="Hybrid safety-reserve constrained curriculum PPO for ScaleMAC-RL"
     )
     parser.add_argument("--init-checkpoint", type=Path, default=Path("artifacts/pf_imitation.pt"))
+    parser.add_argument("--resume-checkpoint", type=Path, default=None)
     parser.add_argument("--curriculum", type=_parse_int_list, default=[128, 256, 600, 1200])
     parser.add_argument("--steps-per-stage", type=int, default=32768)
     parser.add_argument("--workers", type=int, default=4)
@@ -337,6 +420,11 @@ def main() -> None:
     parser.add_argument("--max-candidates", type=int, default=128)
     parser.add_argument("--safety-reserve-ues", type=int, default=16)
     parser.add_argument("--long-wait-threshold", type=float, default=0.8)
+    parser.add_argument("--freeze-static-profiles", action="store_true")
+    parser.add_argument("--fixed-profile-seed", type=int, default=None)
+    parser.add_argument("--single-seed-upper-bound", action="store_true")
+    parser.add_argument("--deadline-risk-start-ratio", type=float, default=0.60)
+    parser.add_argument("--deadline-risk-penalty-weight", type=float, default=0.15)
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--gamma", type=float, default=0.99)
@@ -352,6 +440,9 @@ def main() -> None:
     parser.add_argument("--max-p99-wait-slots", type=float, default=50.0)
     parser.add_argument(
         "--stage-p99-wait-limits", type=_parse_float_list, default=[80.0, 80.0, 80.0, 50.0]
+    )
+    parser.add_argument(
+        "--final-stage-p99-schedule", type=_parse_float_list, default=[80.0, 65.0, 55.0, 50.0]
     )
     parser.add_argument("--starvation-multiplier", type=float, default=5.0)
     parser.add_argument("--wait-multiplier", type=float, default=1.0)
@@ -369,6 +460,11 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=Path("artifacts/latest.pt"))
     parser.add_argument("--best-feasible-output", type=Path, default=Path("artifacts/best_feasible.pt"))
     parser.add_argument("--best-reward-output", type=Path, default=Path("artifacts/best_reward.pt"))
+    parser.add_argument(
+        "--best-lowest-violation-output",
+        type=Path,
+        default=Path("artifacts/best_lowest_violation.pt"),
+    )
     parser.add_argument("--checkpoint-dir", type=Path, default=Path("artifacts/checkpoints"))
     parser.add_argument("--log-output", type=Path, default=Path("artifacts/ppo_training.csv"))
     parser.add_argument("--validation-output", type=Path, default=Path("artifacts/ppo_validation.csv"))
@@ -384,6 +480,22 @@ def main() -> None:
         parser.error("stage-p99-wait-limits must contain one value per curriculum stage")
     if args.validation_slots <= 0 or args.validation_repeats <= 0:
         parser.error("validation slots and repeats must be positive")
+    if args.fixed_profile_seed is not None and args.fixed_profile_seed < 0:
+        parser.error("fixed-profile-seed must be non-negative")
+    if not 0.0 <= args.deadline_risk_start_ratio < 1.0:
+        parser.error("deadline-risk-start-ratio must be in [0, 1)")
+    if args.deadline_risk_penalty_weight < 0.0:
+        parser.error("deadline-risk-penalty-weight must be non-negative")
+    if args.single_seed_upper_bound:
+        if args.workers != 1:
+            parser.error("single-seed-upper-bound requires --workers 1")
+        if len(args.curriculum) != 1:
+            parser.error("single-seed-upper-bound requires one curriculum stage, e.g. --curriculum 1200")
+        if len(args.validation_seeds) != 1:
+            parser.error("single-seed-upper-bound requires exactly one validation seed")
+        args.freeze_static_profiles = True
+        if args.fixed_profile_seed is None:
+            args.fixed_profile_seed = args.seed
     if args.validate_every <= 0 or args.rollback_patience <= 0 or args.checkpoint_every <= 0:
         parser.error("validation, rollback, and checkpoint intervals must be positive")
 
@@ -404,12 +516,18 @@ def main() -> None:
     torch.manual_seed(args.seed)
     device = _resolve_device(args.device)
     model = SharedSetActorCritic(input_dim=8, hidden_dim=args.hidden_dim).to(device)
-    initialized_from = "random"
-    if args.init_checkpoint.exists():
-        checkpoint = torch.load(args.init_checkpoint, map_location=device, weights_only=False)
-        model.load_imitation_state_dict(checkpoint["model_state_dict"])
-        initialized_from = str(args.init_checkpoint)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    try:
+        initialized_from = _load_initial_state(
+            model=model,
+            optimizer=optimizer,
+            controller=controller,
+            init_checkpoint=args.init_checkpoint,
+            resume_checkpoint=args.resume_checkpoint,
+            device=device,
+        )
+    except FileNotFoundError as exc:
+        parser.error(str(exc))
     hyper = PpoHyperparameters(
         gamma=args.gamma,
         gae_lambda=args.gae_lambda,
@@ -429,6 +547,8 @@ def main() -> None:
     update_index = 0
     best_feasible_reward = float("-inf")
     best_reward = float("-inf")
+    best_lowest_violation_score: tuple[float, float] | None = None
+    best_lowest_violation_saved = False
     best_feasible_saved = False
     target_num_ues = args.curriculum[-1]
     last_validation: dict[str, Any] | None = None
@@ -437,11 +557,21 @@ def main() -> None:
         max_selected = min(64, num_ues, 273)
         max_candidates = min(max(args.max_candidates, max_selected), num_ues)
         safety_reserve = min(args.safety_reserve_ues, max_selected - 1)
-        stage_constraints = ServiceConstraints(
-            max_starvation_rate=args.max_starvation_rate,
-            max_p99_wait_slots=args.stage_p99_wait_limits[stage_index - 1],
+        stage_default_p99_limit = args.stage_p99_wait_limits[stage_index - 1]
+        initial_p99_limit = _active_p99_limit(
+            stage_index=stage_index,
+            stage_count=len(args.curriculum),
+            stage_env_steps=0,
+            steps_per_stage=args.steps_per_stage,
+            default_limit=stage_default_p99_limit,
+            final_stage_schedule=args.final_stage_p99_schedule,
         )
-        stage_constraints.validate()
+        stage_seed = args.seed if args.single_seed_upper_bound else args.seed + stage_index * 10_000
+        profile_seed = (
+            args.fixed_profile_seed
+            if args.fixed_profile_seed is not None
+            else (args.seed if args.single_seed_upper_bound else None)
+        )
         config = ScaleMacConfig(
             num_ues=num_ues,
             num_prbs=273,
@@ -449,7 +579,12 @@ def main() -> None:
             episode_slots=args.episode_slots,
             safety_reserve_ues=safety_reserve,
             safety_wait_threshold_ratio=args.long_wait_threshold,
-            seed=args.seed + stage_index * 10_000,
+            freeze_static_profiles=args.freeze_static_profiles or args.single_seed_upper_bound,
+            static_profile_seed=profile_seed,
+            deadline_target_slots=initial_p99_limit,
+            deadline_risk_start_ratio=args.deadline_risk_start_ratio,
+            reward_deadline_risk_penalty_weight=args.deadline_risk_penalty_weight,
+            seed=stage_seed,
         )
         config.validate()
         envs = [ScaleMacDownlinkEnv(config) for _ in range(args.workers)]
@@ -464,6 +599,23 @@ def main() -> None:
         consecutive_infeasible = 0
 
         while stage_env_steps < args.steps_per_stage:
+            active_p99_limit = _active_p99_limit(
+                stage_index=stage_index,
+                stage_count=len(args.curriculum),
+                stage_env_steps=stage_env_steps,
+                steps_per_stage=args.steps_per_stage,
+                default_limit=stage_default_p99_limit,
+                final_stage_schedule=args.final_stage_p99_schedule,
+            )
+            active_constraints = ServiceConstraints(
+                max_starvation_rate=args.max_starvation_rate,
+                max_p99_wait_slots=active_p99_limit,
+            )
+            active_constraints.validate()
+            config.deadline_target_slots = active_p99_limit
+            for env in envs:
+                env.config.deadline_target_slots = active_p99_limit
+
             obs_buffer: list[np.ndarray] = []
             action_buffer: list[np.ndarray] = []
             compact_mask_buffer: list[np.ndarray] = []
@@ -475,10 +627,11 @@ def main() -> None:
                 key: []
                 for key in (
                     "base_reward", "constrained_reward", "constraint_penalty",
+                    "deadline_risk_penalty", "deadline_risk", "tail_mean_wait",
                     "throughput", "fairness", "service", "starvation", "p99_wait",
                     "starvation_excess", "wait_excess", "goodput", "candidate_coverage",
                     "harq_retention", "long_wait_retention", "long_wait_missed",
-                    "safety_selected", "learned_selected", "learned_fraction",
+                    "safety_selected", "oldest_selected", "learned_selected", "learned_fraction",
                 )
             }
 
@@ -509,7 +662,7 @@ def main() -> None:
                         full_actions[worker]
                     )
                     done = terminated or truncated
-                    starvation_excess, wait_excess = stage_constraints.excesses(
+                    starvation_excess, wait_excess = active_constraints.excesses(
                         starvation_rate=float(info["starvation_rate"]),
                         p99_wait_slots=float(info["p99_wait_slots"]),
                     )
@@ -524,6 +677,9 @@ def main() -> None:
                         "base_reward": float(info["reward_total"]),
                         "constrained_reward": constrained_reward,
                         "constraint_penalty": constraint_penalty,
+                        "deadline_risk_penalty": float(info["reward_deadline_risk_penalty"]),
+                        "deadline_risk": float(info["deadline_risk"]),
+                        "tail_mean_wait": float(info["tail_mean_wait_slots"]),
                         "throughput": float(info["throughput_score"]),
                         "fairness": float(info["fairness_score"]),
                         "service": float(info["service_score"]),
@@ -537,6 +693,7 @@ def main() -> None:
                         "long_wait_retention": diagnostics.long_wait_retention_rate,
                         "long_wait_missed": float(diagnostics.long_wait_missed_count),
                         "safety_selected": float(info["safety_selected_count"]),
+                        "oldest_selected": float(info["forced_oldest_wait_count"]),
                         "learned_selected": float(info["learned_selected_count"]),
                         "learned_fraction": float(info["learned_selection_fraction"]),
                     }
@@ -620,10 +777,13 @@ def main() -> None:
                 "workers": args.workers,
                 "max_candidates": max_candidates,
                 "safety_reserve_ues": safety_reserve,
-                "stage_max_p99_wait_slots": stage_constraints.max_p99_wait_slots,
+                "stage_max_p99_wait_slots": active_constraints.max_p99_wait_slots,
                 "mean_reward": mean(metric_window["base_reward"]),
                 "mean_constrained_reward": mean(metric_window["constrained_reward"]),
                 "mean_constraint_penalty": mean(metric_window["constraint_penalty"]),
+                "mean_deadline_risk_penalty": mean(metric_window["deadline_risk_penalty"]),
+                "mean_deadline_risk": mean(metric_window["deadline_risk"]),
+                "mean_tail_mean_wait_slots": mean(metric_window["tail_mean_wait"]),
                 "mean_goodput_bits_per_slot": mean(metric_window["goodput"]),
                 "mean_throughput_score": mean(metric_window["throughput"]),
                 "mean_fairness_score": mean(metric_window["fairness"]),
@@ -641,6 +801,7 @@ def main() -> None:
                 "mean_long_wait_retention_rate": mean(metric_window["long_wait_retention"]),
                 "max_long_wait_missed_count": max(metric_window["long_wait_missed"]),
                 "mean_safety_selected_count": mean(metric_window["safety_selected"]),
+                "mean_oldest_selected_count": mean(metric_window["oldest_selected"]),
                 "mean_learned_selected_count": mean(metric_window["learned_selected"]),
                 "mean_learned_selection_fraction": mean(metric_window["learned_fraction"]),
                 **update_metrics,
@@ -659,7 +820,10 @@ def main() -> None:
             should_validate = update_index % args.validate_every == 0 or stage_env_steps >= args.steps_per_stage
             if should_validate:
                 seeds = _validation_seed_list(
-                    args.validation_seeds, stage_index, args.validation_repeats
+                    args.validation_seeds,
+                    stage_index,
+                    args.validation_repeats,
+                    fixed_seed_mode=args.single_seed_upper_bound,
                 )
                 detailed, summary = _validate(
                     model=model, device=device, num_ues=num_ues,
@@ -667,7 +831,11 @@ def main() -> None:
                     max_candidates=max_candidates,
                     safety_reserve_ues=safety_reserve,
                     long_wait_threshold=args.long_wait_threshold,
-                    constraints=stage_constraints,
+                    constraints=active_constraints,
+                    freeze_static_profiles=config.freeze_static_profiles,
+                    fixed_profile_seed=config.static_profile_seed,
+                    deadline_risk_start_ratio=args.deadline_risk_start_ratio,
+                    deadline_risk_penalty_weight=args.deadline_risk_penalty_weight,
                     update_index=update_index, stage_index=stage_index,
                     global_env_steps=global_env_steps,
                 )
@@ -700,7 +868,7 @@ def main() -> None:
                             initialized_from=initialized_from,
                             global_env_steps=global_env_steps, update_index=update_index,
                             stage_index=stage_index, num_ues=num_ues,
-                            controller=controller, constraints=stage_constraints,
+                            controller=controller, constraints=active_constraints,
                             tag=f"best_stage_{num_ues}", validation=summary,
                         ),
                     )
@@ -717,7 +885,7 @@ def main() -> None:
                                 initialized_from=initialized_from,
                                 global_env_steps=global_env_steps, update_index=update_index,
                                 stage_index=stage_index, num_ues=num_ues,
-                                controller=controller, constraints=stage_constraints,
+                                controller=controller, constraints=active_constraints,
                                 tag=f"best_feasible_stage_{num_ues}", validation=summary,
                             ),
                         )
@@ -759,6 +927,19 @@ def main() -> None:
                         controller=controller, constraints=final_constraints,
                         tag="validation", validation=summary,
                     )
+                    final_score = (
+                        float(summary["total_constraint_excess"]),
+                        -float(summary["mean_reward"]),
+                    )
+                    if (
+                        best_lowest_violation_score is None
+                        or final_score < best_lowest_violation_score
+                    ):
+                        best_lowest_violation_score = final_score
+                        best_lowest_violation_saved = True
+                        lowest_payload = copy.deepcopy(payload)
+                        lowest_payload["checkpoint_tag"] = "best_lowest_violation"
+                        _save_checkpoint(args.best_lowest_violation_output, lowest_payload)
                     if float(summary["mean_reward"]) > best_reward:
                         best_reward = float(summary["mean_reward"])
                         payload["checkpoint_tag"] = "best_reward"
@@ -783,7 +964,7 @@ def main() -> None:
                         initialized_from=initialized_from,
                         global_env_steps=global_env_steps, update_index=update_index,
                         stage_index=stage_index, num_ues=num_ues,
-                        controller=controller, constraints=stage_constraints,
+                        controller=controller, constraints=active_constraints,
                         tag="periodic", validation=last_validation,
                     ),
                 )
@@ -845,6 +1026,8 @@ def main() -> None:
 
     print(f"saved: {args.output}")
     print(f"saved: {args.best_reward_output}")
+    if best_lowest_violation_saved:
+        print(f"saved: {args.best_lowest_violation_output}")
     if best_feasible_saved:
         print(f"saved: {args.best_feasible_output}")
     else:

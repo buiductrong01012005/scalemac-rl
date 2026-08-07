@@ -11,6 +11,7 @@ class ProjectedGrant:
     prbs_per_ue: np.ndarray
     forced_harq_count: int
     forced_long_wait_count: int
+    forced_oldest_wait_count: int
     safety_selected_count: int
     learned_selected_count: int
     harq_overflow_count: int
@@ -80,24 +81,27 @@ def project_action(
     selected = list(mandatory[:max_selected_ues])
     forced_harq_count = len(selected)
 
-    # HARQ may consume more than the nominal reserve; otherwise fill the reserve
-    # with UEs approaching the configured starvation threshold.
+    # HARQ may consume more than the nominal reserve. Otherwise the reserve is
+    # filled completely with the oldest eligible UEs, even before they cross the
+    # urgent-wait threshold. This produces a dense, proactive tail-delay guard.
     safety_target = min(max_selected_ues, max(safety_reserve_ues, forced_harq_count))
     safety_slots_left = max(0, safety_target - len(selected))
     forced_long_wait_count = 0
+    forced_oldest_wait_count = 0
     if safety_slots_left > 0:
         threshold_slots = safety_wait_threshold_ratio * starvation_threshold_slots
         chosen = np.zeros(num_ues, dtype=bool)
         if selected:
             chosen[np.asarray(selected, dtype=np.int64)] = True
-        urgent = np.flatnonzero(
-            eligible & ~chosen & ~harq_bool & (time_since_service >= threshold_slots)
-        )
-        if urgent.size:
-            order = np.argsort(-time_since_service[urgent], kind="stable")
-            safety_ues = urgent[order[:safety_slots_left]]
+        oldest_candidates = np.flatnonzero(eligible & ~chosen & ~harq_bool)
+        if oldest_candidates.size:
+            order = np.argsort(-time_since_service[oldest_candidates], kind="stable")
+            safety_ues = oldest_candidates[order[:safety_slots_left]]
             selected.extend(safety_ues.tolist())
-            forced_long_wait_count = int(safety_ues.size)
+            forced_oldest_wait_count = int(safety_ues.size)
+            forced_long_wait_count = int(
+                np.sum(time_since_service[safety_ues] >= threshold_slots)
+            )
 
     safety_selected_count = len(selected)
     remaining = max_selected_ues - len(selected)
@@ -122,6 +126,7 @@ def project_action(
             prbs_per_ue=prbs_per_ue,
             forced_harq_count=0,
             forced_long_wait_count=0,
+            forced_oldest_wait_count=0,
             safety_selected_count=0,
             learned_selected_count=0,
             harq_overflow_count=harq_overflow,
@@ -142,6 +147,7 @@ def project_action(
         prbs_per_ue=prbs_per_ue,
         forced_harq_count=forced_harq_count,
         forced_long_wait_count=forced_long_wait_count,
+        forced_oldest_wait_count=forced_oldest_wait_count,
         safety_selected_count=safety_selected_count,
         learned_selected_count=learned_selected_count,
         harq_overflow_count=harq_overflow,

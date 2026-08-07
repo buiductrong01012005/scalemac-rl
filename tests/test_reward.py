@@ -23,6 +23,7 @@ def test_reward_components_are_normalized_and_sum_correctly() -> None:
         "fairness_score",
         "service_score",
         "starvation_violation",
+        "deadline_risk",
     ):
         assert 0.0 <= info[key] <= 1.0
 
@@ -31,6 +32,7 @@ def test_reward_components_are_normalized_and_sum_correctly() -> None:
         + info["reward_fairness_component"]
         + info["reward_service_component"]
         - info["reward_starvation_penalty"]
+        - info["reward_deadline_risk_penalty"]
     )
     assert np.isclose(reward, reconstructed)
     assert np.isclose(reward, info["reward_total"])

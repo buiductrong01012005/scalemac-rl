@@ -17,5 +17,10 @@
   "starvation_tolerance": 0.0,
   "seed": 7,
   "safety_reserve_ues": 16,
-  "safety_wait_threshold_ratio": 0.8
+  "safety_wait_threshold_ratio": 0.8,
+  "freeze_static_profiles": false,
+  "static_profile_seed": null,
+  "deadline_target_slots": 50.0,
+  "deadline_risk_start_ratio": 0.6,
+  "reward_deadline_risk_penalty_weight": 0.15
 }

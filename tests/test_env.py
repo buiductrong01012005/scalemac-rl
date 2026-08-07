@@ -39,3 +39,21 @@ def test_static_cqi_within_episode() -> None:
     action = np.ones((64, 2), dtype=np.float32)
     observation, *_ = env.step(action)
     assert np.array_equal(cqi_before, observation[:, 0])
+
+
+def test_frozen_static_profile_is_reused_across_resets() -> None:
+    cfg = ScaleMacConfig(
+        num_ues=64,
+        num_prbs=32,
+        max_selected_ues=16,
+        freeze_static_profiles=True,
+        static_profile_seed=1234,
+        seed=7,
+    )
+    env = ScaleMacDownlinkEnv(cfg)
+    env.reset(seed=10)
+    first_cqi = env.cqi.copy()
+    first_demand = env.demand_factor.copy()
+    env.reset(seed=999)
+    assert np.array_equal(env.cqi, first_cqi)
+    assert np.array_equal(env.demand_factor, first_demand)
