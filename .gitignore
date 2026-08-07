@@ -5,12 +5,7 @@ __pycache__/
 dist/
 build/
 *.egg-info/
-artifacts/*.csv
-artifacts/*.json
-artifacts/*.pt
-artifacts/**/*.csv
-artifacts/**/*.json
-artifacts/**/*.pt
+artifacts/
 *.zip
 *.*zip
 docs/reports/*.md

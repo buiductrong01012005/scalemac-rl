@@ -6,6 +6,7 @@ from pathlib import Path
 import torch
 
 from scalemac_rl import ScaleMacConfig
+from scalemac_rl.checkpoints import require_checkpoint
 from scalemac_rl.constraints import ServiceConstraints
 from scalemac_rl.models import SharedSetActorCritic
 from scalemac_rl.reporting import (
@@ -43,7 +44,11 @@ def main() -> None:
     args = parser.parse_args()
 
     device = _resolve_device(args.device)
-    checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=False)
+    try:
+        checkpoint_path = require_checkpoint(args.checkpoint)
+    except FileNotFoundError as exc:
+        parser.error(str(exc))
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     model = SharedSetActorCritic(
         input_dim=checkpoint.get("input_dim", 8), hidden_dim=checkpoint["hidden_dim"]
     ).to(device)

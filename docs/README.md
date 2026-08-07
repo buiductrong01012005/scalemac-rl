@@ -162,7 +162,7 @@ This remains a **fast surrogate**, not a 3GPP-complete or 5G-LENA scheduler. Sta
 
 ```text
 scalemac-rl/
-├── artifacts/          # CSV data and model checkpoints
+├── artifacts/          # generated at runtime; never included in source archives
 ├── docs/
 │   ├── README.md
 │   ├── releases/       # Version notes
@@ -172,3 +172,7 @@ scalemac-rl/
 ```
 
 ZIP archives are ignored through both `*.zip` and the requested `*.*zip` pattern.
+
+## Source archive policy
+
+Release ZIP files contain source code, tests, configs, and documentation only. They do not contain an `artifacts/` directory, so extracting a new source release cannot overwrite existing experiment results or checkpoints. Scripts create output directories automatically when needed.
