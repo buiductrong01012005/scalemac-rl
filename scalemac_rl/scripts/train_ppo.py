@@ -239,6 +239,7 @@ def _checkpoint_payload(
             "population_wait_penalty_weight": args.population_wait_penalty_weight,
             "low_throughput_percentile": args.low_throughput_percentile,
             "starvation_threshold_slots": args.starvation_threshold_slots,
+            "reward_positive_scale": args.reward_positive_scale,
             "reward_throughput_weight": args.reward_throughput_weight,
             "reward_fairness_weight": args.reward_fairness_weight,
             "reward_service_weight": args.reward_service_weight,
@@ -248,6 +249,7 @@ def _checkpoint_payload(
             "reward_urgency_service_weight": args.reward_urgency_service_weight,
             "reward_fairness_delta_weight": args.reward_fairness_delta_weight,
             "reward_pf_utility_delta_weight": args.reward_pf_utility_delta_weight,
+            "reward_starvation_penalty_weight": args.reward_starvation_penalty_weight,
             "fairness_target_schedule": args.fairness_target_schedule,
             "reference_deadline_target_slots": args.max_p99_wait_slots,
             "max_wait_target_slots": args.max_wait_slots,
@@ -386,6 +388,7 @@ def _validate(
     deadline_risk_penalty_weight: float,
     reference_deadline_target_slots: float,
     starvation_threshold_slots: int,
+    reward_positive_scale: float,
     reward_throughput_weight: float,
     reward_fairness_weight: float,
     reward_service_weight: float,
@@ -395,6 +398,7 @@ def _validate(
     reward_urgency_service_weight: float,
     reward_fairness_delta_weight: float,
     reward_pf_utility_delta_weight: float,
+    reward_starvation_penalty_weight: float,
     max_wait_target_slots: float,
     max_wait_risk_penalty_weight: float,
     population_wait_penalty_weight: float,
@@ -419,6 +423,7 @@ def _validate(
         deadline_risk_start_ratio=deadline_risk_start_ratio,
         reward_deadline_risk_penalty_weight=deadline_risk_penalty_weight,
         starvation_threshold_slots=starvation_threshold_slots,
+        reward_positive_scale=reward_positive_scale,
         reward_throughput_weight=reward_throughput_weight,
         reward_fairness_weight=reward_fairness_weight,
         reward_service_weight=reward_service_weight,
@@ -428,6 +433,7 @@ def _validate(
         reward_urgency_service_weight=reward_urgency_service_weight,
         reward_fairness_delta_weight=reward_fairness_delta_weight,
         reward_pf_utility_delta_weight=reward_pf_utility_delta_weight,
+        reward_starvation_penalty_weight=reward_starvation_penalty_weight,
         max_wait_target_slots=max_wait_target_slots,
         reward_max_wait_risk_penalty_weight=max_wait_risk_penalty_weight,
         reward_population_wait_penalty_weight=population_wait_penalty_weight,
@@ -577,6 +583,7 @@ def main() -> None:
     parser.add_argument("--population-wait-penalty-weight", type=float, default=0.0)
     parser.add_argument("--low-throughput-percentile", type=float, default=10.0)
     parser.add_argument("--starvation-threshold-slots", type=int, default=64)
+    parser.add_argument("--reward-positive-scale", type=float, default=1.0)
     parser.add_argument("--reward-throughput-weight", type=float, default=0.45)
     parser.add_argument("--reward-fairness-weight", type=float, default=0.35)
     parser.add_argument("--reward-service-weight", type=float, default=0.15)
@@ -586,6 +593,7 @@ def main() -> None:
     parser.add_argument("--reward-urgency-service-weight", type=float, default=0.0)
     parser.add_argument("--reward-fairness-delta-weight", type=float, default=0.03)
     parser.add_argument("--reward-pf-utility-delta-weight", type=float, default=0.02)
+    parser.add_argument("--reward-starvation-penalty-weight", type=float, default=0.50)
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument(
@@ -712,6 +720,10 @@ def main() -> None:
         parser.error("min-throughput-score must be in (0, 1]")
     if args.starvation_threshold_slots <= 0:
         parser.error("starvation-threshold-slots must be positive")
+    if args.reward_positive_scale < 0.0:
+        parser.error("reward-positive-scale must be non-negative")
+    if args.reward_starvation_penalty_weight < 0.0:
+        parser.error("reward-starvation-penalty-weight must be non-negative")
     reward_weight_sum = (
         args.reward_throughput_weight
         + args.reward_fairness_weight
@@ -872,6 +884,7 @@ def main() -> None:
             reward_deadline_risk_penalty_weight=args.deadline_risk_penalty_weight,
             reward_max_wait_risk_penalty_weight=args.max_wait_risk_penalty_weight,
             starvation_threshold_slots=args.starvation_threshold_slots,
+            reward_positive_scale=args.reward_positive_scale,
             reward_throughput_weight=args.reward_throughput_weight,
             reward_fairness_weight=args.reward_fairness_weight,
             reward_service_weight=args.reward_service_weight,
@@ -881,6 +894,7 @@ def main() -> None:
             reward_urgency_service_weight=args.reward_urgency_service_weight,
             reward_fairness_delta_weight=args.reward_fairness_delta_weight,
             reward_pf_utility_delta_weight=args.reward_pf_utility_delta_weight,
+            reward_starvation_penalty_weight=args.reward_starvation_penalty_weight,
             max_wait_target_slots=args.max_wait_slots,
             reward_population_wait_penalty_weight=args.population_wait_penalty_weight,
             low_throughput_percentile=args.low_throughput_percentile,
@@ -1296,6 +1310,7 @@ def main() -> None:
                     deadline_risk_penalty_weight=args.deadline_risk_penalty_weight,
                     reference_deadline_target_slots=args.max_p99_wait_slots,
                     starvation_threshold_slots=args.starvation_threshold_slots,
+                    reward_positive_scale=args.reward_positive_scale,
                     reward_throughput_weight=args.reward_throughput_weight,
                     reward_fairness_weight=args.reward_fairness_weight,
                     reward_service_weight=args.reward_service_weight,
@@ -1305,6 +1320,7 @@ def main() -> None:
                     reward_urgency_service_weight=args.reward_urgency_service_weight,
                     reward_fairness_delta_weight=args.reward_fairness_delta_weight,
                     reward_pf_utility_delta_weight=args.reward_pf_utility_delta_weight,
+                    reward_starvation_penalty_weight=args.reward_starvation_penalty_weight,
                     max_wait_target_slots=args.max_wait_slots,
                     max_wait_risk_penalty_weight=args.max_wait_risk_penalty_weight,
                     population_wait_penalty_weight=args.population_wait_penalty_weight,

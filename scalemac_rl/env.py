@@ -617,20 +617,33 @@ class ScaleMacDownlinkEnv:
 
     def _reward(self, metrics: dict[str, Any]) -> tuple[float, dict[str, float]]:
         cfg = self.config
-        throughput_component = cfg.reward_throughput_weight * metrics["throughput_score"]
-        fairness_component = cfg.reward_fairness_weight * metrics["fairness_score"]
-        service_component = cfg.reward_service_weight * metrics["service_score"]
+        positive_scale = cfg.reward_positive_scale
+        throughput_component = (
+            positive_scale * cfg.reward_throughput_weight * metrics["throughput_score"]
+        )
+        fairness_component = (
+            positive_scale * cfg.reward_fairness_weight * metrics["fairness_score"]
+        )
+        service_component = (
+            positive_scale * cfg.reward_service_weight * metrics["service_score"]
+        )
         deficit_service_component = (
-            cfg.reward_deficit_service_weight * metrics["deficit_service_score"]
+            positive_scale
+            * cfg.reward_deficit_service_weight
+            * metrics["deficit_service_score"]
         )
         pf_utility_component = (
-            cfg.reward_pf_utility_weight * metrics["pf_utility_score"]
+            positive_scale * cfg.reward_pf_utility_weight * metrics["pf_utility_score"]
         )
         low_throughput_component = (
-            cfg.reward_low_throughput_weight * metrics["low_throughput_score"]
+            positive_scale
+            * cfg.reward_low_throughput_weight
+            * metrics["low_throughput_score"]
         )
         urgency_service_component = (
-            cfg.reward_urgency_service_weight * metrics["urgency_service_score"]
+            positive_scale
+            * cfg.reward_urgency_service_weight
+            * metrics["urgency_service_score"]
         )
         fairness_progress_component = (
             cfg.reward_fairness_delta_weight * metrics["fairness_progress"]

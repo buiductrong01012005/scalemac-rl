@@ -1,0 +1,106 @@
+{
+  "study_id": "full_control_reward_study",
+  "round_id": "round_02_cumulative_equal",
+  "description": "Add objective families gradually. Actual family coefficients are equal within each case. Positive relative weights still sum to one, while positive_scale makes their absolute coefficients comparable with penalties.",
+  "common": {
+    "environment_steps": 100096,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_seeds": [1701],
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "seed": 1701,
+    "profile_seed": 1701,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.10,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 0.000025,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "constraint_training": false,
+    "reward_normalization": "Active objective families receive equal absolute coefficients. The delay family is the mean of deadline, max-wait, and population-wait risks."
+  },
+  "cases": [
+    {
+      "id": "r0_throughput",
+      "label": "R0: throughput",
+      "hypothesis": "Reference policy for maximum goodput pressure.",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 1.0}
+    },
+    {
+      "id": "r1_add_jain_equal",
+      "label": "R1: throughput + Jain",
+      "hypothesis": "Equal throughput and Jain coefficients reveal the direct two-objective trade-off.",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.5, "fairness": 0.5}
+    },
+    {
+      "id": "r2_add_starvation_equal",
+      "label": "R2: add starvation",
+      "hypothesis": "Throughput, Jain fairness, and starvation each receive coefficient one third.",
+      "positive_scale": 0.6666666666666666,
+      "positive_weights": {"throughput": 0.5, "fairness": 0.5},
+      "penalty_weights": {"starvation": 0.3333333333333333}
+    },
+    {
+      "id": "r3_add_delay_equal",
+      "label": "R3: add delay family",
+      "hypothesis": "Throughput, Jain, starvation, and aggregate delay each receive coefficient one quarter.",
+      "positive_scale": 0.5,
+      "positive_weights": {"throughput": 0.5, "fairness": 0.5},
+      "penalty_weights": {
+        "starvation": 0.25,
+        "deadline_risk": 0.08333333333333333,
+        "max_wait_risk": 0.08333333333333333,
+        "population_wait": 0.08333333333333333
+      }
+    },
+    {
+      "id": "r4a_add_pf_equal",
+      "label": "R4a: add PF utility",
+      "hypothesis": "PF utility is added as a fifth equal family without adding other fairness proxies.",
+      "positive_scale": 0.6,
+      "positive_weights": {"throughput": 0.3333333333333333, "fairness": 0.3333333333333333, "pf_utility": 0.3333333333333333},
+      "penalty_weights": {
+        "starvation": 0.2,
+        "deadline_risk": 0.06666666666666667,
+        "max_wait_risk": 0.06666666666666667,
+        "population_wait": 0.06666666666666667
+      }
+    },
+    {
+      "id": "r4b_add_deficit_equal",
+      "label": "R4b: add deficit service",
+      "hypothesis": "Deficit service is added as a fifth equal family and compared directly with PF utility.",
+      "positive_scale": 0.6,
+      "positive_weights": {"throughput": 0.3333333333333333, "fairness": 0.3333333333333333, "deficit_service": 0.3333333333333333},
+      "penalty_weights": {
+        "starvation": 0.2,
+        "deadline_risk": 0.06666666666666667,
+        "max_wait_risk": 0.06666666666666667,
+        "population_wait": 0.06666666666666667
+      }
+    },
+    {
+      "id": "r4c_add_low_throughput_equal",
+      "label": "R4c: add low throughput",
+      "hypothesis": "Bottom-throughput pressure is added as a fifth equal family and compared with PF and deficit service.",
+      "positive_scale": 0.6,
+      "positive_weights": {"throughput": 0.3333333333333333, "fairness": 0.3333333333333333, "low_throughput": 0.3333333333333333},
+      "penalty_weights": {
+        "starvation": 0.2,
+        "deadline_risk": 0.06666666666666667,
+        "max_wait_risk": 0.06666666666666667,
+        "population_wait": 0.06666666666666667
+      }
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "study_id": "full_control_reward_study",
+  "round_id": "round_01_component_screen",
+  "description": "Train one normalized positive reward component at a time. All dense deltas, explicit penalties, and Lagrangian training penalties are disabled so learnability can be attributed to that component.",
+  "common": {
+    "environment_steps": 65536,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_seeds": [1701],
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "seed": 1701,
+    "profile_seed": 1701,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.10,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 0.000025,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "constraint_training": false,
+    "reward_normalization": "All raw component scores are bounded or normalized by the environment. Each screening case gives its only active positive component coefficient 1.0."
+  },
+  "cases": [
+    {
+      "id": "throughput_only",
+      "label": "Throughput only",
+      "hypothesis": "Measures how quickly PPO learns spectral efficiency without any fairness or safety signal.",
+      "positive_weights": {"throughput": 1.0}
+    },
+    {
+      "id": "jain_fairness_only",
+      "label": "Jain fairness only",
+      "hypothesis": "Tests whether the cell-level Jain score provides sufficient credit for per-UE scheduling.",
+      "positive_weights": {"fairness": 1.0}
+    },
+    {
+      "id": "service_only",
+      "label": "Service only",
+      "hypothesis": "Tests whether broad successful-service coverage is easy for PPO to optimize.",
+      "positive_weights": {"service": 1.0}
+    },
+    {
+      "id": "deficit_service_only",
+      "label": "Throughput-deficit service only",
+      "hypothesis": "Tests whether serving below-average UEs gives denser fairness credit than Jain fairness.",
+      "positive_weights": {"deficit_service": 1.0}
+    },
+    {
+      "id": "pf_utility_only",
+      "label": "PF utility only",
+      "hypothesis": "Tests proportional-fair utility as a standalone throughput-fairness signal.",
+      "positive_weights": {"pf_utility": 1.0}
+    },
+    {
+      "id": "low_throughput_only",
+      "label": "Low-percentile throughput only",
+      "hypothesis": "Tests whether direct pressure on the bottom-throughput group improves fairness.",
+      "positive_weights": {"low_throughput": 1.0}
+    },
+    {
+      "id": "urgency_service_only",
+      "label": "Urgency service only",
+      "hypothesis": "Tests whether serving high-wait UEs is sufficient to learn a stable service cycle.",
+      "positive_weights": {"urgency_service": 1.0}
+    }
+  ]
+}

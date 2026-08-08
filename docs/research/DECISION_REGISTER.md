@@ -17,3 +17,11 @@
 **Decision:** Use the 16-feature per-UE observation while preserving the existing shared set-encoder architecture with hidden dimension 64 and global mean/max pooling. PPO controls all UE selection and PRB-demand decisions.
 
 **Reason:** The research question concerns whether richer state information and reward/hyperparameter tuning let PPO learn the full scheduling trade-off. Changing to GNN, CNN, attention, or recurrent layers in the same experiment would confound representation architecture with observation design.
+
+## DR-008 — Treat reward design as a staged empirical study
+
+**Decision:** Freeze environment, 16-feature input, Set Encoder, PPO architecture, and PPO hyperparameters during initial reward discovery. Screen reward components independently, add objective families gradually with comparable coefficients, then tune retained weights and analyze the Pareto frontier.
+
+**Reason:** The previous reward combined seven positive components, dense deltas, explicit penalties, and Lagrangian penalties. This made causal attribution weak even when KPI outcomes were measurable.
+
+**Operational consequence:** Reward-study runs disable undeclared shaping and Lagrangian training penalties. Each run records exact coefficients, decomposition, KPIs, seed, hyperparameters, and checkpoint provenance in a reusable dataset.

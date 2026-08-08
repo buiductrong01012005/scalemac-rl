@@ -55,6 +55,11 @@ class ScaleMacConfig:
     # All positive reward scores are normalized to [0, 1]. Throughput remains
     # the main objective, while fairness, service, and per-UE deficit credit
     # regularize the solution.
+    # Global scale for the normalized positive reward mixture. This allows
+    # reward-study cases to give positive and penalty objective families equal
+    # absolute coefficients while preserving relative positive weights that sum
+    # to one. The default keeps legacy behaviour unchanged.
+    reward_positive_scale: float = 1.0
     reward_throughput_weight: float = 0.45
     reward_fairness_weight: float = 0.35
     reward_service_weight: float = 0.15
@@ -149,6 +154,9 @@ class ScaleMacConfig:
             raise ValueError("CQI fractions must sum to 1")
         if abs(demand_sum - 1.0) > 1e-6:
             raise ValueError("demand fractions must sum to 1")
+
+        if self.reward_positive_scale < 0.0:
+            raise ValueError("reward_positive_scale must be non-negative")
 
         reward_sum = (
             self.reward_throughput_weight

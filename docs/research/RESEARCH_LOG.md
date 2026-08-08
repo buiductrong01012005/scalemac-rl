@@ -122,3 +122,16 @@ PPO không cần đứng đầu từng KPI. PPO được xem là tốt hơn về
 ## v0.8.2 correction — 16 features, unchanged set-encoder architecture
 
 The intended experiment keeps the expanded 16-feature observation but does not replace the existing encoder architecture. Every UE is still processed by the same shared MLP with a 64-dimensional hidden representation, followed by global set pooling. PPO then scores all 1,200 UEs, selects the Top-64, and predicts PRB demand. No candidate rule or safety rule selects UEs for the policy.
+
+## v0.8.4 — Controlled reward discovery
+
+The v0.8.3 rule-free full-control run learned zero starvation and acceptable tail delay, but Jain fairness remained far below the official target. The next phase therefore freezes the 16-feature observation, shared Set Encoder, PPO architecture, full 1,200-UE action scope, and optimizer settings while varying only reward structure.
+
+Two initial rounds are registered:
+
+- `round_01_component_screen`: each normalized positive reward component is trained alone;
+- `round_02_cumulative_equal`: throughput, Jain fairness, starvation, delay, and one optional fairness proxy are added gradually with comparable actual coefficients.
+
+Lagrangian training penalties are disabled in these attribution rounds so the observed behaviour can be traced to the declared reward case. Constraint KPIs remain active for validation and reporting.
+
+Every completed run is appended to a reward-weight dataset and checked for Pareto dominance. Later weight sweeps and multi-seed confirmations will use the same dataset schema.

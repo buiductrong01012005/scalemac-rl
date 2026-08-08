@@ -18,3 +18,7 @@ Thư mục này ghi lại **quá trình khám phá môi trường**, các giả 
 3. **So sánh cùng protocol.** Cùng CQI/demand profile, HARQ seed, số PRB, Top-K và thời lượng rollout.
 4. **Không để rule che năng lực PPO.** Nhánh nghiên cứu chính là PPO-only full control; rule chỉ còn là baseline hoặc ablation.
 5. **Ghi lại kết quả âm.** Plateau, collapse và checkpoint không feasible đều là bằng chứng về môi trường và thiết kế học.
+
+## Reward study
+
+Open `reward_study/index.html` for the HTML research log, baseline analysis, methodology, and generated round reports.

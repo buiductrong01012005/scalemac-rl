@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ScaleMAC-RL Reward Study</title>
+<style>body{font-family:Segoe UI,Arial,sans-serif;background:#f5f7fb;color:#172033;margin:0;line-height:1.55}main{max-width:980px;margin:auto;padding:28px}header,section{background:white;border:1px solid #dfe5ee;border-radius:16px;padding:22px;margin-bottom:16px}header{background:linear-gradient(135deg,#18264a,#315efb);color:white}a{color:#315efb}code{background:#eef1f7;padding:2px 5px;border-radius:4px}</style></head>
+<body><main><header><h1>ScaleMAC-RL Reward Study</h1><p>Ghi lại quá trình khám phá reward, tune trọng số, phân tích Pareto và xây dataset tái sử dụng.</p></header>
+<section><h2>Tài liệu</h2><ul><li><a href="methodology.html">Phương pháp nghiên cứu reward</a></li><li><a href="baselines/v083_full_control_baseline.html">Baseline v0.8.3: reward phức tạp</a></li><li><a href="generated/index.html">Báo cáo được tạo tự động từ các run</a></li></ul></section>
+<section><h2>Thứ tự vòng</h2><ol><li>Screen từng component độc lập.</li><li>Cộng dần các objective family với hệ số thực tế bằng nhau.</li><li>Sweep trọng số quanh các cấu hình có chuyển biến tốt.</li><li>Xác nhận đa seed và dựng Pareto frontier.</li><li>Query dataset theo yêu cầu KPI thay vì chọn trọng số thủ công.</li></ol></section>
+<section><h2>Output chuẩn</h2><p><code>artifacts/runs/reward_study/&lt;round&gt;/&lt;case&gt;/</code></p></section></main></body></html>
