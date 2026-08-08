@@ -25,3 +25,10 @@
 **Reason:** The previous reward combined seven positive components, dense deltas, explicit penalties, and Lagrangian penalties. This made causal attribution weak even when KPI outcomes were measurable.
 
 **Operational consequence:** Reward-study runs disable undeclared shaping and Lagrangian training penalties. Each run records exact coefficients, decomposition, KPIs, seed, hyperparameters, and checkpoint provenance in a reusable dataset.
+
+## Decision: diagnose policy action mode before adding more reward terms
+
+- **Decision:** compare deterministic and stochastic execution of the same Round 02 checkpoints.
+- **Reason:** a larger Jain coefficient produced worse deterministic fairness, suggesting flat priorities or Top-K tie behaviour rather than a simple reward-weight problem.
+- **Controlled variables:** 16 features/UE, shared Set Encoder, PPO, full-control 1200 UE environment, reward weights, and checkpoint remain unchanged.
+- **Deferred:** new rewards, hyperparameter tuning, architecture changes, dataset generation, and Pareto analysis.

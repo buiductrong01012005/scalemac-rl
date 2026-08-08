@@ -143,3 +143,14 @@ Every completed run is appended to a reward-weight dataset and checked for Paret
 - Define P99 wait in plain language in generated HTML.
 - Sweep only throughput and Jain fairness before introducing any safety penalty.
 - Store all, safety-filtered, and strict-constraint Pareto fronts separately.
+
+## v0.8.6 — Diagnose train/inference fairness gap before further reward tuning
+
+Round 02 showed that the 25/75 throughput–Jain configuration could have high
+fairness during stochastic PPO rollouts but severe starvation under deterministic
+validation. The next experiment therefore keeps reward, environment, observations,
+and architecture fixed and measures whether Beta sampling is breaking near-ties
+that deterministic Top-K resolves by repeatedly selecting a small UE subset.
+
+No dataset or Pareto workflow is part of the current phase. Those remain a possible
+future study after the scheduler and reward have been optimized and understood.

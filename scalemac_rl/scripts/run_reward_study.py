@@ -225,9 +225,12 @@ def main() -> None:
         default=True,
     )
     parser.add_argument(
-        "--skip-build-dataset",
+        "--build-dataset",
         action="store_true",
-        help="do not rebuild CSV/Pareto/HTML summaries after the round",
+        help=(
+            "opt in to the future dataset/Pareto workflow; disabled by default during "
+            "the current environment and reward exploration phase"
+        ),
     )
     args = parser.parse_args()
 
@@ -330,7 +333,7 @@ def main() -> None:
                 {"status": "completed", "return_code": 0, "finished_unix": time()},
             )
 
-    if not args.dry_run and not args.skip_build_dataset:
+    if not args.dry_run and args.build_dataset:
         command = [
             sys.executable,
             "-m",
