@@ -164,11 +164,11 @@ def _learned_row(
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Hold one hybrid actor fixed and vary how many UE selections are made "
-            "by rules. This quantifies whether the rule is lifting the PPO policy."
+            "Hold one actor fixed and vary how many UE selections are made by rules. "
+            "This quantifies whether the rule is lifting the PPO policy."
         )
     )
-    parser.add_argument("--hybrid-checkpoint", type=Path, required=True)
+    parser.add_argument("--actor-checkpoint", "--hybrid-checkpoint", dest="actor_checkpoint", type=Path, required=True)
     parser.add_argument("--ppo-only-checkpoint", type=Path)
     parser.add_argument("--rule-reserves", default="8,16,24,32,48,64")
     parser.add_argument(
@@ -218,8 +218,8 @@ def main() -> None:
     )
     protocol.validate()
 
-    hybrid_path = require_checkpoint(args.hybrid_checkpoint)
-    hybrid_model, hybrid_checkpoint = load_policy_checkpoint(hybrid_path, device)
+    actor_path = require_checkpoint(args.actor_checkpoint)
+    actor_model, actor_checkpoint = load_policy_checkpoint(actor_path, device)
 
     ppo_only_loaded: tuple[Path, Any, dict[str, Any], PolicyRuntime] | None = None
     if args.ppo_only_checkpoint:
@@ -283,7 +283,7 @@ def main() -> None:
 
         # Same actor, no rules at all: the causal reference for rule lift.
         ppo_same_runtime = _runtime(
-            hybrid_checkpoint,
+            actor_checkpoint,
             num_ues=args.num_ues,
             scheduler_mode="ppo_only",
             reserve=0,
@@ -292,9 +292,9 @@ def main() -> None:
         rows.append(
             _learned_row(
                 name="ppo_same_weights",
-                model=hybrid_model,
-                checkpoint_path=hybrid_path,
-                checkpoint=hybrid_checkpoint,
+                model=actor_model,
+                checkpoint_path=actor_path,
+                checkpoint=actor_checkpoint,
                 runtime=ppo_same_runtime,
                 protocol=protocol,
                 seed=seed,
@@ -308,7 +308,7 @@ def main() -> None:
 
         # Isolate the smallest rule contribution: mandatory HARQ only.
         harq_runtime = _runtime(
-            hybrid_checkpoint,
+            actor_checkpoint,
             num_ues=args.num_ues,
             scheduler_mode="hybrid",
             reserve=0,
@@ -316,7 +316,7 @@ def main() -> None:
         )
         if args.include_all_ues_ablation:
             ppo_all_runtime = resolve_policy_runtime(
-                hybrid_checkpoint,
+                actor_checkpoint,
                 num_ues=args.num_ues,
                 scheduler_mode="ppo_only",
                 candidate_mode="all",
@@ -327,9 +327,9 @@ def main() -> None:
             rows.append(
                 _learned_row(
                     name="ppo_same_weights_all1200",
-                    model=hybrid_model,
-                    checkpoint_path=hybrid_path,
-                    checkpoint=hybrid_checkpoint,
+                    model=actor_model,
+                    checkpoint_path=actor_path,
+                    checkpoint=actor_checkpoint,
                     runtime=ppo_all_runtime,
                     protocol=protocol,
                     seed=seed,
@@ -344,9 +344,9 @@ def main() -> None:
         rows.append(
             _learned_row(
                 name="hybrid_harq_only",
-                model=hybrid_model,
-                checkpoint_path=hybrid_path,
-                checkpoint=hybrid_checkpoint,
+                model=actor_model,
+                checkpoint_path=actor_path,
+                checkpoint=actor_checkpoint,
                 runtime=harq_runtime,
                 protocol=protocol,
                 seed=seed,
@@ -360,7 +360,7 @@ def main() -> None:
 
         for reserve in reserves:
             runtime = _runtime(
-                hybrid_checkpoint,
+                actor_checkpoint,
                 num_ues=args.num_ues,
                 scheduler_mode="hybrid",
                 reserve=reserve,
@@ -369,9 +369,9 @@ def main() -> None:
             rows.append(
                 _learned_row(
                     name=f"hybrid_rule_{reserve:02d}",
-                    model=hybrid_model,
-                    checkpoint_path=hybrid_path,
-                    checkpoint=hybrid_checkpoint,
+                    model=actor_model,
+                    checkpoint_path=actor_path,
+                    checkpoint=actor_checkpoint,
                     runtime=runtime,
                     protocol=protocol,
                     seed=seed,
@@ -387,7 +387,7 @@ def main() -> None:
 
         if args.include_all_ues_ablation:
             checkpoint_runtime = resolve_policy_runtime(
-                hybrid_checkpoint,
+                actor_checkpoint,
                 num_ues=args.num_ues,
                 scheduler_mode="hybrid",
                 candidate_mode="all",
@@ -396,9 +396,9 @@ def main() -> None:
             rows.append(
                 _learned_row(
                     name=f"hybrid_rule_{checkpoint_runtime.safety_reserve_ues:02d}_all1200",
-                    model=hybrid_model,
-                    checkpoint_path=hybrid_path,
-                    checkpoint=hybrid_checkpoint,
+                    model=actor_model,
+                    checkpoint_path=actor_path,
+                    checkpoint=actor_checkpoint,
                     runtime=checkpoint_runtime,
                     protocol=protocol,
                     seed=seed,
@@ -444,7 +444,7 @@ def main() -> None:
         markdown_report_path(args.output),
         title="ScaleMAC-RL rule/PPO split ablation",
         description=(
-            "The hybrid actor weights are held fixed while rule-selected UE grants are varied. "
+            "The actor weights are held fixed while rule-selected UE grants are varied. "
             "This isolates rule dependence from PPO retraining effects."
         ),
         rows=rows,

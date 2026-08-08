@@ -442,3 +442,40 @@ python -m scalemac_rl.scripts.train_hybrid_split --reserve 24
 
 The default fine-tuning budget is 120,064 environment steps. Every split starts
 from the same existing hybrid checkpoint unless `--start-checkpoint` is provided.
+
+## v0.7.6: PPO-only actor with a small safety guard
+
+First hold the independently trained PPO-only actor fixed and vary only the number
+of rule-selected grants:
+
+```powershell
+python -m scalemac_rl.scripts.run_ppo_guard_ablation `
+  --ppo-checkpoint .\artifacts\ppo_only_300k_best_tradeoff.pt `
+  --rule-reserves 4,8,12,16 `
+  --num-ues 1200 `
+  --slots 5000 `
+  --seed 1701 `
+  --seeds 5 `
+  --profile-seed 1701
+```
+
+This produces `ppo_guard_ablation_dependency.csv`. The zero-rule row is the same
+PPO actor running without any safety selection. Positive `rule_lift_*` values show
+exactly how much the small guard changes each KPI.
+
+Fine-tune only one or two non-dominated reserves, starting from the PPO-only
+checkpoint rather than the old hybrid actor:
+
+```powershell
+python -m scalemac_rl.scripts.train_ppo_guarded `
+  --reserve 8 `
+  --start-checkpoint .\artifacts\ppo_only_300k_best_tradeoff.pt
+```
+
+The default fine-tuning budget is 120,064 environment steps. A second candidate can
+be trained with `--reserve 4` using the same starting checkpoint.
+
+Architecture experiments are specified in `docs/ARCHITECTURE_EXPERIMENTS.md`.
+Recurrent PPO should use a shared per-UE GRU with set pooling. A 1-D CNN should only
+operate on a stable sorted UE/candidate sequence; convolution over raw UE IDs is not
+meaningful.
