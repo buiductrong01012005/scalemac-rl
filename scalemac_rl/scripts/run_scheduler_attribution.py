@@ -56,6 +56,25 @@ def _learned_config(
     reserve = int(training.get("safety_reserve_ues", 16))
     if scheduler_mode == "ppo_only":
         reserve = 0
+    reward_throughput_weight = float(training.get("reward_throughput_weight", 0.50))
+    reward_fairness_weight = float(training.get("reward_fairness_weight", 0.35))
+    reward_service_weight = float(training.get("reward_service_weight", 0.15))
+    stored_deficit_weight = training.get("reward_deficit_service_weight")
+    if stored_deficit_weight is None:
+        # v0.6.x checkpoints predate the deficit-service reward. Preserve their
+        # original convex reward instead of silently adding the v0.7 default.
+        reward_deficit_service_weight = max(
+            0.0,
+            1.0
+            - reward_throughput_weight
+            - reward_fairness_weight
+            - reward_service_weight,
+        )
+        if reward_deficit_service_weight < 1e-12:
+            reward_deficit_service_weight = 0.0
+    else:
+        reward_deficit_service_weight = float(stored_deficit_weight)
+
     config = ScaleMacConfig(
         num_ues=num_ues,
         max_selected_ues=min(64, num_ues),
@@ -78,12 +97,10 @@ def _learned_config(
             training.get("max_wait_risk_penalty_weight", 0.10)
         ),
         starvation_threshold_slots=int(training.get("starvation_threshold_slots", 64)),
-        reward_throughput_weight=float(training.get("reward_throughput_weight", 0.45)),
-        reward_fairness_weight=float(training.get("reward_fairness_weight", 0.35)),
-        reward_service_weight=float(training.get("reward_service_weight", 0.15)),
-        reward_deficit_service_weight=float(
-            training.get("reward_deficit_service_weight", 0.05)
-        ),
+        reward_throughput_weight=reward_throughput_weight,
+        reward_fairness_weight=reward_fairness_weight,
+        reward_service_weight=reward_service_weight,
+        reward_deficit_service_weight=reward_deficit_service_weight,
         reward_fairness_delta_weight=float(
             training.get("reward_fairness_delta_weight", 0.03)
         ),
