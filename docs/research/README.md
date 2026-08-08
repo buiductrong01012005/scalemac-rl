@@ -21,4 +21,4 @@ Thư mục này ghi lại **quá trình khám phá môi trường**, các giả 
 
 ## Reward study
 
-Open `reward_study/index.html` for the HTML research log, baseline analysis, methodology, and generated round reports.
+Các bản phân tích HTML được lưu riêng tại [`../analysis/reward_study/index.html`](../analysis/reward_study/index.html). `docs/research/` giữ kế hoạch và nhật ký; `docs/analysis/` giữ kết quả phân tích để sau này tổng hợp thành khóa luận; `docs/reports/` dành cho báo cáo chính thức.

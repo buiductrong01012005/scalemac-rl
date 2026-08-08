@@ -80,7 +80,7 @@ def test_reward_case_rejects_non_normalized_relative_positive_weights() -> None:
 def test_round_plans_are_valid_and_unique() -> None:
     for path in (
         Path("configs/reward_study/round_01_component_screen.json"),
-        Path("configs/reward_study/round_02_cumulative_equal.json"),
+        Path("configs/reward_study/round_02_throughput_jain_sweep.json"),
     ):
         plan = RewardStudyPlan.from_json(path)
         assert plan.cases
@@ -103,7 +103,38 @@ def test_pareto_front_mixed_objectives() -> None:
 
 def test_baseline_analysis_is_stored_in_docs() -> None:
     path = Path(
-        "docs/research/reward_study/baselines/v083_full_control_baseline.html"
+        "docs/analysis/reward_study/baselines/v083_full_control_baseline.html"
     )
     assert path.is_file()
     assert "ScaleMAC-RL v0.8.3" in path.read_text(encoding="utf-8")
+
+
+def test_round_02_is_a_four_case_throughput_jain_sweep() -> None:
+    plan = RewardStudyPlan.from_json(
+        Path("configs/reward_study/round_02_throughput_jain_sweep.json")
+    )
+    coefficients = [
+        (case.actual_coefficients()["coef_throughput"], case.actual_coefficients()["coef_fairness"])
+        for case in plan.cases
+    ]
+    assert coefficients == [
+        (0.75, 0.25),
+        (0.5, 0.5),
+        (0.375, 0.625),
+        (0.25, 0.75),
+    ]
+    for case in plan.cases:
+        actual = case.actual_coefficients()
+        assert actual["coef_service"] == 0.0
+        assert actual["coef_starvation_penalty"] == 0.0
+        assert actual["coef_deadline_risk_penalty"] == 0.0
+
+
+def test_round_01_analysis_explains_p99_wait_in_plain_language() -> None:
+    path = Path(
+        "docs/analysis/reward_study/round_01/round_01_component_screen_analysis.html"
+    )
+    content = path.read_text(encoding="utf-8")
+    assert "99% UE" in content
+    assert "Worst P99 wait" in content
+    assert "truyền thành công gần nhất" in content

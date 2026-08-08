@@ -1,0 +1,87 @@
+{
+  "study_id": "full_control_reward_study",
+  "round_id": "round_02_throughput_jain_sweep",
+  "description": "Map the direct trade-off between normalized throughput reward and Jain-fairness reward. Round 01 endpoints are reused, so this plan trains only the four interior weight combinations.",
+  "common": {
+    "environment_steps": 100096,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_seeds": [
+      1701
+    ],
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "seed": 1701,
+    "profile_seed": 1701,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 2.5e-05,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "constraint_training": false,
+    "reward_normalization": "Throughput score and Jain-fairness score remain in their existing bounded forms. All delta rewards, delay penalties, starvation penalties, and Lagrangian multipliers are disabled so the observed change is attributable only to the two stated coefficients.",
+    "starvation_threshold_slots": 64
+  },
+  "reference_cases_from_round_01": [
+    {
+      "id": "throughput_only",
+      "throughput": 1.0,
+      "fairness": 0.0
+    },
+    {
+      "id": "jain_fairness_only",
+      "throughput": 0.0,
+      "fairness": 1.0
+    }
+  ],
+  "cases": [
+    {
+      "id": "t075_j025",
+      "label": "75% throughput + 25% Jain fairness",
+      "hypothesis": "A small fairness term may improve UE balance without giving up much goodput.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.75,
+        "fairness": 0.25
+      }
+    },
+    {
+      "id": "t050_j050",
+      "label": "50% throughput + 50% Jain fairness",
+      "hypothesis": "Equal coefficients provide the easiest-to-explain midpoint, even though equal coefficients may not imply equal numerical contribution.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.5,
+        "fairness": 0.5
+      }
+    },
+    {
+      "id": "t0375_j0625",
+      "label": "37.5% throughput + 62.5% Jain fairness",
+      "hypothesis": "Round 01 reward magnitudes suggest this ratio may approximately equalize the two weighted contributions.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.375,
+        "fairness": 0.625
+      }
+    },
+    {
+      "id": "t025_j075",
+      "label": "25% throughput + 75% Jain fairness",
+      "hypothesis": "A fairness-dominant mixture tests how much goodput must be exchanged for a stronger distributional improvement.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.75
+      }
+    }
+  ]
+}

@@ -338,7 +338,7 @@ def main() -> None:
             "--study-root",
             str(args.output_root),
             "--docs-root",
-            "docs/research/reward_study/generated",
+            "docs/analysis/reward_study/generated",
         ]
         subprocess.run(command, check=False)
 

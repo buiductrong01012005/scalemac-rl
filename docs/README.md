@@ -515,3 +515,8 @@ Architecture experiments are specified in `docs/ARCHITECTURE_EXPERIMENTS.md`.
 Recurrent PPO should use a shared per-UE GRU with set pooling. A 1-D CNN should only
 operate on a stable sorted UE/candidate sequence; convolution over raw UE IDs is not
 meaningful.
+
+
+## Analysis archive
+
+Các bản phân tích thí nghiệm được lưu tại [`docs/analysis/index.html`](analysis/index.html) để phục vụ tổng hợp khóa luận. `docs/reports/` được giữ riêng cho báo cáo chính thức sau này.

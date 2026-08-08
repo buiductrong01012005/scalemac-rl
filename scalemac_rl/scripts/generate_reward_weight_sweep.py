@@ -50,10 +50,10 @@ def main() -> None:
     parser.add_argument(
         "--base-plan",
         type=Path,
-        default=Path("configs/reward_study/round_02_cumulative_equal.json"),
+        default=Path("configs/reward_study/round_02_throughput_jain_sweep.json"),
         help="copy common settings and optional fixed penalty/delta weights from a case",
     )
-    parser.add_argument("--base-case", default="r3_add_delay_equal")
+    parser.add_argument("--base-case", default="t050_j050")
     parser.add_argument("--round-id", default="round_03_weight_sweep")
     parser.add_argument(
         "--output",

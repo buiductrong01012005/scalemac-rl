@@ -130,8 +130,16 @@ The v0.8.3 rule-free full-control run learned zero starvation and acceptable tai
 Two initial rounds are registered:
 
 - `round_01_component_screen`: each normalized positive reward component is trained alone;
-- `round_02_cumulative_equal`: throughput, Jain fairness, starvation, delay, and one optional fairness proxy are added gradually with comparable actual coefficients.
+- `round_02_throughput_jain_sweep`: keep the environment and PPO fixed, then sweep four interior throughput/Jain coefficient pairs; reuse the two single-component endpoints from Round 01.
 
 Lagrangian training penalties are disabled in these attribution rounds so the observed behaviour can be traced to the declared reward case. Constraint KPIs remain active for validation and reporting.
 
 Every completed run is appended to a reward-weight dataset and checked for Pareto dominance. Later weight sweeps and multi-seed confirmations will use the same dataset schema.
+
+
+## v0.8.5 — Round 02 reward-weight sweep
+
+- Move experiment analyses to `docs/analysis/`; reserve `docs/reports/` for later formal reports.
+- Define P99 wait in plain language in generated HTML.
+- Sweep only throughput and Jain fairness before introducing any safety penalty.
+- Store all, safety-filtered, and strict-constraint Pareto fronts separately.
