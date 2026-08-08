@@ -18,15 +18,7 @@ def main() -> None:
         "--no-single-seed-upper-bound",
         "--validation-seeds", "1701",
         "--milestone-env-steps", "75008,150016,225024,300032",
-        "--output", "artifacts/full_control_v2_curriculum_latest.pt",
-        "--best-feasible-output", "artifacts/full_control_v2_curriculum_best_feasible.pt",
-        "--best-reward-output", "artifacts/full_control_v2_curriculum_best_reward.pt",
-        "--best-tradeoff-output", "artifacts/full_control_v2_curriculum_best_tradeoff.pt",
-        "--best-lowest-violation-output", "artifacts/full_control_v2_curriculum_best_lowest_violation.pt",
-        "--checkpoint-dir", "artifacts/checkpoints/full_control_v2_curriculum",
-        "--log-output", "artifacts/full_control_v2_curriculum_training.csv",
-        "--validation-output", "artifacts/full_control_v2_curriculum_validation.csv",
-        "--checkpoint-manifest-output", "artifacts/full_control_v2_curriculum_checkpoint_manifest.csv",
+        "--run-dir", "artifacts/runs/full_control_v2_curriculum",
     ]
     sys.argv[1:1] = defaults
     full_control_main()

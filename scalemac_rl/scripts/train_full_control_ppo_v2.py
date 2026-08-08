@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 from scalemac_rl.scripts.train_ppo import main as train_ppo_main
 
@@ -70,11 +71,12 @@ PROFILES: dict[str, ExperimentProfile] = {
 }
 
 
-def _parse_wrapper_args(argv: list[str]) -> tuple[str, list[str]]:
+def _parse_wrapper_args(argv: list[str]) -> tuple[str, Path | None, list[str]]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--profile", choices=sorted(PROFILES), default="balanced")
+    parser.add_argument("--run-dir", type=Path, default=None)
     parsed, remaining = parser.parse_known_args(argv)
-    return parsed.profile, remaining
+    return parsed.profile, parsed.run_dir, remaining
 
 
 def main() -> None:
@@ -85,7 +87,7 @@ def main() -> None:
     only enforces Top-64 selection, at least one PRB per selected UE, and exactly
     273 allocated PRBs. No candidate filter, HARQ override, or oldest-UE rule is used.
     """
-    profile_name, remaining = _parse_wrapper_args(sys.argv[1:])
+    profile_name, run_dir_override, remaining = _parse_wrapper_args(sys.argv[1:])
     profile = PROFILES[profile_name]
     sys.argv = [sys.argv[0], *remaining]
 
@@ -99,6 +101,7 @@ def main() -> None:
         urgency,
     ) = profile.reward_weights
     tag = f"full_control_v2_{profile.name}"
+    run_dir = run_dir_override or Path("artifacts") / "runs" / tag
 
     defaults = [
         "--single-seed-upper-bound",
@@ -162,15 +165,16 @@ def main() -> None:
         "--max-wait-multiplier", "1.5",
         "--lagrangian-lr", "0.05",
         "--init-checkpoint", "artifacts/__random_initialization__.pt",
-        "--output", f"artifacts/{tag}_latest.pt",
-        "--best-feasible-output", f"artifacts/{tag}_best_feasible.pt",
-        "--best-reward-output", f"artifacts/{tag}_best_reward.pt",
-        "--best-tradeoff-output", f"artifacts/{tag}_best_tradeoff.pt",
-        "--best-lowest-violation-output", f"artifacts/{tag}_best_lowest_violation.pt",
-        "--checkpoint-dir", f"artifacts/checkpoints/{tag}",
-        "--log-output", f"artifacts/{tag}_training.csv",
-        "--validation-output", f"artifacts/{tag}_validation.csv",
-        "--checkpoint-manifest-output", f"artifacts/{tag}_checkpoint_manifest.csv",
+        "--output", str(run_dir / "latest.pt"),
+        "--best-feasible-output", str(run_dir / "best_feasible.pt"),
+        "--best-reward-output", str(run_dir / "best_reward.pt"),
+        "--best-tradeoff-output", str(run_dir / "best_tradeoff.pt"),
+        "--best-lowest-violation-output", str(run_dir / "best_lowest_violation.pt"),
+        "--checkpoint-dir", str(run_dir / "checkpoints"),
+        "--log-output", str(run_dir / "training.csv"),
+        "--validation-output", str(run_dir / "validation.csv"),
+        "--checkpoint-manifest-output", str(run_dir / "checkpoint_manifest.csv"),
+        "--report-dir", str(run_dir / "reports"),
     ]
     # Explicit user arguments remain last and therefore override defaults.
     sys.argv[1:1] = defaults

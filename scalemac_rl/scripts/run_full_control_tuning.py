@@ -37,15 +37,7 @@ def main() -> None:
             args.device,
             "--milestone-env-steps",
             str(args.steps),
-            "--output", f"artifacts/{tag}_latest.pt",
-            "--best-feasible-output", f"artifacts/{tag}_best_feasible.pt",
-            "--best-reward-output", f"artifacts/{tag}_best_reward.pt",
-            "--best-tradeoff-output", f"artifacts/{tag}_best_tradeoff.pt",
-            "--best-lowest-violation-output", f"artifacts/{tag}_best_lowest_violation.pt",
-            "--checkpoint-dir", f"artifacts/checkpoints/{tag}",
-            "--log-output", f"artifacts/{tag}_training.csv",
-            "--validation-output", f"artifacts/{tag}_validation.csv",
-            "--checkpoint-manifest-output", f"artifacts/{tag}_checkpoint_manifest.csv",
+            "--run-dir", f"artifacts/runs/{tag}",
         ]
         if args.no_progress:
             command.append("--no-progress")

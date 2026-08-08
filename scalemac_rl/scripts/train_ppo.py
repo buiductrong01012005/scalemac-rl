@@ -674,6 +674,12 @@ def main() -> None:
         type=Path,
         default=Path("artifacts/checkpoint_manifest.csv"),
     )
+    parser.add_argument(
+        "--report-dir",
+        type=Path,
+        default=Path("docs/reports"),
+        help="directory for generated Markdown reports",
+    )
     args = parser.parse_args()
 
     if args.steps_per_stage <= 0 or args.workers <= 0 or args.rollout_steps <= 0:
@@ -1612,7 +1618,7 @@ def main() -> None:
 
     write_csv(args.log_output, log_rows)
     write_markdown(
-        markdown_report_path(args.log_output),
+        markdown_report_path(args.log_output, docs_dir=args.report_dir),
         title=f"ScaleMAC-RL {args.scheduler_mode} constrained PPO training",
         description=(
             "Constraint-aware PPO run with configurable full-UE or candidate inputs, "
@@ -1646,7 +1652,7 @@ def main() -> None:
     )
     write_csv(args.validation_output, validation_rows)
     write_markdown(
-        markdown_report_path(args.validation_output),
+        markdown_report_path(args.validation_output, docs_dir=args.report_dir),
         title="ScaleMAC-RL repeated held-out PPO validation",
         description="Per-episode validation used for dual updates, rollback, and checkpoint selection.",
         rows=validation_rows,
@@ -1656,14 +1662,14 @@ def main() -> None:
     )
     write_csv(validation_summary_output, validation_summary_rows)
     write_markdown(
-        markdown_report_path(validation_summary_output),
+        markdown_report_path(validation_summary_output, docs_dir=args.report_dir),
         title="ScaleMAC-RL held-out PPO validation summary",
         description="Worst-case constraints, grant attribution, and rollback status at each validation.",
         rows=validation_summary_rows,
     )
     write_csv(args.checkpoint_manifest_output, checkpoint_manifest_rows)
     write_markdown(
-        markdown_report_path(args.checkpoint_manifest_output),
+        markdown_report_path(args.checkpoint_manifest_output, docs_dir=args.report_dir),
         title="ScaleMAC-RL checkpoint selection manifest",
         description=(
             "Checkpoint provenance. Lowest-violation ranking is lexicographic: "
