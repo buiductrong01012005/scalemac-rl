@@ -14,7 +14,9 @@ from torch import nn
 from tqdm.auto import tqdm
 
 from scalemac_rl import ScaleMacConfig, ScaleMacDownlinkEnv
+from scalemac_rl.env import OBSERVATION_FEATURES
 from scalemac_rl.candidates import (
+    build_all_eligible_mask,
     build_candidate_mask,
     candidate_diagnostics,
     gather_candidate_batch,
@@ -72,7 +74,15 @@ def _candidate_masks(
     max_candidates: int,
     min_candidates: int,
     long_wait_threshold: float,
+    candidate_mode: str = "heuristic",
 ) -> np.ndarray:
+    if candidate_mode == "all":
+        return np.stack(
+            [build_all_eligible_mask(observation) for observation in observations],
+            axis=0,
+        )
+    if candidate_mode != "heuristic":
+        raise ValueError("candidate_mode must be heuristic or all")
     return np.stack(
         [
             build_candidate_mask(
@@ -194,11 +204,11 @@ def _checkpoint_payload(
     validation: dict[str, Any] | None,
 ) -> dict[str, Any]:
     return {
-        "checkpoint_type": "hybrid_safety_constrained_ppo_actor_critic",
+        "checkpoint_type": f"{args.scheduler_mode}_constrained_ppo_actor_critic",
         "checkpoint_tag": tag,
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
-        "input_dim": 8,
+        "input_dim": OBSERVATION_FEATURES,
         "hidden_dim": args.hidden_dim,
         "curriculum": args.curriculum,
         "initialized_from": initialized_from,
@@ -211,6 +221,9 @@ def _checkpoint_payload(
             "workers": args.workers,
             "rollout_steps": args.rollout_steps,
             "max_candidates": args.max_candidates,
+            "candidate_mode": args.candidate_mode,
+            "scheduler_mode": args.scheduler_mode,
+            "force_harq_retransmissions": args.force_harq_retransmissions,
             "safety_reserve_ues": args.safety_reserve_ues,
             "long_wait_threshold": args.long_wait_threshold,
             "stage_p99_wait_limits": args.stage_p99_wait_limits,
@@ -226,6 +239,10 @@ def _checkpoint_payload(
             "reward_throughput_weight": args.reward_throughput_weight,
             "reward_fairness_weight": args.reward_fairness_weight,
             "reward_service_weight": args.reward_service_weight,
+            "reward_deficit_service_weight": args.reward_deficit_service_weight,
+            "reward_fairness_delta_weight": args.reward_fairness_delta_weight,
+            "reward_pf_utility_delta_weight": args.reward_pf_utility_delta_weight,
+            "fairness_target_schedule": args.fairness_target_schedule,
             "reference_deadline_target_slots": args.max_p99_wait_slots,
             "max_wait_target_slots": args.max_wait_slots,
             "learning_rate": args.lr,
@@ -266,6 +283,26 @@ def _active_p99_limit(
     return float(final_stage_schedule[segment])
 
 
+def _active_fairness_target(
+    *,
+    stage_index: int,
+    stage_count: int,
+    stage_env_steps: int,
+    steps_per_stage: int,
+    final_target: float,
+    schedule: list[float],
+) -> float:
+    """Progressively tighten fairness on the final curriculum stage."""
+    if stage_index != stage_count or not schedule:
+        return float(final_target)
+    progress = min(max(stage_env_steps, 0), max(steps_per_stage - 1, 0))
+    segment = min(
+        len(schedule) - 1,
+        int(progress * len(schedule) / max(steps_per_stage, 1)),
+    )
+    return float(schedule[segment])
+
+
 def _load_initial_state(
     *,
     model: SharedSetActorCritic,
@@ -280,8 +317,9 @@ def _load_initial_state(
         if not resume_checkpoint.is_file():
             raise FileNotFoundError(f"resume checkpoint does not exist: {resume_checkpoint}")
         checkpoint = torch.load(resume_checkpoint, map_location=device, weights_only=False)
-        model.load_state_dict(checkpoint["model_state_dict"])
-        if "optimizer_state_dict" in checkpoint:
+        checkpoint_input_dim = int(checkpoint.get("input_dim", OBSERVATION_FEATURES))
+        model.load_compatible_state_dict(checkpoint["model_state_dict"], strict=True)
+        if "optimizer_state_dict" in checkpoint and checkpoint_input_dim == OBSERVATION_FEATURES:
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         for key, value in checkpoint.get("lagrange_controller", {}).items():
             if hasattr(controller, key):
@@ -293,7 +331,7 @@ def _load_initial_state(
         state_dict = checkpoint["model_state_dict"]
         checkpoint_type = str(checkpoint.get("checkpoint_type", ""))
         if "ppo_actor_critic" in checkpoint_type:
-            model.load_state_dict(state_dict)
+            model.load_compatible_state_dict(state_dict, strict=True)
         else:
             model.load_imitation_state_dict(state_dict)
         return str(init_checkpoint)
@@ -324,6 +362,9 @@ def _validate(
     slots: int,
     seeds: list[int],
     max_candidates: int,
+    candidate_mode: str,
+    scheduler_mode: str,
+    force_harq_retransmissions: bool,
     safety_reserve_ues: int,
     long_wait_threshold: float,
     constraints: ServiceConstraints,
@@ -336,6 +377,9 @@ def _validate(
     reward_throughput_weight: float,
     reward_fairness_weight: float,
     reward_service_weight: float,
+    reward_deficit_service_weight: float,
+    reward_fairness_delta_weight: float,
+    reward_pf_utility_delta_weight: float,
     max_wait_target_slots: float,
     max_wait_risk_penalty_weight: float,
     update_index: int,
@@ -347,6 +391,8 @@ def _validate(
         num_prbs=273,
         max_selected_ues=min(64, num_ues, 273),
         episode_slots=slots,
+        scheduler_mode=scheduler_mode,
+        force_harq_retransmissions=force_harq_retransmissions,
         safety_reserve_ues=min(safety_reserve_ues, min(64, num_ues, 273)),
         safety_wait_threshold_ratio=long_wait_threshold,
         freeze_static_profiles=freeze_static_profiles,
@@ -359,6 +405,9 @@ def _validate(
         reward_throughput_weight=reward_throughput_weight,
         reward_fairness_weight=reward_fairness_weight,
         reward_service_weight=reward_service_weight,
+        reward_deficit_service_weight=reward_deficit_service_weight,
+        reward_fairness_delta_weight=reward_fairness_delta_weight,
+        reward_pf_utility_delta_weight=reward_pf_utility_delta_weight,
         max_wait_target_slots=max_wait_target_slots,
         reward_max_wait_risk_penalty_weight=max_wait_risk_penalty_weight,
     )
@@ -370,7 +419,8 @@ def _validate(
             config=config,
             seed=seed,
             name="ppo_validation",
-            max_candidates=max_candidates,
+            max_candidates=(num_ues if candidate_mode == "all" else max_candidates),
+            candidate_mode=candidate_mode,
             long_wait_threshold=long_wait_threshold,
             constraints=constraints,
         )
@@ -443,6 +493,18 @@ def _validate(
         "mean_oldest_selected_count": mean(
             float(row["mean_forced_oldest_wait_count"]) for row in rows
         ),
+        "mean_scheduler_selected_count": mean(
+            float(row["mean_scheduler_selected_count"]) for row in rows
+        ),
+        "mean_scheduler_selection_fraction": mean(
+            float(row["mean_scheduler_selection_fraction"]) for row in rows
+        ),
+        "mean_ppo_selected_count": mean(
+            float(row["mean_ppo_selected_count"]) for row in rows
+        ),
+        "mean_rule_selected_count": mean(
+            float(row["mean_rule_selected_count"]) for row in rows
+        ),
         "mean_learned_selected_count": mean(
             float(row["mean_learned_selected_count"]) for row in rows
         ),
@@ -457,7 +519,7 @@ def _validate(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Hybrid safety-reserve constrained curriculum PPO for ScaleMAC-RL"
+        description="Attribution-aware constrained PPO for ScaleMAC-RL"
     )
     parser.add_argument("--init-checkpoint", type=Path, default=Path("artifacts/pf_imitation.pt"))
     parser.add_argument("--resume-checkpoint", type=Path, default=None)
@@ -467,6 +529,18 @@ def main() -> None:
     parser.add_argument("--rollout-steps", type=int, default=64)
     parser.add_argument("--episode-slots", type=int, default=500)
     parser.add_argument("--max-candidates", type=int, default=128)
+    parser.add_argument(
+        "--candidate-mode", choices=["heuristic", "all"], default="heuristic",
+        help="heuristic uses a reduced candidate pool; all exposes every UE",
+    )
+    parser.add_argument(
+        "--scheduler-mode", choices=["hybrid", "ppo_only", "rule_only"],
+        default="hybrid",
+    )
+    parser.add_argument(
+        "--force-harq-retransmissions", action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     parser.add_argument("--safety-reserve-ues", type=int, default=16)
     parser.add_argument("--long-wait-threshold", type=float, default=0.8)
     parser.add_argument("--freeze-static-profiles", action="store_true")
@@ -476,9 +550,12 @@ def main() -> None:
     parser.add_argument("--deadline-risk-penalty-weight", type=float, default=0.15)
     parser.add_argument("--max-wait-risk-penalty-weight", type=float, default=0.10)
     parser.add_argument("--starvation-threshold-slots", type=int, default=64)
-    parser.add_argument("--reward-throughput-weight", type=float, default=0.50)
+    parser.add_argument("--reward-throughput-weight", type=float, default=0.45)
     parser.add_argument("--reward-fairness-weight", type=float, default=0.35)
     parser.add_argument("--reward-service-weight", type=float, default=0.15)
+    parser.add_argument("--reward-deficit-service-weight", type=float, default=0.05)
+    parser.add_argument("--reward-fairness-delta-weight", type=float, default=0.03)
+    parser.add_argument("--reward-pf-utility-delta-weight", type=float, default=0.02)
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--gamma", type=float, default=0.99)
@@ -499,6 +576,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--final-stage-p99-schedule", type=_parse_float_list, default=[80.0, 65.0, 55.0, 50.0]
+    )
+    parser.add_argument(
+        "--fairness-target-schedule", type=_parse_float_list,
+        default=[0.50, 0.55, 0.60],
     )
     parser.add_argument("--starvation-multiplier", type=float, default=5.0)
     parser.add_argument("--wait-multiplier", type=float, default=1.0)
@@ -542,10 +623,14 @@ def main() -> None:
 
     if args.steps_per_stage <= 0 or args.workers <= 0 or args.rollout_steps <= 0:
         parser.error("steps, workers, and rollout length must be positive")
-    if args.max_candidates < 64:
+    if args.max_candidates < 64 and args.candidate_mode != "all":
         parser.error("max_candidates must be at least the Top-K value 64")
-    if not 0 <= args.safety_reserve_ues < 64:
-        parser.error("safety_reserve_ues must be in [0, 63] so PPO keeps learned grants")
+    if not 0 <= args.safety_reserve_ues <= 64:
+        parser.error("safety_reserve_ues must be in [0, 64]")
+    if args.scheduler_mode == "ppo_only" and args.safety_reserve_ues != 0:
+        parser.error("ppo_only requires --safety-reserve-ues 0")
+    if args.scheduler_mode == "rule_only" and args.safety_reserve_ues not in {0, 64}:
+        parser.error("rule_only uses a full 64-UE rule reserve")
     if len(args.stage_p99_wait_limits) != len(args.curriculum):
         parser.error("stage-p99-wait-limits must contain one value per curriculum stage")
     if args.validation_slots <= 0 or args.validation_repeats <= 0:
@@ -564,9 +649,10 @@ def main() -> None:
         args.reward_throughput_weight
         + args.reward_fairness_weight
         + args.reward_service_weight
+        + args.reward_deficit_service_weight
     )
     if abs(reward_weight_sum - 1.0) > 1e-6:
-        parser.error("throughput, fairness, and service reward weights must sum to 1")
+        parser.error("positive reward weights must sum to 1")
     if args.single_seed_upper_bound:
         if args.workers != 1:
             parser.error("single-seed-upper-bound requires --workers 1")
@@ -600,7 +686,7 @@ def main() -> None:
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     device = _resolve_device(args.device)
-    model = SharedSetActorCritic(input_dim=8, hidden_dim=args.hidden_dim).to(device)
+    model = SharedSetActorCritic(input_dim=OBSERVATION_FEATURES, hidden_dim=args.hidden_dim).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     try:
         initialized_from = _load_initial_state(
@@ -652,8 +738,17 @@ def main() -> None:
 
     for stage_index, num_ues in enumerate(args.curriculum, start=1):
         max_selected = min(64, num_ues, 273)
-        max_candidates = min(max(args.max_candidates, max_selected), num_ues)
-        safety_reserve = min(args.safety_reserve_ues, max_selected - 1)
+        max_candidates = (
+            num_ues
+            if args.candidate_mode == "all"
+            else min(max(args.max_candidates, max_selected), num_ues)
+        )
+        if args.scheduler_mode == "ppo_only":
+            safety_reserve = 0
+        elif args.scheduler_mode == "rule_only":
+            safety_reserve = max_selected
+        else:
+            safety_reserve = min(args.safety_reserve_ues, max_selected - 1)
         stage_default_p99_limit = args.stage_p99_wait_limits[stage_index - 1]
         initial_p99_limit = _active_p99_limit(
             stage_index=stage_index,
@@ -674,6 +769,8 @@ def main() -> None:
             num_prbs=273,
             max_selected_ues=max_selected,
             episode_slots=args.episode_slots,
+            scheduler_mode=args.scheduler_mode,
+            force_harq_retransmissions=args.force_harq_retransmissions,
             safety_reserve_ues=safety_reserve,
             safety_wait_threshold_ratio=args.long_wait_threshold,
             freeze_static_profiles=args.freeze_static_profiles or args.single_seed_upper_bound,
@@ -687,6 +784,9 @@ def main() -> None:
             reward_throughput_weight=args.reward_throughput_weight,
             reward_fairness_weight=args.reward_fairness_weight,
             reward_service_weight=args.reward_service_weight,
+            reward_deficit_service_weight=args.reward_deficit_service_weight,
+            reward_fairness_delta_weight=args.reward_fairness_delta_weight,
+            reward_pf_utility_delta_weight=args.reward_pf_utility_delta_weight,
             max_wait_target_slots=args.max_wait_slots,
             seed=stage_seed,
         )
@@ -714,10 +814,18 @@ def main() -> None:
             active_max_wait_limit = active_p99_limit + max(
                 args.max_wait_slots - args.max_p99_wait_slots, 0.0
             )
+            active_fairness_target = _active_fairness_target(
+                stage_index=stage_index,
+                stage_count=len(args.curriculum),
+                stage_env_steps=stage_env_steps,
+                steps_per_stage=args.steps_per_stage,
+                final_target=args.min_jain_fairness,
+                schedule=args.fairness_target_schedule,
+            )
             active_constraints = ServiceConstraints(
                 max_starvation_rate=args.max_starvation_rate,
                 max_p99_wait_slots=active_p99_limit,
-                min_jain_fairness=args.min_jain_fairness,
+                min_jain_fairness=active_fairness_target,
                 max_wait_slots=active_max_wait_limit,
             )
             active_constraints.validate()
@@ -741,18 +849,22 @@ def main() -> None:
                     "max_wait_risk_penalty", "deadline_risk",
                     "reference_deadline_risk", "max_wait_risk", "tail_mean_wait",
                     "throughput", "fairness", "jain_fairness", "short_fairness",
+                    "deficit_service", "fairness_progress", "pf_utility_progress",
                     "service", "starvation", "scheduling_starvation",
                     "p99_wait", "max_wait", "near_deadline_rate",
                     "starvation_excess", "wait_excess", "fairness_excess",
                     "max_wait_excess", "goodput", "candidate_coverage",
                     "harq_retention", "long_wait_retention", "long_wait_missed",
-                    "safety_selected", "oldest_selected", "learned_selected", "learned_fraction",
+                    "safety_selected", "oldest_selected", "scheduler_selected",
+                    "scheduler_fraction", "ppo_selected", "rule_selected",
+                    "learned_selected", "learned_fraction",
                 )
             }
 
             for _ in range(args.rollout_steps):
                 masks = _candidate_masks(
-                    observations, max_candidates, max_selected, args.long_wait_threshold
+                    observations, max_candidates, max_selected, args.long_wait_threshold,
+                    args.candidate_mode,
                 )
                 compact_observations, candidate_indices = gather_candidate_batch(observations, masks)
                 compact_masks = np.ones(compact_observations.shape[:2], dtype=bool)
@@ -818,6 +930,9 @@ def main() -> None:
                         "fairness": float(info["fairness_score"]),
                         "jain_fairness": float(info["jain_fairness"]),
                         "short_fairness": float(info["short_term_jain_fairness"]),
+                        "deficit_service": float(info["deficit_service_score"]),
+                        "fairness_progress": float(info["fairness_progress"]),
+                        "pf_utility_progress": float(info["pf_utility_progress"]),
                         "service": float(info["service_score"]),
                         "starvation": float(info["starvation_rate"]),
                         "scheduling_starvation": float(
@@ -837,6 +952,10 @@ def main() -> None:
                         "long_wait_missed": float(diagnostics.long_wait_missed_count),
                         "safety_selected": float(info["safety_selected_count"]),
                         "oldest_selected": float(info["forced_oldest_wait_count"]),
+                        "scheduler_selected": float(info["scheduler_selected_count"]),
+                        "scheduler_fraction": float(info["scheduler_selection_fraction"]),
+                        "ppo_selected": float(info["ppo_selected_count"]),
+                        "rule_selected": float(info["rule_selected_count"]),
                         "learned_selected": float(info["learned_selected_count"]),
                         "learned_fraction": float(info["learned_selection_fraction"]),
                     }
@@ -857,7 +976,8 @@ def main() -> None:
 
             with torch.no_grad():
                 next_masks_full = _candidate_masks(
-                    observations, max_candidates, max_selected, args.long_wait_threshold
+                    observations, max_candidates, max_selected, args.long_wait_threshold,
+                    args.candidate_mode,
                 )
                 next_compact_obs, _ = gather_candidate_batch(observations, next_masks_full)
                 next_obs_tensor = torch.from_numpy(next_compact_obs).to(device)
@@ -883,7 +1003,7 @@ def main() -> None:
 
             candidate_count = max_candidates
             flat_obs = torch.from_numpy(
-                np.asarray(obs_buffer).reshape(-1, candidate_count, 8)
+                np.asarray(obs_buffer).reshape(-1, candidate_count, OBSERVATION_FEATURES)
             ).to(device)
             flat_actions = torch.from_numpy(
                 np.asarray(action_buffer).reshape(-1, candidate_count, 2)
@@ -949,6 +1069,9 @@ def main() -> None:
                 "mean_fairness_score": mean(metric_window["fairness"]),
                 "mean_jain_fairness": mean(metric_window["jain_fairness"]),
                 "mean_short_term_jain_fairness": mean(metric_window["short_fairness"]),
+                "mean_deficit_service_score": mean(metric_window["deficit_service"]),
+                "mean_fairness_progress": mean(metric_window["fairness_progress"]),
+                "mean_pf_utility_progress": mean(metric_window["pf_utility_progress"]),
                 "mean_service_score": mean(metric_window["service"]),
                 "mean_starvation_rate": mean(metric_window["starvation"]),
                 "max_starvation_rate": max(metric_window["starvation"]),
@@ -974,6 +1097,10 @@ def main() -> None:
                 "max_long_wait_missed_count": max(metric_window["long_wait_missed"]),
                 "mean_safety_selected_count": mean(metric_window["safety_selected"]),
                 "mean_oldest_selected_count": mean(metric_window["oldest_selected"]),
+                "mean_scheduler_selected_count": mean(metric_window["scheduler_selected"]),
+                "mean_scheduler_selection_fraction": mean(metric_window["scheduler_fraction"]),
+                "mean_ppo_selected_count": mean(metric_window["ppo_selected"]),
+                "mean_rule_selected_count": mean(metric_window["rule_selected"]),
                 "mean_learned_selected_count": mean(metric_window["learned_selected"]),
                 "mean_learned_selection_fraction": mean(metric_window["learned_fraction"]),
                 "elapsed_seconds": perf_counter() - training_started_at,
@@ -1029,6 +1156,9 @@ def main() -> None:
                     model=model, device=device, num_ues=num_ues,
                     slots=args.validation_slots, seeds=seeds,
                     max_candidates=max_candidates,
+                    candidate_mode=args.candidate_mode,
+                    scheduler_mode=args.scheduler_mode,
+                    force_harq_retransmissions=args.force_harq_retransmissions,
                     safety_reserve_ues=safety_reserve,
                     long_wait_threshold=args.long_wait_threshold,
                     constraints=active_constraints,
@@ -1041,6 +1171,9 @@ def main() -> None:
                     reward_throughput_weight=args.reward_throughput_weight,
                     reward_fairness_weight=args.reward_fairness_weight,
                     reward_service_weight=args.reward_service_weight,
+                    reward_deficit_service_weight=args.reward_deficit_service_weight,
+                    reward_fairness_delta_weight=args.reward_fairness_delta_weight,
+                    reward_pf_utility_delta_weight=args.reward_pf_utility_delta_weight,
                     max_wait_target_slots=args.max_wait_slots,
                     max_wait_risk_penalty_weight=args.max_wait_risk_penalty_weight,
                     update_index=update_index, stage_index=stage_index,
@@ -1290,7 +1423,7 @@ def main() -> None:
     write_csv(args.log_output, log_rows)
     write_markdown(
         markdown_report_path(args.log_output),
-        title="ScaleMAC-RL hybrid safety-reserve constrained PPO training",
+        title=f"ScaleMAC-RL {args.scheduler_mode} constrained PPO training",
         description=(
             "Long curriculum PPO run with a deterministic safety reserve, learned UE selection, "
             "validation-driven Lagrange updates, rollback, and per-stage checkpoint selection."

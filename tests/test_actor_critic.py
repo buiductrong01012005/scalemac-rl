@@ -29,3 +29,12 @@ def test_deterministic_action_skips_sampling_and_supports_compact_set() -> None:
     mean_action, _ = model.action_mean_and_value(observation)
     assert output.action.shape == (64, 2)
     assert torch.allclose(output.action, mean_action)
+
+
+def test_actor_critic_expands_legacy_eight_feature_checkpoint() -> None:
+    legacy = SharedSetActorCritic(input_dim=8, hidden_dim=16)
+    current = SharedSetActorCritic(input_dim=10, hidden_dim=16)
+    current.load_compatible_state_dict(legacy.state_dict(), strict=True)
+    weight = current.encoder[0].weight.detach()
+    assert torch.allclose(weight[:, :8], legacy.encoder[0].weight.detach())
+    assert torch.all(weight[:, 8:] == 0.0)

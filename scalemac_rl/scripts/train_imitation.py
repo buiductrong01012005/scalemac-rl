@@ -9,6 +9,7 @@ import torch
 from torch import nn
 
 from scalemac_rl import ScaleMacConfig, ScaleMacDownlinkEnv
+from scalemac_rl.env import OBSERVATION_FEATURES
 from scalemac_rl.models import SharedSetPolicy
 from scalemac_rl.reporting import markdown_report_path, write_csv, write_markdown
 from scalemac_rl.schedulers import ProportionalFairScheduler
@@ -46,7 +47,10 @@ def main() -> None:
 
     device = _resolve_device(args.device)
 
-    config = ScaleMacConfig(num_ues=args.num_ues, episode_slots=args.episode_slots)
+    config = ScaleMacConfig(
+        num_ues=args.num_ues, episode_slots=args.episode_slots,
+        scheduler_mode="ppo_only", force_harq_retransmissions=False,
+    )
     if config.max_selected_ues > config.num_ues:
         config.max_selected_ues = config.num_ues
     if config.num_prbs < config.max_selected_ues:
@@ -55,7 +59,7 @@ def main() -> None:
 
     env = ScaleMacDownlinkEnv(config)
     teacher = ProportionalFairScheduler()
-    policy = SharedSetPolicy(hidden_dim=args.hidden_dim).to(device)
+    policy = SharedSetPolicy(input_dim=OBSERVATION_FEATURES, hidden_dim=args.hidden_dim).to(device)
     optimizer = torch.optim.Adam(policy.parameters(), lr=args.lr)
     loss_fn = nn.MSELoss()
 
@@ -127,7 +131,7 @@ def main() -> None:
         {
             "model_state_dict": policy.state_dict(),
             "hidden_dim": args.hidden_dim,
-            "input_dim": 8,
+            "input_dim": OBSERVATION_FEATURES,
             "config": config.to_dict(),
             "training": {
                 "steps": args.steps,

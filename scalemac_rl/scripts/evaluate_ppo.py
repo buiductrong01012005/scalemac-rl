@@ -35,6 +35,14 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=201)
     parser.add_argument("--seeds", type=int, default=3)
     parser.add_argument("--max-candidates", type=int, default=None)
+    parser.add_argument("--candidate-mode", choices=["heuristic", "all"], default=None)
+    parser.add_argument(
+        "--scheduler-mode", choices=["hybrid", "ppo_only", "rule_only"], default=None
+    )
+    parser.add_argument(
+        "--force-harq-retransmissions", action=argparse.BooleanOptionalAction,
+        default=None,
+    )
     parser.add_argument("--safety-reserve-ues", type=int, default=None)
     parser.add_argument("--long-wait-threshold", type=float, default=None)
     parser.add_argument("--fixed-profile-seed", type=int, default=None)
@@ -54,12 +62,19 @@ def main() -> None:
         parser.error(str(exc))
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     model = SharedSetActorCritic(
-        input_dim=checkpoint.get("input_dim", 8),
+        input_dim=10,
         hidden_dim=checkpoint["hidden_dim"],
     ).to(device)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    model.load_compatible_state_dict(checkpoint["model_state_dict"], strict=True)
     training = checkpoint.get("training", {})
     max_candidates = int(args.max_candidates or training.get("max_candidates", 128))
+    candidate_mode = str(args.candidate_mode or training.get("candidate_mode", "heuristic"))
+    scheduler_mode = str(args.scheduler_mode or training.get("scheduler_mode", "hybrid"))
+    force_harq = bool(
+        training.get("force_harq_retransmissions", True)
+        if args.force_harq_retransmissions is None
+        else args.force_harq_retransmissions
+    )
     safety_reserve = int(
         args.safety_reserve_ues
         if args.safety_reserve_ues is not None
@@ -89,11 +104,19 @@ def main() -> None:
     reward_throughput_weight = float(training.get("reward_throughput_weight", 0.50))
     reward_fairness_weight = float(training.get("reward_fairness_weight", 0.35))
     reward_service_weight = float(training.get("reward_service_weight", 0.15))
+    reward_deficit_service_weight = float(training.get("reward_deficit_service_weight", 0.0))
+    reward_fairness_delta_weight = float(training.get("reward_fairness_delta_weight", 0.0))
+    reward_pf_utility_delta_weight = float(training.get("reward_pf_utility_delta_weight", 0.0))
     config = ScaleMacConfig(
         num_ues=args.num_ues,
         max_selected_ues=min(64, args.num_ues),
         episode_slots=args.slots,
-        safety_reserve_ues=min(safety_reserve, min(64, args.num_ues) - 1),
+        scheduler_mode=scheduler_mode,
+        force_harq_retransmissions=force_harq,
+        safety_reserve_ues=(
+            0 if scheduler_mode == "ppo_only"
+            else min(safety_reserve, min(64, args.num_ues))
+        ),
         safety_wait_threshold_ratio=long_wait_threshold,
         freeze_static_profiles=freeze_static_profiles,
         static_profile_seed=fixed_profile_seed,
@@ -105,6 +128,9 @@ def main() -> None:
         reward_throughput_weight=reward_throughput_weight,
         reward_fairness_weight=reward_fairness_weight,
         reward_service_weight=reward_service_weight,
+        reward_deficit_service_weight=reward_deficit_service_weight,
+        reward_fairness_delta_weight=reward_fairness_delta_weight,
+        reward_pf_utility_delta_weight=reward_pf_utility_delta_weight,
         max_wait_target_slots=args.max_wait_slots,
     )
     config.validate()
@@ -123,7 +149,8 @@ def main() -> None:
             config=config,
             seed=args.seed + offset,
             name=args.checkpoint.stem,
-            max_candidates=max_candidates,
+            max_candidates=(args.num_ues if candidate_mode == "all" else max_candidates),
+            candidate_mode=candidate_mode,
             long_wait_threshold=long_wait_threshold,
             constraints=constraints,
         )
@@ -158,6 +185,9 @@ def main() -> None:
             "final_jain_fairness",
             "mean_fairness_score",
             "mean_short_term_jain_fairness",
+            "mean_deficit_service_score",
+            "mean_fairness_progress",
+            "mean_pf_utility_progress",
             "mean_service_score",
             "mean_deadline_risk",
             "mean_tail_mean_wait_slots",
@@ -176,6 +206,10 @@ def main() -> None:
             "mean_long_wait_missed_count",
             "mean_safety_selected_count",
             "mean_forced_oldest_wait_count",
+            "mean_scheduler_selected_count",
+            "mean_scheduler_selection_fraction",
+            "mean_ppo_selected_count",
+            "mean_rule_selected_count",
             "mean_learned_selected_count",
             "mean_learned_selection_fraction",
             "mean_inference_us",

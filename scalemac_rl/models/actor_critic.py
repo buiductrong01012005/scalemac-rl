@@ -29,7 +29,7 @@ class SharedSetActorCritic(nn.Module):
     exploration over priority and PRB-demand scores in [0, 1].
     """
 
-    def __init__(self, input_dim: int = 8, hidden_dim: int = 64, initial_concentration: float = 20.0):
+    def __init__(self, input_dim: int = 10, hidden_dim: int = 64, initial_concentration: float = 20.0):
         super().__init__()
         if initial_concentration <= 2.0:
             raise ValueError("initial_concentration must be > 2")
@@ -163,8 +163,29 @@ class SharedSetActorCritic(nn.Module):
             )
         return PolicyOutput(masked_action, log_prob, entropy, value_b, mean_action_b)
 
+    def _expand_input_features(
+        self, state_dict: dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
+        """Expand legacy 8-feature encoder weights into the current input size."""
+        adapted = dict(state_dict)
+        key = "encoder.0.weight"
+        if key in adapted and adapted[key].shape != self.encoder[0].weight.shape:
+            old = adapted[key]
+            target = torch.zeros_like(self.encoder[0].weight)
+            rows = min(old.shape[0], target.shape[0])
+            columns = min(old.shape[1], target.shape[1])
+            target[:rows, :columns] = old[:rows, :columns]
+            adapted[key] = target
+        return adapted
+
+    def load_compatible_state_dict(
+        self, state_dict: dict[str, torch.Tensor], *, strict: bool = True
+    ) -> tuple[list[str], list[str]]:
+        result = self.load_state_dict(self._expand_input_features(state_dict), strict=strict)
+        return list(result.missing_keys), list(result.unexpected_keys)
+
     def load_imitation_state_dict(self, state_dict: dict[str, torch.Tensor]) -> tuple[list[str], list[str]]:
-        result = self.load_state_dict(state_dict, strict=False)
+        result = self.load_state_dict(self._expand_input_features(state_dict), strict=False)
         expected_missing = [key for key in result.missing_keys if key.startswith("critic") or key == "raw_concentration"]
         unexpected_missing = [key for key in result.missing_keys if key not in expected_missing]
         if unexpected_missing:

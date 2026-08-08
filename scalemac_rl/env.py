@@ -41,7 +41,9 @@ TIME_SINCE_SERVICE = 4
 HARQ_PENDING = 5
 HARQ_RETX_COUNT = 6
 ELIGIBLE = 7
-OBSERVATION_FEATURES = 8
+THROUGHPUT_DEFICIT = 8
+SERVICE_DEFICIT = 9
+OBSERVATION_FEATURES = 10
 
 
 def deadline_risk_score(
@@ -114,6 +116,8 @@ class ScaleMacDownlinkEnv:
         self._frozen_cqi: np.ndarray | None = None
         self._frozen_demand_factor: np.ndarray | None = None
         self._frozen_speed_mps: np.ndarray | None = None
+        self._previous_cumulative_fairness = 0.0
+        self._previous_pf_utility = 0.0
 
         self.reset(seed=self.config.seed)
 
@@ -169,6 +173,8 @@ class ScaleMacDownlinkEnv:
         self.harq_retx_count.fill(0)
         self.eligible.fill(True)
         self.last_grant.fill(0)
+        self._previous_cumulative_fairness = 0.0
+        self._previous_pf_utility = 0.0
 
         observation = self._observation()
         info = {
@@ -191,6 +197,8 @@ class ScaleMacDownlinkEnv:
             safety_reserve_ues=self.config.safety_reserve_ues,
             safety_wait_threshold_ratio=self.config.safety_wait_threshold_ratio,
             starvation_threshold_slots=self.config.starvation_threshold_slots,
+            selection_mode=self.config.scheduler_mode,
+            force_harq_retransmissions=self.config.force_harq_retransmissions,
         )
         metrics = self._execute_grant(grant)
         reward, reward_breakdown = self._reward(metrics)
@@ -254,7 +262,30 @@ class ScaleMacDownlinkEnv:
             self.harq_retx_count / retx_denominator, 0.0, 1.0
         )
         observation[:, ELIGIBLE] = self.eligible.astype(np.float32)
+        observation[:, THROUGHPUT_DEFICIT] = self._throughput_deficit()
+        expected_cycle = max(
+            int(np.ceil(self.config.num_ues / max(self.config.max_selected_ues, 1))),
+            1,
+        )
+        observation[:, SERVICE_DEFICIT] = np.clip(
+            self.time_since_service / expected_cycle, 0.0, 2.0
+        )
         return observation
+
+    def _throughput_deficit(self) -> np.ndarray:
+        """Demand-normalized per-UE throughput deficit used as dense actor input."""
+        normalized = self.ewma_throughput_bits / np.maximum(self.demand_factor, 1e-6)
+        eligible_values = normalized[self.eligible]
+        reference = float(eligible_values.mean()) if eligible_values.size else 0.0
+        if reference <= 1e-9:
+            return np.zeros(self.config.num_ues, dtype=np.float32)
+        deficit = np.maximum((reference - normalized) / reference, 0.0)
+        return np.clip(deficit, 0.0, 2.0).astype(np.float32)
+
+    def _pf_utility(self) -> float:
+        normalized = self.ewma_throughput_bits / np.maximum(self.demand_factor, 1e-6)
+        scale = max(float(normalized.max(initial=1.0)), 1.0)
+        return float(np.mean(np.log1p(normalized / scale)))
 
     @staticmethod
     def _bits_per_prb(efficiency: np.ndarray | float) -> np.ndarray | float:
@@ -293,6 +324,7 @@ class ScaleMacDownlinkEnv:
         self.time_since_schedule[selected] = 0
         self.time_since_service += 1
 
+        pre_throughput_deficit = self._throughput_deficit().astype(np.float64)
         delivered_bits = np.zeros(n, dtype=np.float64)
         attempted_bits = np.zeros(n, dtype=np.float64)
         failed_transmissions = 0
@@ -346,6 +378,23 @@ class ScaleMacDownlinkEnv:
         # The cumulative KPI remains visible, while the reward receives a more
         # responsive fairness signal that can change within an episode.
         fairness_score = clip01(0.60 * cumulative_fairness + 0.40 * short_term_fairness)
+        fairness_delta = cumulative_fairness - self._previous_cumulative_fairness
+        fairness_progress = float(
+            np.tanh(self.config.fairness_delta_scale * fairness_delta)
+        )
+        pf_utility = self._pf_utility()
+        pf_utility_delta = pf_utility - self._previous_pf_utility
+        pf_utility_progress = float(
+            np.tanh(self.config.pf_utility_delta_scale * pf_utility_delta)
+        )
+        successful_mask = delivered_bits > 0.0
+        deficit_service_score = (
+            clip01(float(np.mean(pre_throughput_deficit[successful_mask])))
+            if np.any(successful_mask)
+            else 0.0
+        )
+        self._previous_cumulative_fairness = cumulative_fairness
+        self._previous_pf_utility = pf_utility
 
         starvation_mask = self.time_since_service >= self.config.starvation_threshold_slots
         scheduling_starvation_mask = (
@@ -412,6 +461,13 @@ class ScaleMacDownlinkEnv:
             "jain_fairness": cumulative_fairness,
             "short_term_jain_fairness": short_term_fairness,
             "fairness_score": fairness_score,
+            "throughput_deficit_mean": float(self._throughput_deficit().mean()),
+            "deficit_service_score": deficit_service_score,
+            "fairness_delta": float(fairness_delta),
+            "fairness_progress": fairness_progress,
+            "pf_utility": pf_utility,
+            "pf_utility_delta": float(pf_utility_delta),
+            "pf_utility_progress": pf_utility_progress,
             # Primary starvation means no successful delivery for the threshold.
             "starvation_rate": starvation_rate,
             "delivery_starvation_rate": starvation_rate,
@@ -434,7 +490,15 @@ class ScaleMacDownlinkEnv:
             "forced_harq_count": grant.forced_harq_count,
             "forced_long_wait_count": grant.forced_long_wait_count,
             "forced_oldest_wait_count": grant.forced_oldest_wait_count,
+            "selection_mode": grant.selection_mode,
             "safety_selected_count": grant.safety_selected_count,
+            "scheduler_selected_count": grant.scheduler_selected_count,
+            "scheduler_selection_fraction": (
+                grant.scheduler_selected_count / max(int(grant.selected_ues.size), 1)
+            ),
+            "ppo_selected_count": grant.ppo_selected_count,
+            "rule_selected_count": grant.rule_selected_count,
+            # Backward-compatible aliases.
             "learned_selected_count": grant.learned_selected_count,
             "learned_selection_fraction": (
                 grant.learned_selected_count / max(int(grant.selected_ues.size), 1)
@@ -450,6 +514,15 @@ class ScaleMacDownlinkEnv:
         throughput_component = cfg.reward_throughput_weight * metrics["throughput_score"]
         fairness_component = cfg.reward_fairness_weight * metrics["fairness_score"]
         service_component = cfg.reward_service_weight * metrics["service_score"]
+        deficit_service_component = (
+            cfg.reward_deficit_service_weight * metrics["deficit_service_score"]
+        )
+        fairness_progress_component = (
+            cfg.reward_fairness_delta_weight * metrics["fairness_progress"]
+        )
+        pf_utility_progress_component = (
+            cfg.reward_pf_utility_delta_weight * metrics["pf_utility_progress"]
+        )
 
         tolerance = cfg.starvation_tolerance
         starvation_violation = clip01(
@@ -460,7 +533,11 @@ class ScaleMacDownlinkEnv:
             throughput_component
             + fairness_component
             + service_component
+            + deficit_service_component
             - starvation_penalty
+        )
+        shaped_core_total = (
+            core_total + fairness_progress_component + pf_utility_progress_component
         )
         deadline_risk_penalty = (
             cfg.reward_deadline_risk_penalty_weight * float(metrics["deadline_risk"])
@@ -472,18 +549,22 @@ class ScaleMacDownlinkEnv:
         max_wait_risk_penalty = (
             cfg.reward_max_wait_risk_penalty_weight * float(metrics["max_wait_risk"])
         )
-        total = core_total - deadline_risk_penalty - max_wait_risk_penalty
+        total = shaped_core_total - deadline_risk_penalty - max_wait_risk_penalty
         final_target_total = (
-            core_total - reference_deadline_risk_penalty - max_wait_risk_penalty
+            shaped_core_total - reference_deadline_risk_penalty - max_wait_risk_penalty
         )
 
         return float(total), {
             "reward_total": float(total),
             "reward_core_total": float(core_total),
+            "reward_shaped_core_total": float(shaped_core_total),
             "reward_final_target_total": float(final_target_total),
             "reward_throughput_component": float(throughput_component),
             "reward_fairness_component": float(fairness_component),
             "reward_service_component": float(service_component),
+            "reward_deficit_service_component": float(deficit_service_component),
+            "reward_fairness_progress_component": float(fairness_progress_component),
+            "reward_pf_utility_progress_component": float(pf_utility_progress_component),
             "starvation_violation": float(starvation_violation),
             "reward_starvation_penalty": float(starvation_penalty),
             "reward_deadline_risk_penalty": float(deadline_risk_penalty),

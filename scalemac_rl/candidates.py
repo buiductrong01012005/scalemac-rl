@@ -10,6 +10,8 @@ from .env import (
     ELIGIBLE,
     EWMA_THROUGHPUT,
     HARQ_PENDING,
+    SERVICE_DEFICIT,
+    THROUGHPUT_DEFICIT,
     TIME_SINCE_SERVICE,
 )
 
@@ -85,7 +87,16 @@ def build_candidate_mask(
             wait = np.clip(obs[candidates, TIME_SINCE_SERVICE], 0.0, 2.0) / 2.0
             demand = obs[candidates, DEMAND]
             inverse_history = 1.0 - np.clip(obs[candidates, EWMA_THROUGHPUT], 0.0, 1.0)
-            score = 0.40 * cqi + 0.30 * wait + 0.20 * inverse_history + 0.10 * demand
+            throughput_deficit = np.clip(obs[candidates, THROUGHPUT_DEFICIT], 0.0, 2.0) / 2.0
+            service_deficit = np.clip(obs[candidates, SERVICE_DEFICIT], 0.0, 2.0) / 2.0
+            score = (
+                0.30 * cqi
+                + 0.20 * wait
+                + 0.15 * inverse_history
+                + 0.10 * demand
+                + 0.15 * throughput_deficit
+                + 0.10 * service_deficit
+            )
             order = np.argsort(-score, kind="stable")
             selected.extend(candidates[order[:remaining]].tolist())
 
@@ -101,6 +112,17 @@ def build_candidate_mask(
         mask[np.asarray(selected, dtype=np.int64)] = True
     return mask
 
+
+
+def build_all_eligible_mask(observation: np.ndarray) -> np.ndarray:
+    """Return all eligible UEs for full-PPO experiments."""
+    obs = np.asarray(observation, dtype=np.float32)
+    if obs.ndim != 2:
+        raise ValueError("observation must have shape [num_ues, features]")
+    mask = obs[:, ELIGIBLE] > 0.5
+    if not np.any(mask):
+        raise ValueError("observation contains no eligible UE")
+    return mask.astype(bool, copy=False)
 
 def candidate_diagnostics(
     observation: np.ndarray,

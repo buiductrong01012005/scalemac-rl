@@ -1,6 +1,6 @@
 import numpy as np
 
-from scalemac_rl.candidates import apply_candidate_mask, build_candidate_mask
+from scalemac_rl.candidates import apply_candidate_mask, build_all_eligible_mask, build_candidate_mask
 from scalemac_rl.env import ELIGIBLE, HARQ_PENDING, OBSERVATION_FEATURES, TIME_SINCE_SERVICE
 
 
@@ -68,3 +68,12 @@ def test_gather_candidate_batch_uses_equal_candidate_count() -> None:
     compact, indices = gather_candidate_batch(observations, masks)
     assert compact.shape == (2, 3, OBSERVATION_FEATURES)
     assert indices.shape == (2, 3)
+
+
+def test_all_eligible_mask_exposes_every_eligible_ue() -> None:
+    observation = np.zeros((12, OBSERVATION_FEATURES), dtype=np.float32)
+    observation[:, ELIGIBLE] = 1.0
+    observation[[2, 9], ELIGIBLE] = 0.0
+    mask = build_all_eligible_mask(observation)
+    assert mask.sum() == 10
+    assert not mask[2] and not mask[9]

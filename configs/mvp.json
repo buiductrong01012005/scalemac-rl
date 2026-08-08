@@ -10,7 +10,7 @@
   "harq_enabled": true,
   "target_bler": 0.1,
   "max_harq_retransmissions": 3,
-  "reward_throughput_weight": 0.5,
+  "reward_throughput_weight": 0.45,
   "reward_fairness_weight": 0.35,
   "reward_service_weight": 0.15,
   "reward_starvation_penalty_weight": 0.5,
@@ -25,5 +25,12 @@
   "deadline_risk_start_ratio": 0.6,
   "reward_deadline_risk_penalty_weight": 0.15,
   "max_wait_target_slots": 60.0,
-  "reward_max_wait_risk_penalty_weight": 0.1
+  "reward_max_wait_risk_penalty_weight": 0.1,
+  "scheduler_mode": "hybrid",
+  "force_harq_retransmissions": true,
+  "reward_deficit_service_weight": 0.05,
+  "reward_fairness_delta_weight": 0.03,
+  "reward_pf_utility_delta_weight": 0.02,
+  "fairness_delta_scale": 20.0,
+  "pf_utility_delta_scale": 8.0
 }

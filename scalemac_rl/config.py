@@ -15,6 +15,13 @@ class ScaleMacConfig:
     max_selected_ues: int = 64
     episode_slots: int = 1000
 
+    # Scheduler attribution mode. ``hybrid`` reserves rule-selected grants,
+    # ``ppo_only`` lets PPO choose all grants, and ``rule_only`` ignores PPO
+    # priority for UE selection. The action projector remains validity-only in
+    # PPO-only mode.
+    scheduler_mode: str = "hybrid"
+    force_harq_retransmissions: bool = True
+
     # Hybrid safety/learning split. The projector reserves up to this many
     # grants for HARQ and long-waiting UEs; PPO ranks the remaining grants.
     safety_reserve_ues: int = 0
@@ -46,10 +53,19 @@ class ScaleMacConfig:
     max_harq_retransmissions: int = 3
 
     # All positive reward scores are normalized to [0, 1]. Throughput remains
-    # the main objective, while fairness and service regularize the solution.
-    reward_throughput_weight: float = 0.50
+    # the main objective, while fairness, service, and per-UE deficit credit
+    # regularize the solution.
+    reward_throughput_weight: float = 0.45
     reward_fairness_weight: float = 0.35
     reward_service_weight: float = 0.15
+    reward_deficit_service_weight: float = 0.05
+
+    # Signed dense shaping terms. They reward immediate improvements in Jain
+    # fairness and proportional-fair utility without replacing KPI reporting.
+    reward_fairness_delta_weight: float = 0.03
+    reward_pf_utility_delta_weight: float = 0.02
+    fairness_delta_scale: float = 20.0
+    pf_utility_delta_scale: float = 8.0
 
     # Starvation is a constraint-like penalty applied outside the convex
     # combination above so a high-throughput policy cannot ignore most UEs.
@@ -83,6 +99,8 @@ class ScaleMacConfig:
             )
         if self.episode_slots <= 0:
             raise ValueError("episode_slots must be positive")
+        if self.scheduler_mode not in {"hybrid", "ppo_only", "rule_only"}:
+            raise ValueError("scheduler_mode must be hybrid, ppo_only, or rule_only")
         if not 0 <= self.safety_reserve_ues <= self.max_selected_ues:
             raise ValueError("safety_reserve_ues must be in [0, max_selected_ues]")
         if self.safety_wait_threshold_ratio < 0.0:
@@ -125,9 +143,16 @@ class ScaleMacConfig:
             self.reward_throughput_weight
             + self.reward_fairness_weight
             + self.reward_service_weight
+            + self.reward_deficit_service_weight
         )
         if abs(reward_sum - 1.0) > 1e-6:
             raise ValueError("positive reward weights must sum to 1")
+        if self.reward_fairness_delta_weight < 0.0:
+            raise ValueError("reward_fairness_delta_weight must be non-negative")
+        if self.reward_pf_utility_delta_weight < 0.0:
+            raise ValueError("reward_pf_utility_delta_weight must be non-negative")
+        if self.fairness_delta_scale <= 0.0 or self.pf_utility_delta_scale <= 0.0:
+            raise ValueError("fairness/PF delta scales must be positive")
         if self.reward_starvation_penalty_weight < 0.0:
             raise ValueError("reward_starvation_penalty_weight must be non-negative")
         if not 0.0 <= self.starvation_tolerance < 1.0:

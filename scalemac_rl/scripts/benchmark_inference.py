@@ -85,11 +85,13 @@ def main() -> None:
         parser.error(str(exc))
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     model = SharedSetActorCritic(
-        input_dim=checkpoint.get("input_dim", 8), hidden_dim=checkpoint["hidden_dim"]
+        input_dim=10, hidden_dim=checkpoint["hidden_dim"]
     ).to(device)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    model.load_compatible_state_dict(checkpoint["model_state_dict"], strict=True)
     model.eval()
     training = checkpoint.get("training", {})
+    scheduler_mode = str(training.get("scheduler_mode", "hybrid"))
+    force_harq = bool(training.get("force_harq_retransmissions", True))
     safety_reserve = int(
         args.safety_reserve_ues
         if args.safety_reserve_ues is not None
@@ -106,7 +108,12 @@ def main() -> None:
         num_ues=args.num_ues,
         max_selected_ues=min(64, args.num_ues),
         episode_slots=1,
-        safety_reserve_ues=min(safety_reserve, min(64, args.num_ues) - 1),
+        scheduler_mode=scheduler_mode,
+        force_harq_retransmissions=force_harq,
+        safety_reserve_ues=(
+            0 if scheduler_mode == "ppo_only"
+            else min(safety_reserve, min(64, args.num_ues))
+        ),
         safety_wait_threshold_ratio=long_wait_threshold,
         starvation_threshold_slots=starvation_threshold_slots,
     )
@@ -143,6 +150,8 @@ def main() -> None:
                     safety_reserve_ues=config.safety_reserve_ues,
                     safety_wait_threshold_ratio=config.safety_wait_threshold_ratio,
                     starvation_threshold_slots=config.starvation_threshold_slots,
+                    selection_mode=config.scheduler_mode,
+                    force_harq_retransmissions=config.force_harq_retransmissions,
                 )
             _sync(device)
 
@@ -205,6 +214,8 @@ def main() -> None:
                     safety_reserve_ues=config.safety_reserve_ues,
                     safety_wait_threshold_ratio=config.safety_wait_threshold_ratio,
                     starvation_threshold_slots=config.starvation_threshold_slots,
+                    selection_mode=config.scheduler_mode,
+                    force_harq_retransmissions=config.force_harq_retransmissions,
                 )
                 timings["scatter_and_project"].append((perf_counter_ns() - start) / 1000.0)
                 timings["end_to_end"].append((perf_counter_ns() - total_start) / 1000.0)

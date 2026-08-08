@@ -109,13 +109,16 @@ def main() -> None:
     device = _resolve_device(args.device)
     checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=False)
     policy = SharedSetPolicy(
-        input_dim=checkpoint.get("input_dim", 8),
+        input_dim=10,
         hidden_dim=checkpoint["hidden_dim"],
     ).to(device)
-    policy.load_state_dict(checkpoint["model_state_dict"])
+    policy.load_compatible_state_dict(checkpoint["model_state_dict"], strict=True)
     policy.eval()
 
-    config = ScaleMacConfig(num_ues=args.num_ues, episode_slots=args.slots)
+    config = ScaleMacConfig(
+        num_ues=args.num_ues, episode_slots=args.slots,
+        scheduler_mode="ppo_only", force_harq_retransmissions=False,
+    )
     config.validate()
 
     rows = [

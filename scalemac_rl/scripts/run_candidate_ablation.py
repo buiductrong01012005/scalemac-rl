@@ -61,10 +61,12 @@ def main() -> None:
         parser.error(str(exc))
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     model = SharedSetActorCritic(
-        input_dim=checkpoint.get("input_dim", 8), hidden_dim=checkpoint["hidden_dim"]
+        input_dim=10, hidden_dim=checkpoint["hidden_dim"]
     ).to(device)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    model.load_compatible_state_dict(checkpoint["model_state_dict"], strict=True)
     training = checkpoint.get("training", {})
+    scheduler_mode = str(training.get("scheduler_mode", "hybrid"))
+    force_harq = bool(training.get("force_harq_retransmissions", True))
     safety_reserve = int(
         args.safety_reserve_ues
         if args.safety_reserve_ues is not None
@@ -94,6 +96,9 @@ def main() -> None:
     reward_throughput_weight = float(training.get("reward_throughput_weight", 0.50))
     reward_fairness_weight = float(training.get("reward_fairness_weight", 0.35))
     reward_service_weight = float(training.get("reward_service_weight", 0.15))
+    reward_deficit_service_weight = float(training.get("reward_deficit_service_weight", 0.0))
+    reward_fairness_delta_weight = float(training.get("reward_fairness_delta_weight", 0.0))
+    reward_pf_utility_delta_weight = float(training.get("reward_pf_utility_delta_weight", 0.0))
     constraints = ServiceConstraints(
         max_starvation_rate=args.max_starvation_rate,
         max_p99_wait_slots=args.max_p99_wait_slots,
@@ -105,7 +110,12 @@ def main() -> None:
         num_ues=args.num_ues,
         max_selected_ues=min(64, args.num_ues),
         episode_slots=args.slots,
-        safety_reserve_ues=min(safety_reserve, min(64, args.num_ues) - 1),
+        scheduler_mode=scheduler_mode,
+        force_harq_retransmissions=force_harq,
+        safety_reserve_ues=(
+            0 if scheduler_mode == "ppo_only"
+            else min(safety_reserve, min(64, args.num_ues))
+        ),
         safety_wait_threshold_ratio=long_wait_threshold,
         freeze_static_profiles=freeze_static_profiles,
         static_profile_seed=fixed_profile_seed,
@@ -117,6 +127,9 @@ def main() -> None:
         reward_throughput_weight=reward_throughput_weight,
         reward_fairness_weight=reward_fairness_weight,
         reward_service_weight=reward_service_weight,
+        reward_deficit_service_weight=reward_deficit_service_weight,
+        reward_fairness_delta_weight=reward_fairness_delta_weight,
+        reward_pf_utility_delta_weight=reward_pf_utility_delta_weight,
         max_wait_target_slots=args.max_wait_slots,
     )
     config.validate()
@@ -132,6 +145,7 @@ def main() -> None:
                 seed=args.seed + offset,
                 name=f"candidates_{effective}",
                 max_candidates=effective,
+                candidate_mode="heuristic",
                 long_wait_threshold=long_wait_threshold,
                 constraints=constraints,
             )
@@ -170,6 +184,10 @@ def main() -> None:
             "mean_long_wait_missed_count",
             "mean_safety_selected_count",
             "mean_forced_oldest_wait_count",
+            "mean_scheduler_selected_count",
+            "mean_scheduler_selection_fraction",
+            "mean_ppo_selected_count",
+            "mean_rule_selected_count",
             "mean_learned_selected_count",
             "mean_learned_selection_fraction",
             "mean_inference_us",

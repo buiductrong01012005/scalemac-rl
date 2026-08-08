@@ -33,19 +33,26 @@ def test_reward_components_are_normalized_and_sum_correctly() -> None:
         info["reward_throughput_component"]
         + info["reward_fairness_component"]
         + info["reward_service_component"]
+        + info["reward_deficit_service_component"]
         - info["reward_starvation_penalty"]
     )
-    reconstructed = (
+    shaped_core = (
         core
+        + info["reward_fairness_progress_component"]
+        + info["reward_pf_utility_progress_component"]
+    )
+    reconstructed = (
+        shaped_core
         - info["reward_deadline_risk_penalty"]
         - info["reward_max_wait_risk_penalty"]
     )
     assert np.isclose(reward, reconstructed)
     assert np.isclose(reward, info["reward_total"])
     assert np.isclose(core, info["reward_core_total"])
+    assert np.isclose(shaped_core, info["reward_shaped_core_total"])
     assert np.isclose(
         info["reward_final_target_total"],
-        core
+        shaped_core
         - info["reward_reference_deadline_risk_penalty"]
         - info["reward_max_wait_risk_penalty"],
     )
@@ -107,4 +114,4 @@ def test_reference_reward_uses_fixed_target() -> None:
     assert "reward_core_total" in final_info
     assert "reward_final_target_total" in final_info
     assert "reference_deadline_risk" in final_info
-    assert final_info["reward_final_target_total"] <= final_info["reward_core_total"]
+    assert final_info["reward_final_target_total"] <= final_info["reward_shaped_core_total"]

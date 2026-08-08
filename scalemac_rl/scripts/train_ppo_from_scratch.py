@@ -11,23 +11,33 @@ def _has_option(name: str) -> bool:
 
 
 def main() -> None:
-    """Run the approximately 200k-step fairness-and-tail-delay single-profile experiment.
+    """Train PPO from random weights with no rule-selected UE grants.
 
-    Defaults intentionally overfit one frozen 1,200-UE CQI/demand profile so the
-    project can measure how far the current actor/projector design can optimize a
-    known scenario. This is not a generalization experiment.
+    Default mode exposes 128 heuristic candidates and lets PPO choose all Top-64
+    grants. Pass ``--full-ues`` to expose all 1,200 UEs directly to the actor.
+    The action projector only enforces Top-K and exact 273-PRB feasibility.
     """
+    full_ues = "--full-ues" in sys.argv[1:]
+    sys.argv = [arg for arg in sys.argv if arg != "--full-ues"]
+
+    tag = "full1200" if full_ues else "candidate128"
+    candidate_mode = "all" if full_ues else "heuristic"
+    max_candidates = "1200" if full_ues else "128"
+
     defaults = [
         "--single-seed-upper-bound",
         "--freeze-static-profiles",
         "--curriculum", "1200",
+        "--stage-p99-wait-limits", "50",
         "--steps-per-stage", "200192",
         "--workers", "1",
         "--rollout-steps", "256",
         "--episode-slots", "2000",
-        "--max-candidates", "128",
-        "--safety-reserve-ues", "16",
-        "--stage-p99-wait-limits", "50",
+        "--candidate-mode", candidate_mode,
+        "--max-candidates", max_candidates,
+        "--scheduler-mode", "ppo_only",
+        "--safety-reserve-ues", "0",
+        "--no-force-harq-retransmissions",
         "--final-stage-p99-schedule", "80,65,55,50",
         "--fairness-target-schedule", "0.50,0.55,0.60",
         "--validation-seeds", "1701",
@@ -52,21 +62,18 @@ def main() -> None:
         "--max-p99-wait-slots", "50",
         "--min-jain-fairness", "0.60",
         "--max-wait-slots", "60",
+        "--init-checkpoint", "artifacts/__random_initialization__.pt",
+        "--output", f"artifacts/ppo_scratch_{tag}_latest.pt",
+        "--best-feasible-output", f"artifacts/ppo_scratch_{tag}_best_feasible.pt",
+        "--best-reward-output", f"artifacts/ppo_scratch_{tag}_best_reward.pt",
+        "--best-lowest-violation-output", f"artifacts/ppo_scratch_{tag}_best_lowest_violation.pt",
+        "--checkpoint-dir", f"artifacts/checkpoints/ppo_scratch_{tag}",
+        "--log-output", f"artifacts/ppo_scratch_{tag}_training.csv",
+        "--validation-output", f"artifacts/ppo_scratch_{tag}_validation.csv",
+        "--checkpoint-manifest-output", f"artifacts/ppo_scratch_{tag}_checkpoint_manifest.csv",
     ]
 
-    # Continue from the strongest v0.5 1,200-UE checkpoint when it exists.
-    resume_candidates = [
-        Path("artifacts/best_lowest_violation.pt"),
-        Path("artifacts/checkpoints/best_stage_1200.pt"),
-    ]
-    if not _has_option("--resume-checkpoint") and not _has_option("--init-checkpoint"):
-        resume = next((path for path in resume_candidates if path.is_file()), None)
-        if resume is not None:
-            defaults.extend(["--resume-checkpoint", str(resume)])
-        else:
-            defaults.extend(["--init-checkpoint", "artifacts/pf_imitation.pt"])
-
-    # Defaults are inserted before user arguments so explicit CLI options win.
+    # Defaults are inserted before user arguments, so explicit CLI options win.
     sys.argv[1:1] = defaults
     train_ppo_main()
 

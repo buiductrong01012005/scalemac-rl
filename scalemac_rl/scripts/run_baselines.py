@@ -89,7 +89,10 @@ def main() -> None:
     if args.seeds <= 0:
         parser.error("--seeds must be positive")
 
-    config = ScaleMacConfig(num_ues=args.num_ues, episode_slots=args.slots)
+    config = ScaleMacConfig(
+        num_ues=args.num_ues, episode_slots=args.slots,
+        scheduler_mode="ppo_only", force_harq_retransmissions=False,
+    )
     config.validate()
 
     factories = {

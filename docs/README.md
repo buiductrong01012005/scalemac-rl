@@ -225,3 +225,39 @@ ZIP archives are ignored through both `*.zip` and the requested `*.*zip` pattern
 ## Source archive policy
 
 Release ZIP files contain source code, tests, configs, and documentation only. They do not contain an `artifacts/` directory, so extracting a new source release cannot overwrite existing experiment results or checkpoints. Scripts create output directories automatically when needed.
+
+## v0.7 pure-PPO and attribution experiments
+
+The environment now exposes 10 per-UE features. The two new features are:
+
+- `throughput_deficit`: demand-normalized deficit relative to the current cell mean;
+- `service_deficit`: successful-delivery wait relative to the expected round-robin service cycle.
+
+The scheduler can run in three modes:
+
+- `hybrid`: rule-selected safety grants plus PPO-selected grants;
+- `ppo_only`: PPO selects every grant and the projector only enforces feasibility;
+- `rule_only`: HARQ/oldest-wait rules select every grant.
+
+Train PPO from random weights with 128 candidates:
+
+```powershell
+python -m scalemac_rl.scripts.train_ppo_from_scratch
+```
+
+Expose all 1,200 UEs directly to PPO after the candidate experiment is stable:
+
+```powershell
+python -m scalemac_rl.scripts.train_ppo_from_scratch --full-ues
+```
+
+Run scheduler attribution after checkpoints are available:
+
+```powershell
+python -m scalemac_rl.scripts.run_scheduler_attribution `
+  --hybrid-checkpoint .\artifacts\best_lowest_violation.pt `
+  --ppo-candidate-checkpoint .\artifacts\ppo_scratch_candidate128_best_lowest_violation.pt `
+  --ppo-full-checkpoint .\artifacts\ppo_scratch_full1200_best_lowest_violation.pt
+```
+
+All learned modes keep the projector, but in `ppo_only` mode it may only enforce Top-64 selection, non-negative integer PRBs, at least one PRB per selected UE, and an exact total of 273 PRBs.
