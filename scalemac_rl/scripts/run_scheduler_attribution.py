@@ -22,6 +22,7 @@ from scalemac_rl.reporting import (
     write_markdown,
 )
 from scalemac_rl.rl_evaluation import evaluate_actor_critic, evaluate_scheduler
+from scalemac_rl.tradeoff import annotate_tradeoff_scores
 from scalemac_rl.schedulers import (
     MaxCqiScheduler,
     ProportionalFairScheduler,
@@ -259,6 +260,10 @@ def main() -> None:
         if len(scenario_hashes) != 1:
             raise RuntimeError(f"methods used inconsistent scenario hashes for seed {seed}")
 
+    rows = annotate_tradeoff_scores(
+        rows, max_starvation_rate=args.max_starvation_rate, group_key="seed"
+    )
+
     write_csv(args.output, rows)
     write_markdown(
         markdown_report_path(args.output),
@@ -295,6 +300,14 @@ def main() -> None:
             "mean_scheduler_selected_count",
             "mean_ppo_selected_count",
             "mean_rule_selected_count",
+            "goodput_proximity",
+            "fairness_proximity",
+            "p99_wait_proximity",
+            "max_wait_proximity",
+            "starvation_proximity",
+            "balanced_score",
+            "worst_kpi_gap",
+            "tradeoff_rank",
         ],
     )
     summary_path = sibling_with_stem(args.output, "_summary", ".csv")
@@ -305,6 +318,42 @@ def main() -> None:
         description=f"Mean and sample standard deviation across {args.seeds} seed(s).",
         rows=summary,
     )
+    tradeoff_rows = [
+        {
+            "method": row["method"],
+            "seed": row["seed"],
+            "tradeoff_scoring_version": row["tradeoff_scoring_version"],
+            "tradeoff_rank": row["tradeoff_rank"],
+            "tradeoff_eligible": row["tradeoff_eligible"],
+            "pareto_dominated": row["pareto_dominated"],
+            "balanced_score": row["balanced_score"],
+            "worst_kpi_gap": row["worst_kpi_gap"],
+            "goodput_proximity": row["goodput_proximity"],
+            "fairness_proximity": row["fairness_proximity"],
+            "p99_wait_proximity": row["p99_wait_proximity"],
+            "max_wait_proximity": row["max_wait_proximity"],
+            "starvation_proximity": row["starvation_proximity"],
+            "mean_goodput_bits_per_slot": row["mean_goodput_bits_per_slot"],
+            "final_jain_fairness": row["final_jain_fairness"],
+            "mean_starvation_rate": row["mean_starvation_rate"],
+            "max_p99_wait_slots": row["max_p99_wait_slots"],
+            "max_wait_slots": row["max_wait_slots"],
+        }
+        for row in sorted(rows, key=lambda item: (int(item["seed"]), int(item["tradeoff_rank"])))
+    ]
+    tradeoff_path = sibling_with_stem(args.output, "_tradeoff", ".csv")
+    write_csv(tradeoff_path, tradeoff_rows)
+    write_markdown(
+        markdown_report_path(args.output, suffix="_tradeoff"),
+        title="ScaleMAC-RL normalized KPI trade-off ranking",
+        description=(
+            "The ideal point is formed from starvation-feasible schedulers for each seed. "
+            "Lower worst_kpi_gap and higher balanced_score are better; Pareto dominance is "
+            "reported separately so one strong KPI cannot hide a severe weakness."
+        ),
+        rows=tradeoff_rows,
+    )
+
     manifest_rows = _manifest_rows(rows)
     write_csv(args.manifest_output, manifest_rows)
     write_markdown(
@@ -316,6 +365,7 @@ def main() -> None:
     print(f"protocol_hash={protocol.protocol_hash}")
     print(f"saved: {args.output}")
     print(f"saved: {summary_path}")
+    print(f"saved: {tradeoff_path}")
     print(f"saved: {args.manifest_output}")
 
 

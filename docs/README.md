@@ -15,6 +15,22 @@ ScaleMAC-RL is a fast DRL training surrogate for **single-cell 5G NR downlink MA
 - KPIs: throughput, fairness/service, delay/starvation, candidate coverage, and inference latency.
 
 
+## What v0.7.4 adds
+
+v0.7.4 shortens both diagnostic PPO runs to approximately 300k environment steps
+so the learning trend can be inspected before committing to a longer experiment:
+
+- `train_hybrid_300k` fine-tunes the hybrid PPO policy for 300,032 environment steps;
+- `train_ppo_only_300k` trains candidate-128 PPO-only from random weights for 300,032 steps;
+- both runs retain checkpoints near 100k, 200k, and 300k steps;
+- validation runs every 64 PPO updates and periodic checkpoints every 128 updates;
+- `best_tradeoff.pt` still minimizes the largest fixed-target KPI gap before maximizing the geometric balanced score;
+- all output names use the `hybrid_300k` or `ppo_only_300k` prefix;
+- source releases remain source-only and never include `artifacts/`.
+
+The 300k budget is intended as a decision gate: compare the early and final milestones,
+then extend only a policy whose fairness, delay, and goodput continue to improve.
+
 ## What v0.7.2 adds
 
 v0.7.2 makes scheduler comparison reproducible through one `unified-v1`
@@ -330,3 +346,65 @@ python -m scalemac_rl.scripts.verify_evaluation_consistency `
 The check matches rows by checkpoint SHA-256, protocol hash, scenario hash, and
 scheduler-runtime hash before comparing KPI values. Inference timing is excluded
 because wall-clock measurements naturally vary between runs.
+
+## v0.7.4 300k diagnostic experiments
+
+Train the hybrid and PPO-only policies separately:
+
+```powershell
+# Hybrid: warm-start from the strongest existing hybrid checkpoint when available
+python -m scalemac_rl.scripts.train_hybrid_300k
+
+# PPO-only: random initialization, PPO chooses all 64 grants from 128 candidates
+python -m scalemac_rl.scripts.train_ppo_only_300k
+```
+
+Run both sequentially only when the machine can remain available for both jobs:
+
+```powershell
+python -m scalemac_rl.scripts.train_both_ppo_300k
+```
+
+Each run creates its own files. The preferred checkpoint order for analysis is:
+
+```text
+best_tradeoff -> best_feasible -> best_lowest_violation -> best_reward -> latest
+```
+
+Milestone checkpoints are stored below:
+
+```text
+artifacts/checkpoints/hybrid_300k/milestone_*.pt
+artifacts/checkpoints/ppo_only_300k/milestone_*.pt
+```
+
+Evaluate both policies under the unified protocol:
+
+```powershell
+python -m scalemac_rl.scripts.run_unified_evaluation `
+  --hybrid-checkpoint .\artifacts\hybrid_300k_best_tradeoff.pt `
+  --ppo-candidate-checkpoint .\artifacts\ppo_only_300k_best_tradeoff.pt `
+  --num-ues 1200 `
+  --slots 5000 `
+  --seed 1701 `
+  --seeds 1 `
+  --profile-seed 1701 `
+  --output .\artifacts\unified_300k_evaluation.csv `
+  --manifest-output .\artifacts\unified_300k_evaluation_manifest.csv
+```
+
+The command also exports `artifacts/unified_300k_evaluation_tradeoff.csv`.
+
+Package the result files without checkpoints first:
+
+```powershell
+Compress-Archive `
+  -Path .\artifacts\hybrid_300k_*.csv,`
+        .\artifacts\ppo_only_300k_*.csv,`
+        .\artifacts\unified_300k_*.csv,`
+        .\docs\reports\hybrid_300k_*.md,`
+        .\docs\reports\ppo_only_300k_*.md,`
+        .\docs\reports\unified_300k_*.md `
+  -DestinationPath .\scalemac_results_v074_300k.zip `
+  -Force
+```

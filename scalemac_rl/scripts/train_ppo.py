@@ -26,6 +26,7 @@ from scalemac_rl.constraints import LagrangeController, ServiceConstraints, vali
 from scalemac_rl.models import SharedSetActorCritic
 from scalemac_rl.reporting import markdown_report_path, write_csv, write_markdown
 from scalemac_rl.rl_evaluation import evaluate_actor_critic
+from scalemac_rl.tradeoff import validation_tradeoff_metrics
 
 
 @dataclass(slots=True)
@@ -245,6 +246,9 @@ def _checkpoint_payload(
             "fairness_target_schedule": args.fairness_target_schedule,
             "reference_deadline_target_slots": args.max_p99_wait_slots,
             "max_wait_target_slots": args.max_wait_slots,
+            "tradeoff_target_throughput_score": args.min_throughput_score,
+            "milestone_env_steps": args.milestone_env_steps,
+            "training_budget_env_steps": args.steps_per_stage * len(args.curriculum),
             "learning_rate": args.lr,
             "gamma": args.gamma,
             "gae_lambda": args.gae_lambda,
@@ -458,6 +462,9 @@ def _validate(
         "mean_goodput_bits_per_slot": mean(
             float(row["mean_goodput_bits_per_slot"]) for row in rows
         ),
+        "mean_throughput_score": mean(
+            float(row["mean_throughput_score"]) for row in rows
+        ),
         "mean_jain_fairness": mean(float(row["final_jain_fairness"]) for row in rows),
         "minimum_jain_fairness": minimum_fairness,
         "worst_starvation_rate": worst_starvation,
@@ -570,6 +577,12 @@ def main() -> None:
     parser.add_argument("--max-starvation-rate", type=float, default=0.0)
     parser.add_argument("--max-p99-wait-slots", type=float, default=50.0)
     parser.add_argument("--min-jain-fairness", type=float, default=0.60)
+    parser.add_argument(
+        "--min-throughput-score",
+        type=float,
+        default=0.45,
+        help="soft fixed-target throughput score used only for best_tradeoff selection",
+    )
     parser.add_argument("--max-wait-slots", type=float, default=60.0)
     parser.add_argument(
         "--stage-p99-wait-limits", type=_parse_float_list, default=[80.0, 80.0, 80.0, 50.0]
@@ -595,6 +608,12 @@ def main() -> None:
     parser.add_argument("--rollback-patience", type=int, default=2)
     parser.add_argument("--checkpoint-every", type=int, default=16)
     parser.add_argument(
+        "--milestone-env-steps",
+        type=_parse_int_list,
+        default=[],
+        help="comma-separated environment-step milestones saved in the checkpoint directory",
+    )
+    parser.add_argument(
         "--progress",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -606,6 +625,11 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=Path("artifacts/latest.pt"))
     parser.add_argument("--best-feasible-output", type=Path, default=Path("artifacts/best_feasible.pt"))
     parser.add_argument("--best-reward-output", type=Path, default=Path("artifacts/best_reward.pt"))
+    parser.add_argument(
+        "--best-tradeoff-output",
+        type=Path,
+        default=Path("artifacts/best_tradeoff.pt"),
+    )
     parser.add_argument(
         "--best-lowest-violation-output",
         type=Path,
@@ -643,6 +667,8 @@ def main() -> None:
         parser.error("deadline-risk-penalty-weight must be non-negative")
     if args.max_wait_risk_penalty_weight < 0.0:
         parser.error("max-wait-risk-penalty-weight must be non-negative")
+    if not 0.0 < args.min_throughput_score <= 1.0:
+        parser.error("min-throughput-score must be in (0, 1]")
     if args.starvation_threshold_slots <= 0:
         parser.error("starvation-threshold-slots must be positive")
     reward_weight_sum = (
@@ -665,6 +691,9 @@ def main() -> None:
             args.fixed_profile_seed = args.seed
     if args.validate_every <= 0 or args.rollback_patience <= 0 or args.checkpoint_every <= 0:
         parser.error("validation, rollback, and checkpoint intervals must be positive")
+    if any(step <= 0 for step in args.milestone_env_steps):
+        parser.error("milestone environment steps must be positive")
+    args.milestone_env_steps = sorted(set(args.milestone_env_steps))
 
     final_constraints = ServiceConstraints(
         max_starvation_rate=args.max_starvation_rate,
@@ -719,9 +748,12 @@ def main() -> None:
     update_index = 0
     best_feasible_reward = float("-inf")
     best_reward = float("-inf")
+    best_tradeoff_score: tuple[bool, float, float, float] | None = None
+    best_tradeoff_saved = False
     best_lowest_violation_score: tuple[float, float, float, float, float] | None = None
     best_lowest_violation_saved = False
     best_feasible_saved = False
+    saved_milestones: set[int] = set()
     target_num_ues = args.curriculum[-1]
     last_validation: dict[str, Any] | None = None
     training_started_at = perf_counter()
@@ -1259,6 +1291,45 @@ def main() -> None:
                         + final_fairness_excess
                         + final_max_wait_excess
                     )
+                    tradeoff_metrics = validation_tradeoff_metrics(
+                        mean_throughput_score=float(summary["mean_throughput_score"]),
+                        minimum_jain_fairness=float(summary["minimum_jain_fairness"]),
+                        worst_starvation_rate=float(summary["worst_starvation_rate"]),
+                        worst_p99_wait_slots=float(summary["worst_p99_wait_slots"]),
+                        worst_max_wait_slots=float(summary["worst_max_wait_slots"]),
+                        target_throughput_score=float(args.min_throughput_score),
+                        target_jain_fairness=float(final_constraints.min_jain_fairness),
+                        target_starvation_rate=float(final_constraints.max_starvation_rate),
+                        target_p99_wait_slots=float(final_constraints.max_p99_wait_slots),
+                        target_max_wait_slots=float(final_constraints.max_wait_slots),
+                    )
+                    summary.update(tradeoff_metrics)
+                    current_tradeoff_score = (
+                        not bool(tradeoff_metrics["target_starvation_feasible"]),
+                        float(tradeoff_metrics["target_worst_kpi_gap"]),
+                        -float(tradeoff_metrics["target_balanced_score"]),
+                        -float(summary["mean_goodput_bits_per_slot"]),
+                    )
+                    if best_tradeoff_score is None or current_tradeoff_score < best_tradeoff_score:
+                        best_tradeoff_score = current_tradeoff_score
+                        best_tradeoff_saved = True
+                        tradeoff_payload = copy.deepcopy(validation_payload)
+                        tradeoff_payload["checkpoint_tag"] = "best_tradeoff"
+                        _save_checkpoint(args.best_tradeoff_output, tradeoff_payload)
+                        checkpoint_manifest_rows.append({
+                            "checkpoint": str(args.best_tradeoff_output),
+                            "tag": "best_tradeoff",
+                            "update": update_index,
+                            "global_env_steps": global_env_steps,
+                            "selection_reason": "minimize_worst_target_gap_then_maximize_balanced_score",
+                            "starvation_excess": final_starvation_excess,
+                            "max_wait_excess": final_max_wait_excess,
+                            "p99_wait_excess": final_wait_excess,
+                            "fairness_excess": final_fairness_excess,
+                            "target_worst_kpi_gap": float(tradeoff_metrics["target_worst_kpi_gap"]),
+                            "target_balanced_score": float(tradeoff_metrics["target_balanced_score"]),
+                            "final_target_reward": float(summary["mean_final_target_reward"]),
+                        })
                     final_score = (
                         float(final_starvation_excess),
                         float(final_max_wait_excess),
@@ -1386,6 +1457,30 @@ def main() -> None:
                     print(validation_message)
 
 
+            for milestone in args.milestone_env_steps:
+                if milestone in saved_milestones or global_env_steps < milestone:
+                    continue
+                milestone_path = args.checkpoint_dir / f"milestone_{milestone:07d}.pt"
+                _save_checkpoint(
+                    milestone_path,
+                    _checkpoint_payload(
+                        model=model, optimizer=optimizer, args=args,
+                        initialized_from=initialized_from,
+                        global_env_steps=global_env_steps, update_index=update_index,
+                        stage_index=stage_index, num_ues=num_ues,
+                        controller=controller, constraints=active_constraints,
+                        tag=f"milestone_{milestone}", validation=last_validation,
+                    ),
+                )
+                saved_milestones.add(milestone)
+                checkpoint_manifest_rows.append({
+                    "checkpoint": str(milestone_path),
+                    "tag": f"milestone_{milestone}",
+                    "update": update_index,
+                    "global_env_steps": global_env_steps,
+                    "selection_reason": "requested_environment_step_milestone",
+                })
+
             if update_index % args.checkpoint_every == 0:
                 _save_checkpoint(
                     args.checkpoint_dir / f"ppo_update_{update_index:05d}.pt",
@@ -1439,6 +1534,7 @@ def main() -> None:
             f"Starvation definition: no successful delivery for >= {args.starvation_threshold_slots} slots",
             f"Reward weights: throughput={args.reward_throughput_weight}, fairness={args.reward_fairness_weight}, service={args.reward_service_weight}",
             f"Total wall-clock training time: {total_elapsed_seconds:.1f} seconds",
+            "best_tradeoff minimizes the largest fixed-target KPI gap, then maximizes the geometric balanced score.",
             "Workers are vectorized environments in one process, not distributed RL.",
             "This remains the fast surrogate, not 5G-LENA.",
         ),
@@ -1466,13 +1562,16 @@ def main() -> None:
         title="ScaleMAC-RL checkpoint selection manifest",
         description=(
             "Checkpoint provenance. Lowest-violation ranking is lexicographic: "
-            "successful-delivery starvation, maximum wait, P99 wait, fairness, then reward."
+            "successful-delivery starvation, maximum wait, P99 wait, fairness, then reward. "
+            "best_tradeoff minimizes the fixed-target worst KPI gap before balanced score and goodput."
         ),
         rows=checkpoint_manifest_rows,
     )
 
     print(f"saved: {args.output}")
     print(f"saved: {args.best_reward_output}")
+    if best_tradeoff_saved:
+        print(f"saved: {args.best_tradeoff_output}")
     if best_lowest_violation_saved:
         print(f"saved: {args.best_lowest_violation_output}")
     if best_feasible_saved:

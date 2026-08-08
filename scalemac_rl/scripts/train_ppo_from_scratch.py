@@ -66,6 +66,7 @@ def main() -> None:
         "--output", f"artifacts/ppo_scratch_{tag}_latest.pt",
         "--best-feasible-output", f"artifacts/ppo_scratch_{tag}_best_feasible.pt",
         "--best-reward-output", f"artifacts/ppo_scratch_{tag}_best_reward.pt",
+        "--best-tradeoff-output", f"artifacts/ppo_scratch_{tag}_best_tradeoff.pt",
         "--best-lowest-violation-output", f"artifacts/ppo_scratch_{tag}_best_lowest_violation.pt",
         "--checkpoint-dir", f"artifacts/checkpoints/ppo_scratch_{tag}",
         "--log-output", f"artifacts/ppo_scratch_{tag}_training.csv",
