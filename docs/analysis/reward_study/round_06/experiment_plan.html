@@ -1,0 +1,17 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Round 06 — Sáu hướng cục bộ</title>
+<style>body{font-family:Segoe UI,Arial,sans-serif;background:#f5f7fb;color:#172033;margin:0;line-height:1.6}main{max-width:1100px;margin:auto;padding:28px}header,section,nav{background:#fff;border:1px solid #dfe5ee;border-radius:16px;padding:22px;margin-bottom:16px}header{background:linear-gradient(135deg,#18264a,#315efb);color:#fff}table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px solid #dfe5ee;text-align:left;vertical-align:top}th{background:#f0f3f8}a{color:#315efb}code,pre{background:#eef1f7;border-radius:7px}code{padding:2px 5px}pre{padding:14px;overflow:auto}</style></head>
+<body><main><nav><a href="../index.html">← Mục lục reward study</a> · <a href="../round_05/three_component_directional_analysis.html">Round 05</a></nav>
+<header><h1>Round 06: giữ một reward, dịch nhẹ hai reward còn lại</h1><p>Gom toàn bộ sáu hướng cục bộ vào một plan để so sánh trong cùng điều kiện.</p></header>
+<section><h2>Mốc trung tâm</h2><pre>Throughput = 1/3
+Jain       = 1/3
+Service    = 1/3</pre><p>Round 05 cho thấy dịch thẳng một thành phần lên 0,50 là quá mạnh. Vì vậy Round 06 chỉ dùng bước nhỏ: tăng lên 0,40 và giảm xuống 0,2667.</p></section>
+<section><h2>Sáu case</h2><table><thead><tr><th>Nhóm</th><th>Throughput</th><th>Jain</th><th>Service</th><th>Câu hỏi</th></tr></thead><tbody>
+<tr><td>Giữ Service — tăng Throughput</td><td>0,4000</td><td>0,2667</td><td>0,3333</td><td>Goodput tăng bao nhiêu trước khi coverage xấu đi?</td></tr>
+<tr><td>Giữ Service — tăng Jain</td><td>0,2667</td><td>0,4000</td><td>0,3333</td><td>Fairness deterministic có tăng hay priority lại phẳng?</td></tr>
+<tr><td>Giữ Jain — tăng Throughput</td><td>0,4000</td><td>0,3333</td><td>0,2667</td><td>Giảm shaping Service có giữ được rotation không?</td></tr>
+<tr><td>Giữ Jain — tăng Service</td><td>0,2667</td><td>0,3333</td><td>0,4000</td><td>Delay có giảm mà không lặp Service-heavy collapse không?</td></tr>
+<tr><td>Giữ Throughput — tăng Jain</td><td>0,3333</td><td>0,4000</td><td>0,2667</td><td>Chuyển Service sang Jain có tăng fairness không?</td></tr>
+<tr><td>Giữ Throughput — tăng Service</td><td>0,3333</td><td>0,2667</td><td>0,4000</td><td>Chuyển Jain sang Service giảm wait nhưng mất fairness bao nhiêu?</td></tr>
+</tbody></table></section>
+<section><h2>Cách đọc kết quả</h2><p>Không chọn case chỉ vì tổng reward cao. Mỗi cặp phải được đọc theo reward giữ cố định để tách tác dụng của hai reward còn lại. Một hướng chỉ đáng giữ nếu KPI mục tiêu cải thiện, starvation/wait không collapse và xu hướng giữ được qua nhiều checkpoint validation.</p></section>
+</main></body></html>

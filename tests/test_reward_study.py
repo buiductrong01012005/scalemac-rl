@@ -83,6 +83,7 @@ def test_round_plans_are_valid_and_unique() -> None:
         Path("configs/reward_study/round_02_throughput_jain_sweep.json"),
         Path("configs/reward_study/round_04_add_service_equal.json"),
         Path("configs/reward_study/round_05_three_component_directional.json"),
+        Path("configs/reward_study/round_06_three_component_coordinate.json"),
     ):
         plan = RewardStudyPlan.from_json(path)
         assert plan.cases
@@ -273,10 +274,10 @@ def test_round_04_result_analysis_is_archived() -> None:
         "docs/analysis/reward_study/round_04/add_service_equal_analysis.html"
     )
     content = path.read_text(encoding="utf-8")
-    assert "Service chiếm khoảng" in content
+    assert "Service chủ yếu là reward shaping" in content
     assert "Worst P99 wait" in content
     assert "Throughput-heavy" in content
-    assert "mốc trung tâm" in content
+    assert "55,5% policy influence" in content
     assert "service_005" not in content
 
 
@@ -366,3 +367,83 @@ def test_directional_three_component_analysis_explains_all_three_cases(tmp_path:
     assert "0.5 × Service" in content
     assert "giảm đều hai thành phần còn lại" in content
     assert "99% UE" in content
+
+
+def test_round_05_result_analysis_explains_non_linear_directional_effects() -> None:
+    path = Path(
+        "docs/analysis/reward_study/round_05/three_component_directional_analysis.html"
+    )
+    content = path.read_text(encoding="utf-8")
+    assert "Throughput-heavy: tăng goodput nhưng tạo policy không ổn định" in content
+    assert "Jain-heavy: tăng hệ số Jain nhưng fairness deterministic lại giảm" in content
+    assert "Service-heavy: Service không đủ làm objective chính" in content
+    assert "vùng ổn định gần mốc bằng nhau" in content
+
+
+def test_round_06_includes_the_hold_service_pair() -> None:
+    plan = RewardStudyPlan.from_json(
+        Path("configs/reward_study/round_06_three_component_coordinate.json")
+    )
+    by_id = {case.case_id: case for case in plan.cases}
+    expected = {
+        "hold_service_raise_throughput": (0.40, 0.2666666666666667, 1.0 / 3.0),
+        "hold_service_raise_jain": (0.2666666666666667, 0.40, 1.0 / 3.0),
+    }
+    for case_id, (throughput, fairness, service) in expected.items():
+        actual = by_id[case_id].actual_coefficients()
+        assert np.isclose(actual["coef_throughput"], throughput)
+        assert np.isclose(actual["coef_fairness"], fairness)
+        assert np.isclose(actual["coef_service"], service)
+        assert np.isclose(throughput + fairness + service, 1.0)
+
+
+
+def test_round_06_covers_all_six_local_coordinate_directions() -> None:
+    plan = RewardStudyPlan.from_json(
+        Path("configs/reward_study/round_06_three_component_coordinate.json")
+    )
+    assert plan.analysis["design"] == "three_component_coordinate_perturbation"
+    assert len(plan.cases) == 6
+    expected = {
+        (0.4, 0.2666666666666667, 0.3333333333333333),
+        (0.2666666666666667, 0.4, 0.3333333333333333),
+        (0.4, 0.3333333333333333, 0.2666666666666667),
+        (0.2666666666666667, 0.3333333333333333, 0.4),
+        (0.3333333333333333, 0.4, 0.2666666666666667),
+        (0.3333333333333333, 0.2666666666666667, 0.4),
+    }
+    observed = {
+        (
+            case.actual_coefficients()["coef_throughput"],
+            case.actual_coefficients()["coef_fairness"],
+            case.actual_coefficients()["coef_service"],
+        )
+        for case in plan.cases
+    }
+    assert observed == expected
+    for case in plan.cases:
+        actual = case.actual_coefficients()
+        assert actual["coef_deficit_service"] == 0.0
+        assert actual["coef_pf_utility"] == 0.0
+        assert actual["coef_starvation_penalty"] == 0.0
+
+
+def test_reward_analysis_archive_is_linked() -> None:
+    index = Path("docs/analysis/reward_study/index.html").read_text(encoding="utf-8")
+    assert "Round 01" in index
+    assert "Round 06" in index
+    assert "synthesis_round_01_to_05.html" in index
+    assert "literature_context.html" in index
+    assert Path("docs/analysis/reward_study/synthesis_round_01_to_05.html").is_file()
+    assert Path("docs/analysis/reward_study/literature_context.html").is_file()
+
+
+def test_round_06_analysis_plan_explains_all_fixed_component_pairs() -> None:
+    content = Path(
+        "docs/analysis/reward_study/round_06/experiment_plan.html"
+    ).read_text(encoding="utf-8")
+    assert "Giữ Service" in content
+    assert "Giữ Jain" in content
+    assert "Giữ Throughput" in content
+    assert "0,4000" in content
+    assert "0,2667" in content

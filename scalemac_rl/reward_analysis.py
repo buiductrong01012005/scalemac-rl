@@ -233,11 +233,18 @@ def build_incremental_reward_analysis(
         case_dir = round_path / case.case_id
         row = _read_last_csv_row(case_dir / "validation.csv")
         coefficients = case.actual_coefficients()
-        case_focus = (
-            _dominant_component(coefficients)
-            if design == "directional_three_component"
-            else focus_component
-        )
+        if design == "three_component_coordinate_perturbation":
+            focus_map = dict(analysis_cfg.get("case_focus", {}))
+            case_focus = str(focus_map.get(case.case_id, _dominant_component(coefficients)))
+        else:
+            case_focus = (
+                _dominant_component(coefficients)
+                if design in {
+                    "directional_three_component",
+                    "hold_service_trade_throughput_jain",
+                }
+                else focus_component
+            )
 
         coefficient_rows = []
         for component in POSITIVE_COMPONENTS:
@@ -332,6 +339,29 @@ def build_incremental_reward_analysis(
             "mức cố định hợp lý. Vòng kế tiếp mới giữ thành phần đó và tăng/giảm hai thành phần "
             "còn lại với một số ít config. Không sweep dày và không tối ưu riêng một case thất bại."
         )
+    elif design == "hold_service_trade_throughput_jain":
+        objective_text = (
+            "Giữ Service ở mức 1/3 đã cho policy ổn định, sau đó chỉ chuyển một lượng nhỏ "
+            "trọng số giữa Throughput và Jain fairness. Mục tiêu là kiểm tra hai hướng cải thiện "
+            "cục bộ mà không rời khỏi vùng coverage ổn định."
+        )
+        decision_text = (
+            "So sánh hai case với mốc 1/3–1/3–1/3. Chỉ giữ một hướng nếu KPI mục tiêu cải thiện "
+            "mà starvation và wait vẫn ổn định. Nếu cả hai xấu, giữ mốc bằng nhau và chuyển sang "
+            "khám phá thành phần reward tiếp theo thay vì sweep thêm."
+        )
+    elif design == "three_component_coordinate_perturbation":
+        objective_text = (
+            "Dùng mốc 1/3–1/3–1/3 làm tâm. Trong mỗi cặp thí nghiệm, giữ một thành phần ở 1/3, "
+            "tăng một thành phần lên 0,40 và giảm thành phần còn lại xuống 0,2667. Sáu case bao phủ "
+            "toàn bộ ba mặt cắt cục bộ của reward, nhưng vẫn chỉ thay đổi nhẹ để tránh lặp lại các "
+            "collapse ở mức 0,50 của Round 05."
+        )
+        decision_text = (
+            "Đọc từng cặp theo thành phần được giữ cố định. Một hướng chỉ được xem là hữu ích khi KPI "
+            "đúng mục tiêu cải thiện, starvation/wait không collapse và trajectory không chỉ tốt ở một "
+            "checkpoint ngắn. Sau vòng này mới chọn 1–2 hướng đáng tinh chỉnh; không sweep dày."
+        )
     else:
         focus = COMPONENT_GUIDE.get(focus_component, COMPONENT_GUIDE["service"])
         objective_text = (
@@ -346,7 +376,7 @@ def build_incremental_reward_analysis(
         )
 
     summary_block = ""
-    if design == "directional_three_component":
+    if design in {"directional_three_component", "three_component_coordinate_perturbation"}:
         reference_summary = ""
         if reference_row is not None:
             reference_summary = (
@@ -356,12 +386,12 @@ def build_incremental_reward_analysis(
                 f"<td>{100.0 * safe_float(reference_row, 'max_starvation_rate'):.2f}%</td>"
                 f"<td>{safe_float(reference_row, 'max_p99_wait_slots'):.1f}</td>"
                 f"<td>{safe_float(reference_row, 'max_wait_slots'):.1f}</td>"
-                "<td>Không tăng riêng thành phần nào</td></tr>"
+                "<td>Mốc trung tâm</td></tr>"
             )
         summary_block = (
             "<section class='card'><h2>Bảng so sánh tổng quát</h2>"
             "<table><thead><tr><th>Case</th><th>Goodput</th><th>Jain</th><th>Starvation</th>"
-            "<th>Worst P99 wait</th><th>Max wait</th><th>Thành phần được tăng</th></tr></thead>"
+            "<th>Worst P99 wait</th><th>Max wait</th><th>Hướng thay đổi chính</th></tr></thead>"
             f"<tbody>{reference_summary}{''.join(summary_rows)}</tbody></table></section>"
         )
 
@@ -372,8 +402,9 @@ def build_incremental_reward_analysis(
 body{{margin:0;background:#f4f7fb;color:#172033;font-family:Segoe UI,Arial,sans-serif;line-height:1.6}}
 main{{max-width:1120px;margin:auto;padding:28px 18px 60px}}header,.card{{background:#fff;border:1px solid #dfe5ee;border-radius:16px;padding:22px;margin-bottom:16px}}
 header{{background:linear-gradient(135deg,#18264a,#315efb);color:#fff}}table{{width:100%;border-collapse:collapse;font-size:14px}}th,td{{padding:10px;border-bottom:1px solid #dfe5ee;text-align:left;vertical-align:top}}th{{background:#f0f3f8}}
-pre{{background:#111827;color:#edf2f7;padding:15px;border-radius:10px;overflow:auto}}code{{background:#eef1f7;color:#172033;padding:2px 5px;border-radius:5px}}.callout{{padding:14px 16px;border-radius:11px}}.warn{{background:#fff5d8}}small{{color:#5f6e82}}
+pre{{background:#111827;color:#edf2f7;padding:15px;border-radius:10px;overflow:auto}}code{{background:#eef1f7;color:#172033;padding:2px 5px;border-radius:5px}}.callout{{padding:14px 16px;border-radius:11px}}.warn{{background:#fff5d8}}small{{color:#5f6e82}}.nav{{margin:0 0 14px;padding:10px 14px;background:#fff;border:1px solid #dfe5ee;border-radius:12px}}.nav a{{color:#315efb;text-decoration:none}}
 </style></head><body><main>
+<nav class="nav"><a href="../index.html">← Mục lục reward study</a> · <a href="../../index.html">Kho phân tích</a></nav>
 <header><h1>{html.escape(plan.round_id)}</h1><p>{html.escape(plan.description)}</p></header>
 <section class="card"><h2>Mục tiêu của vòng này</h2><p>{objective_text}</p><p>{reference_note}</p></section>
 {summary_block}

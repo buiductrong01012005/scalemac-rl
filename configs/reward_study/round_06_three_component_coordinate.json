@@ -1,0 +1,100 @@
+{
+  "study_id": "full_control_reward_exploration",
+  "round_id": "round_06_three_component_coordinate",
+  "description": "Explore the local neighborhood around the stable equal-third Throughput-Jain-Service reward. Hold one component at 1/3 and make a small symmetric transfer between the other two. Six cases are run together so every coordinate direction is measured under the same environment, seed, budget and PPO settings.",
+  "common": {
+    "environment_steps": 100096,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_seeds": [1701],
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "seed": 1701,
+    "profile_seed": 1701,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 0.000025,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64,
+    "reward_normalization": "Use the same bounded Throughput, Jain fairness and Service scores as Rounds 04-05. The equal-third point is the center. In each case one component remains 1/3, one rises to 0.40 and the other falls to 0.2666667. All undeclared rewards, penalties, deltas and Lagrangian multipliers remain disabled."
+  },
+  "analysis": {
+    "design": "three_component_coordinate_perturbation",
+    "components": ["throughput", "fairness", "service"],
+    "reference_run": "artifacts/runs/reward_study/round_04_add_service_equal/t_j_service_equal",
+    "reference_label": "Equal baseline: 1/3 throughput + 1/3 Jain + 1/3 service",
+    "output": "docs/analysis/reward_study/round_06/three_component_coordinate_analysis.html",
+    "case_focus": {
+      "hold_service_raise_throughput": "throughput",
+      "hold_service_raise_jain": "fairness",
+      "hold_jain_raise_throughput": "throughput",
+      "hold_jain_raise_service": "service",
+      "hold_throughput_raise_jain": "fairness",
+      "hold_throughput_raise_service": "service"
+    },
+    "reference_metrics": {
+      "mean_goodput_bits_per_slot": 97411.018965,
+      "final_jain_fairness": 0.26764,
+      "max_starvation_rate": 0.0,
+      "max_p99_wait_slots": 47.0,
+      "max_wait_slots": 48.0,
+      "mean_reward_throughput_component": 0.16467,
+      "mean_reward_fairness_component": 0.082817,
+      "mean_reward_service_component": 0.308745
+    }
+  },
+  "cases": [
+    {
+      "id": "hold_service_raise_throughput",
+      "label": "Giữ Service: tăng Throughput, giảm Jain",
+      "hypothesis": "Khi Service giữ ở 1/3, tăng nhẹ Throughput từ 1/3 lên 0.40 có tăng goodput mà vẫn giữ coverage hay không?",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.4, "fairness": 0.2666666666666667, "service": 0.3333333333333333}
+    },
+    {
+      "id": "hold_service_raise_jain",
+      "label": "Giữ Service: tăng Jain, giảm Throughput",
+      "hypothesis": "Khi Service giữ ở 1/3, tăng nhẹ Jain lên 0.40 có cải thiện fairness deterministic mà không làm priority quá phẳng hay không?",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.2666666666666667, "fairness": 0.4, "service": 0.3333333333333333}
+    },
+    {
+      "id": "hold_jain_raise_throughput",
+      "label": "Giữ Jain: tăng Throughput, giảm Service",
+      "hypothesis": "Khi Jain giữ ở 1/3, giảm Service shaping và tăng Throughput có giữ được rotation nhưng tăng goodput hay không?",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.4, "fairness": 0.3333333333333333, "service": 0.2666666666666667}
+    },
+    {
+      "id": "hold_jain_raise_service",
+      "label": "Giữ Jain: tăng Service, giảm Throughput",
+      "hypothesis": "Khi Jain giữ ở 1/3, tăng nhẹ Service có giảm wait mà không rơi vào Service-heavy collapse hay không?",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.2666666666666667, "fairness": 0.3333333333333333, "service": 0.4}
+    },
+    {
+      "id": "hold_throughput_raise_jain",
+      "label": "Giữ Throughput: tăng Jain, giảm Service",
+      "hypothesis": "Khi Throughput giữ ở 1/3, chuyển một phần Service sang Jain có tăng fairness mà vẫn giữ safety hay không?",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.3333333333333333, "fairness": 0.4, "service": 0.2666666666666667}
+    },
+    {
+      "id": "hold_throughput_raise_service",
+      "label": "Giữ Throughput: tăng Service, giảm Jain",
+      "hypothesis": "Khi Throughput giữ ở 1/3, chuyển một phần Jain sang Service có giảm wait nhưng làm fairness suy giảm bao nhiêu?",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.3333333333333333, "fairness": 0.2666666666666667, "service": 0.4}
+    }
+  ]
+}
