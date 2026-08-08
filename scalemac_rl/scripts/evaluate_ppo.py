@@ -5,10 +5,13 @@ from pathlib import Path
 
 import torch
 
-from scalemac_rl import ScaleMacConfig
 from scalemac_rl.checkpoints import require_checkpoint
-from scalemac_rl.constraints import ServiceConstraints
-from scalemac_rl.models import SharedSetActorCritic
+from scalemac_rl.evaluation_protocol import (
+    UnifiedEvaluationProtocol,
+    learned_provenance,
+    load_policy_checkpoint,
+    resolve_policy_runtime,
+)
 from scalemac_rl.reporting import (
     markdown_report_path,
     sibling_with_stem,
@@ -27,24 +30,56 @@ def _resolve_device(name: str) -> torch.device:
     return torch.device(name)
 
 
+def _manifest_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    keys = (
+        "method",
+        "seed",
+        "evaluation_protocol_version",
+        "evaluation_protocol_hash",
+        "evaluation_reward_version",
+        "scenario_hash",
+        "scheduler_runtime_hash",
+        "scheduler_runtime_json",
+        "checkpoint_path",
+        "checkpoint_sha256",
+        "checkpoint_type",
+        "checkpoint_tag",
+        "checkpoint_training_reward_version",
+        "checkpoint_training_reward_signature",
+        "checkpoint_observation_features",
+        "evaluation_observation_features",
+        "compatibility_adapter_applied",
+    )
+    return [{key: row.get(key, "") for key in keys} for row in rows]
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description=(
+            "Evaluate one PPO checkpoint under the same fixed protocol used by "
+            "scheduler attribution. Checkpoint training reward weights are provenance only."
+        )
+    )
     parser.add_argument("checkpoint", type=Path)
     parser.add_argument("--num-ues", type=int, default=1200)
-    parser.add_argument("--slots", type=int, default=1000)
-    parser.add_argument("--seed", type=int, default=201)
-    parser.add_argument("--seeds", type=int, default=3)
+    parser.add_argument("--slots", type=int, default=5000)
+    parser.add_argument("--seed", type=int, default=1701)
+    parser.add_argument("--seeds", type=int, default=1)
+    parser.add_argument("--profile-seed", type=int, default=None)
     parser.add_argument("--max-candidates", type=int, default=None)
     parser.add_argument("--candidate-mode", choices=["heuristic", "all"], default=None)
     parser.add_argument(
         "--scheduler-mode", choices=["hybrid", "ppo_only", "rule_only"], default=None
     )
     parser.add_argument(
-        "--force-harq-retransmissions", action=argparse.BooleanOptionalAction,
+        "--force-harq-retransmissions",
+        action=argparse.BooleanOptionalAction,
         default=None,
     )
     parser.add_argument("--safety-reserve-ues", type=int, default=None)
     parser.add_argument("--long-wait-threshold", type=float, default=None)
+    # Backward-compatible alias. The unified evaluator always freezes one static
+    # profile; this flag is accepted so old command lines continue to work.
     parser.add_argument("--fixed-profile-seed", type=int, default=None)
     parser.add_argument("--freeze-static-profiles", action="store_true")
     parser.add_argument("--max-starvation-rate", type=float, default=0.0)
@@ -53,110 +88,81 @@ def main() -> None:
     parser.add_argument("--max-wait-slots", type=float, default=60.0)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     parser.add_argument("--output", type=Path, default=Path("artifacts/ppo_evaluation.csv"))
+    parser.add_argument(
+        "--manifest-output",
+        type=Path,
+        default=Path("artifacts/ppo_evaluation_manifest.csv"),
+    )
     args = parser.parse_args()
+
+    if args.seeds <= 0:
+        parser.error("seeds must be positive")
+    profile_seed = (
+        args.profile_seed
+        if args.profile_seed is not None
+        else args.fixed_profile_seed
+        if args.fixed_profile_seed is not None
+        else args.seed
+    )
 
     device = _resolve_device(args.device)
     try:
         checkpoint_path = require_checkpoint(args.checkpoint)
     except FileNotFoundError as exc:
         parser.error(str(exc))
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    model = SharedSetActorCritic(
-        input_dim=10,
-        hidden_dim=checkpoint["hidden_dim"],
-    ).to(device)
-    model.load_compatible_state_dict(checkpoint["model_state_dict"], strict=True)
-    training = checkpoint.get("training", {})
-    max_candidates = int(args.max_candidates or training.get("max_candidates", 128))
-    candidate_mode = str(args.candidate_mode or training.get("candidate_mode", "heuristic"))
-    scheduler_mode = str(args.scheduler_mode or training.get("scheduler_mode", "hybrid"))
-    force_harq = bool(
-        training.get("force_harq_retransmissions", True)
-        if args.force_harq_retransmissions is None
-        else args.force_harq_retransmissions
-    )
-    safety_reserve = int(
-        args.safety_reserve_ues
-        if args.safety_reserve_ues is not None
-        else training.get("safety_reserve_ues", 16)
-    )
-    long_wait_threshold = float(
-        args.long_wait_threshold
-        if args.long_wait_threshold is not None
-        else training.get("long_wait_threshold", 0.8)
-    )
-    freeze_static_profiles = bool(
-        args.freeze_static_profiles or training.get("freeze_static_profiles", False)
-    )
-    fixed_profile_seed = (
-        args.fixed_profile_seed
-        if args.fixed_profile_seed is not None
-        else training.get("fixed_profile_seed")
-    )
-    deadline_risk_start_ratio = float(training.get("deadline_risk_start_ratio", 0.60))
-    deadline_risk_penalty_weight = float(
-        training.get("deadline_risk_penalty_weight", 0.15)
-    )
-    max_wait_risk_penalty_weight = float(
-        training.get("max_wait_risk_penalty_weight", 0.10)
-    )
-    starvation_threshold_slots = int(training.get("starvation_threshold_slots", 64))
-    reward_throughput_weight = float(training.get("reward_throughput_weight", 0.50))
-    reward_fairness_weight = float(training.get("reward_fairness_weight", 0.35))
-    reward_service_weight = float(training.get("reward_service_weight", 0.15))
-    reward_deficit_service_weight = float(training.get("reward_deficit_service_weight", 0.0))
-    reward_fairness_delta_weight = float(training.get("reward_fairness_delta_weight", 0.0))
-    reward_pf_utility_delta_weight = float(training.get("reward_pf_utility_delta_weight", 0.0))
-    config = ScaleMacConfig(
+    model, checkpoint = load_policy_checkpoint(checkpoint_path, device)
+    runtime = resolve_policy_runtime(
+        checkpoint,
         num_ues=args.num_ues,
-        max_selected_ues=min(64, args.num_ues),
-        episode_slots=args.slots,
-        scheduler_mode=scheduler_mode,
-        force_harq_retransmissions=force_harq,
-        safety_reserve_ues=(
-            0 if scheduler_mode == "ppo_only"
-            else min(safety_reserve, min(64, args.num_ues))
-        ),
-        safety_wait_threshold_ratio=long_wait_threshold,
-        freeze_static_profiles=freeze_static_profiles,
-        static_profile_seed=fixed_profile_seed,
-        deadline_target_slots=args.max_p99_wait_slots,
-        deadline_risk_start_ratio=deadline_risk_start_ratio,
-        reward_deadline_risk_penalty_weight=deadline_risk_penalty_weight,
-        reward_max_wait_risk_penalty_weight=max_wait_risk_penalty_weight,
-        starvation_threshold_slots=starvation_threshold_slots,
-        reward_throughput_weight=reward_throughput_weight,
-        reward_fairness_weight=reward_fairness_weight,
-        reward_service_weight=reward_service_weight,
-        reward_deficit_service_weight=reward_deficit_service_weight,
-        reward_fairness_delta_weight=reward_fairness_delta_weight,
-        reward_pf_utility_delta_weight=reward_pf_utility_delta_weight,
+        scheduler_mode=args.scheduler_mode,
+        candidate_mode=args.candidate_mode,
+        max_candidates=args.max_candidates,
+        safety_reserve_ues=args.safety_reserve_ues,
+        force_harq_retransmissions=args.force_harq_retransmissions,
+        long_wait_threshold=args.long_wait_threshold,
+    )
+    protocol = UnifiedEvaluationProtocol(
+        num_ues=args.num_ues,
+        slots=args.slots,
+        profile_seed=profile_seed,
+        max_starvation_rate=args.max_starvation_rate,
+        p99_wait_target_slots=args.max_p99_wait_slots,
+        min_jain_fairness=args.min_jain_fairness,
         max_wait_target_slots=args.max_wait_slots,
     )
-    config.validate()
-    constraints = ServiceConstraints(
-        max_starvation_rate=args.max_starvation_rate,
-        max_p99_wait_slots=args.max_p99_wait_slots,
-        min_jain_fairness=args.min_jain_fairness,
-        max_wait_slots=args.max_wait_slots,
+    protocol.validate()
+    config = protocol.build_config(
+        scheduler_mode=runtime.scheduler_mode,
+        safety_reserve_ues=runtime.safety_reserve_ues,
+        force_harq_retransmissions=runtime.force_harq_retransmissions,
+        safety_wait_threshold_ratio=runtime.long_wait_threshold,
     )
-    constraints.validate()
+    constraints = protocol.constraints()
 
-    rows = [
-        evaluate_actor_critic(
+    rows: list[dict[str, object]] = []
+    for offset in range(args.seeds):
+        seed = args.seed + offset
+        row = evaluate_actor_critic(
             model=model,
             device=device,
             config=config,
-            seed=args.seed + offset,
+            seed=seed,
             name=args.checkpoint.stem,
-            max_candidates=(args.num_ues if candidate_mode == "all" else max_candidates),
-            candidate_mode=candidate_mode,
-            long_wait_threshold=long_wait_threshold,
+            max_candidates=runtime.max_candidates,
+            candidate_mode=runtime.candidate_mode,
+            long_wait_threshold=runtime.long_wait_threshold,
             constraints=constraints,
         )
-        for offset in range(args.seeds)
-    ]
-    for row in rows:
+        row.update(
+            learned_provenance(
+                checkpoint_path=checkpoint_path,
+                checkpoint=checkpoint,
+                protocol=protocol,
+                runtime=runtime,
+                rollout_seed=seed,
+            )
+        )
+        rows.append(row)
         print(
             f"seed={row['seed']} reward={row['mean_reward']:.6f} "
             f"goodput={row['mean_goodput_bits_per_slot']:.1f} "
@@ -170,10 +176,17 @@ def main() -> None:
     write_csv(args.output, rows)
     write_markdown(
         markdown_report_path(args.output),
-        title="ScaleMAC-RL PPO evaluation",
-        description="Deterministic evaluation of the PPO actor after curriculum fine-tuning.",
+        title="ScaleMAC-RL unified PPO evaluation",
+        description=(
+            "Deterministic PPO evaluation under the fixed unified protocol also "
+            "used by scheduler attribution."
+        ),
         rows=rows,
-        notes=("This is fast-surrogate evaluation, not 5G-LENA validation.",),
+        notes=(
+            "Checkpoint training reward fields are provenance only; all methods use the same evaluation reward and constraints.",
+            f"Evaluation protocol hash: {protocol.protocol_hash}",
+            "This is fast-surrogate evaluation, not 5G-LENA validation.",
+        ),
     )
     summary = summarize_by_group(
         rows,
@@ -222,14 +235,24 @@ def main() -> None:
     write_csv(summary_csv, summary)
     write_markdown(
         markdown_report_path(args.output, suffix="_summary"),
-        title="ScaleMAC-RL PPO evaluation summary",
+        title="ScaleMAC-RL unified PPO evaluation summary",
         description=f"Mean and sample standard deviation across {args.seeds} seed(s).",
         rows=summary,
     )
+    write_csv(args.manifest_output, _manifest_rows(rows))
+    write_markdown(
+        markdown_report_path(args.manifest_output),
+        title="ScaleMAC-RL unified PPO evaluation manifest",
+        description="Hashes and provenance required to reproduce this evaluation.",
+        rows=_manifest_rows(rows),
+    )
+    print(f"protocol_hash={protocol.protocol_hash}")
+    print(f"checkpoint_sha256={rows[0]['checkpoint_sha256']}")
     print(f"saved: {args.output}")
     print(f"saved: {markdown_report_path(args.output)}")
     print(f"saved: {summary_csv}")
     print(f"saved: {markdown_report_path(args.output, suffix='_summary')}")
+    print(f"saved: {args.manifest_output}")
 
 
 if __name__ == "__main__":

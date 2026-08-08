@@ -14,6 +14,15 @@ ScaleMAC-RL is a fast DRL training surrogate for **single-cell 5G NR downlink MA
 - required output: selected Top-K UEs and PRBs per selected UE;
 - KPIs: throughput, fairness/service, delay/starvation, candidate coverage, and inference latency.
 
+
+## What v0.7.2 adds
+
+v0.7.2 makes scheduler comparison reproducible through one `unified-v1`
+evaluation protocol. Standalone PPO evaluation and cross-scheduler evaluation
+now share the same environment builder, candidate/runtime resolver, normalized
+evaluation reward, KPI constraints, static profile, and rollout seed. Every row
+records protocol, scenario, scheduler-runtime, and checkpoint hashes.
+
 ## What v0.6.2 adds
 
 v0.6.2 focuses on a more realistic fairness/service objective for the 1,200-UE
@@ -261,3 +270,63 @@ python -m scalemac_rl.scripts.run_scheduler_attribution `
 ```
 
 All learned modes keep the projector, but in `ppo_only` mode it may only enforce Top-64 selection, non-negative integer PRBs, at least one PRB per selected UE, and an exact total of 273 PRBs.
+
+## v0.7.2 unified evaluation protocol
+
+All scheduler comparisons now use one fixed evaluation contract:
+
+- the same frozen CQI/demand profile;
+- the same rollout seed and HARQ randomness;
+- the same 10-feature observation schema;
+- the same normalized evaluation reward;
+- the same starvation, P99, Jain-fairness, and maximum-wait constraints;
+- the same Top-64, exact-273-PRB projector contract.
+
+A checkpoint's training reward is retained only as provenance. It cannot change
+its evaluation reward or KPI definitions.
+
+Evaluate one checkpoint:
+
+```powershell
+python -m scalemac_rl.scripts.evaluate_ppo `
+  .\artifacts\best_lowest_violation.pt `
+  --num-ues 1200 --slots 5000 --seed 1701 --seeds 1
+```
+
+Compare all available schedulers under the same protocol:
+
+```powershell
+python -m scalemac_rl.scripts.run_unified_evaluation `
+  --hybrid-checkpoint .\artifacts\best_lowest_violation.pt `
+  --ppo-candidate-checkpoint .\artifacts\ppo_scratch_candidate128_best_lowest_violation.pt `
+  --num-ues 1200 --slots 5000 --seed 1701 --seeds 1
+```
+
+The legacy `run_scheduler_attribution` command invokes the same implementation.
+Both commands export a manifest containing:
+
+```text
+evaluation_protocol_hash
+scenario_hash
+scheduler_runtime_hash
+checkpoint_sha256
+checkpoint_training_reward_version
+checkpoint_observation_features
+compatibility_adapter_applied
+```
+
+For a given checkpoint and identical CLI arguments, the KPI row produced by
+`evaluate_ppo` must match the corresponding row produced by
+`run_unified_evaluation`.
+
+Verify that standalone and unified evaluation rows are identical:
+
+```powershell
+python -m scalemac_rl.scripts.verify_evaluation_consistency `
+  .\artifacts\ppo_evaluation.csv `
+  .\artifacts\scheduler_attribution.csv
+```
+
+The check matches rows by checkpoint SHA-256, protocol hash, scenario hash, and
+scheduler-runtime hash before comparing KPI values. Inference timing is excluded
+because wall-clock measurements naturally vary between runs.

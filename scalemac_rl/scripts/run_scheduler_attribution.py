@@ -6,10 +6,14 @@ from typing import Any
 
 import torch
 
-from scalemac_rl import ScaleMacConfig
 from scalemac_rl.checkpoints import require_checkpoint
-from scalemac_rl.constraints import ServiceConstraints
-from scalemac_rl.models import SharedSetActorCritic
+from scalemac_rl.evaluation_protocol import (
+    UnifiedEvaluationProtocol,
+    classical_provenance,
+    learned_provenance,
+    load_policy_checkpoint,
+    resolve_policy_runtime,
+)
 from scalemac_rl.reporting import (
     markdown_report_path,
     sibling_with_stem,
@@ -34,91 +38,61 @@ def _resolve_device(name: str) -> torch.device:
     return torch.device(name)
 
 
-def _load_model(path: Path, device: torch.device) -> tuple[SharedSetActorCritic, dict[str, Any]]:
-    checkpoint_path = require_checkpoint(path)
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    model = SharedSetActorCritic(input_dim=10, hidden_dim=checkpoint["hidden_dim"]).to(device)
-    model.load_compatible_state_dict(checkpoint["model_state_dict"], strict=True)
-    model.eval()
-    return model, checkpoint
+def _manifest_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    keys = (
+        "method",
+        "seed",
+        "evaluation_protocol_version",
+        "evaluation_protocol_hash",
+        "evaluation_reward_version",
+        "scenario_hash",
+        "scheduler_runtime_hash",
+        "scheduler_runtime_json",
+        "checkpoint_path",
+        "checkpoint_sha256",
+        "checkpoint_type",
+        "checkpoint_tag",
+        "checkpoint_training_reward_version",
+        "checkpoint_training_reward_signature",
+        "checkpoint_observation_features",
+        "evaluation_observation_features",
+        "compatibility_adapter_applied",
+    )
+    return [{key: row.get(key, "") for key in keys} for row in rows]
 
 
-def _learned_config(
+def _classical_row(
     *,
-    checkpoint: dict[str, Any],
-    num_ues: int,
-    slots: int,
-    fixed_profile_seed: int,
-    scheduler_mode: str,
-    candidate_mode: str,
-) -> tuple[ScaleMacConfig, int, float]:
-    training = checkpoint.get("training", {})
-    reserve = int(training.get("safety_reserve_ues", 16))
-    if scheduler_mode == "ppo_only":
-        reserve = 0
-    reward_throughput_weight = float(training.get("reward_throughput_weight", 0.50))
-    reward_fairness_weight = float(training.get("reward_fairness_weight", 0.35))
-    reward_service_weight = float(training.get("reward_service_weight", 0.15))
-    stored_deficit_weight = training.get("reward_deficit_service_weight")
-    if stored_deficit_weight is None:
-        # v0.6.x checkpoints predate the deficit-service reward. Preserve their
-        # original convex reward instead of silently adding the v0.7 default.
-        reward_deficit_service_weight = max(
-            0.0,
-            1.0
-            - reward_throughput_weight
-            - reward_fairness_weight
-            - reward_service_weight,
+    scheduler: Any,
+    config: Any,
+    seed: int,
+    name: str,
+    protocol: UnifiedEvaluationProtocol,
+) -> dict[str, Any]:
+    row = evaluate_scheduler(
+        scheduler=scheduler,
+        config=config,
+        seed=seed,
+        name=name,
+        constraints=protocol.constraints(),
+    )
+    row.update(
+        classical_provenance(
+            protocol=protocol,
+            scheduler_name=name,
+            scheduler_mode=config.scheduler_mode,
+            rollout_seed=seed,
         )
-        if reward_deficit_service_weight < 1e-12:
-            reward_deficit_service_weight = 0.0
-    else:
-        reward_deficit_service_weight = float(stored_deficit_weight)
-
-    config = ScaleMacConfig(
-        num_ues=num_ues,
-        max_selected_ues=min(64, num_ues),
-        episode_slots=slots,
-        scheduler_mode=scheduler_mode,
-        force_harq_retransmissions=bool(
-            training.get("force_harq_retransmissions", scheduler_mode == "hybrid")
-        ),
-        safety_reserve_ues=min(reserve, min(64, num_ues)),
-        safety_wait_threshold_ratio=float(training.get("long_wait_threshold", 0.8)),
-        freeze_static_profiles=True,
-        static_profile_seed=fixed_profile_seed,
-        deadline_target_slots=50.0,
-        reference_deadline_target_slots=50.0,
-        deadline_risk_start_ratio=float(training.get("deadline_risk_start_ratio", 0.60)),
-        reward_deadline_risk_penalty_weight=float(
-            training.get("deadline_risk_penalty_weight", 0.15)
-        ),
-        reward_max_wait_risk_penalty_weight=float(
-            training.get("max_wait_risk_penalty_weight", 0.10)
-        ),
-        starvation_threshold_slots=int(training.get("starvation_threshold_slots", 64)),
-        reward_throughput_weight=reward_throughput_weight,
-        reward_fairness_weight=reward_fairness_weight,
-        reward_service_weight=reward_service_weight,
-        reward_deficit_service_weight=reward_deficit_service_weight,
-        reward_fairness_delta_weight=float(
-            training.get("reward_fairness_delta_weight", 0.03)
-        ),
-        reward_pf_utility_delta_weight=float(
-            training.get("reward_pf_utility_delta_weight", 0.02)
-        ),
-        max_wait_target_slots=60.0,
     )
-    config.validate()
-    max_candidates = num_ues if candidate_mode == "all" else int(
-        training.get("max_candidates", 128)
-    )
-    return config, max_candidates, float(training.get("long_wait_threshold", 0.8))
+    return row
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Separate rule, PPO, candidate-filter, and projector contributions"
+        description=(
+            "Compare classical, rule-only, hybrid PPO, and PPO-only schedulers "
+            "under one fixed environment/KPI/reward protocol."
+        )
     )
     parser.add_argument("--hybrid-checkpoint", type=Path)
     parser.add_argument("--ppo-candidate-checkpoint", type=Path)
@@ -127,135 +101,195 @@ def main() -> None:
     parser.add_argument("--slots", type=int, default=5000)
     parser.add_argument("--seed", type=int, default=1701)
     parser.add_argument("--seeds", type=int, default=1)
+    parser.add_argument("--profile-seed", type=int, default=None)
+    parser.add_argument("--max-starvation-rate", type=float, default=0.0)
+    parser.add_argument("--max-p99-wait-slots", type=float, default=50.0)
+    parser.add_argument("--min-jain-fairness", type=float, default=0.60)
+    parser.add_argument("--max-wait-slots", type=float, default=60.0)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     parser.add_argument(
         "--output", type=Path, default=Path("artifacts/scheduler_attribution.csv")
     )
+    parser.add_argument(
+        "--manifest-output",
+        type=Path,
+        default=Path("artifacts/scheduler_attribution_manifest.csv"),
+    )
     args = parser.parse_args()
 
+    if args.seeds <= 0:
+        parser.error("seeds must be positive")
+    profile_seed = args.seed if args.profile_seed is None else args.profile_seed
     device = _resolve_device(args.device)
-    constraints = ServiceConstraints(
-        max_starvation_rate=0.0,
-        max_p99_wait_slots=50.0,
-        min_jain_fairness=0.60,
-        max_wait_slots=60.0,
-    )
-    base = ScaleMacConfig(
+    protocol = UnifiedEvaluationProtocol(
         num_ues=args.num_ues,
-        max_selected_ues=min(64, args.num_ues),
-        episode_slots=args.slots,
-        scheduler_mode="ppo_only",
-        force_harq_retransmissions=False,
-        safety_reserve_ues=0,
-        freeze_static_profiles=True,
-        static_profile_seed=args.seed,
-        reward_throughput_weight=0.45,
-        reward_fairness_weight=0.35,
-        reward_service_weight=0.15,
-        reward_deficit_service_weight=0.05,
-        reward_fairness_delta_weight=0.03,
-        reward_pf_utility_delta_weight=0.02,
-        starvation_threshold_slots=64,
-        deadline_target_slots=50.0,
-        reference_deadline_target_slots=50.0,
-        max_wait_target_slots=60.0,
+        slots=args.slots,
+        profile_seed=profile_seed,
+        max_starvation_rate=args.max_starvation_rate,
+        p99_wait_target_slots=args.max_p99_wait_slots,
+        min_jain_fairness=args.min_jain_fairness,
+        max_wait_target_slots=args.max_wait_slots,
     )
-    rule_config = ScaleMacConfig(**base.to_dict())
-    rule_config.scheduler_mode = "rule_only"
-    rule_config.force_harq_retransmissions = True
-    rule_config.safety_reserve_ues = min(64, args.num_ues)
+    protocol.validate()
 
-    learned: list[tuple[str, Path, str, str]] = []
+    baseline_config = protocol.build_config(
+        scheduler_mode="ppo_only",
+        safety_reserve_ues=0,
+        force_harq_retransmissions=False,
+    )
+    rule_config = protocol.build_config(
+        scheduler_mode="rule_only",
+        safety_reserve_ues=min(64, args.num_ues),
+        force_harq_retransmissions=True,
+    )
+
+    learned_specs: list[tuple[str, Path, str, str]] = []
     if args.hybrid_checkpoint:
-        learned.append(("hybrid_ppo", args.hybrid_checkpoint, "hybrid", "heuristic"))
+        learned_specs.append(
+            ("hybrid_ppo", args.hybrid_checkpoint, "hybrid", "heuristic")
+        )
     if args.ppo_candidate_checkpoint:
-        learned.append(
-            ("ppo_only_candidate128", args.ppo_candidate_checkpoint, "ppo_only", "heuristic")
+        learned_specs.append(
+            (
+                "ppo_only_candidate128",
+                args.ppo_candidate_checkpoint,
+                "ppo_only",
+                "heuristic",
+            )
         )
     if args.ppo_full_checkpoint:
-        learned.append(("ppo_from_scratch_full1200", args.ppo_full_checkpoint, "ppo_only", "all"))
+        learned_specs.append(
+            (
+                "ppo_from_scratch_full1200",
+                args.ppo_full_checkpoint,
+                "ppo_only",
+                "all",
+            )
+        )
+
+    loaded: list[
+        tuple[str, Path, Any, dict[str, Any], Any]
+    ] = []
+    for name, path, scheduler_mode, candidate_mode in learned_specs:
+        try:
+            checkpoint_path = require_checkpoint(path)
+        except FileNotFoundError as exc:
+            parser.error(str(exc))
+        model, checkpoint = load_policy_checkpoint(checkpoint_path, device)
+        runtime = resolve_policy_runtime(
+            checkpoint,
+            num_ues=args.num_ues,
+            scheduler_mode=scheduler_mode,
+            candidate_mode=candidate_mode,
+        )
+        loaded.append((name, checkpoint_path, model, checkpoint, runtime))
 
     rows: list[dict[str, Any]] = []
     for offset in range(args.seeds):
         seed = args.seed + offset
         rows.extend(
             [
-                evaluate_scheduler(
-                    scheduler=RoundRobinScheduler(base.max_selected_ues),
-                    config=base,
+                _classical_row(
+                    scheduler=RoundRobinScheduler(baseline_config.max_selected_ues),
+                    config=baseline_config,
                     seed=seed,
                     name="rr",
-                    constraints=constraints,
+                    protocol=protocol,
                 ),
-                evaluate_scheduler(
+                _classical_row(
                     scheduler=ProportionalFairScheduler(),
-                    config=base,
+                    config=baseline_config,
                     seed=seed,
                     name="pf",
-                    constraints=constraints,
+                    protocol=protocol,
                 ),
-                evaluate_scheduler(
+                _classical_row(
                     scheduler=MaxCqiScheduler(),
-                    config=base,
+                    config=baseline_config,
                     seed=seed,
                     name="max_cqi",
-                    constraints=constraints,
+                    protocol=protocol,
                 ),
-                evaluate_scheduler(
+                _classical_row(
                     scheduler=RuleOnlyScheduler(),
                     config=rule_config,
                     seed=seed,
                     name="rule_only",
-                    constraints=constraints,
+                    protocol=protocol,
                 ),
             ]
         )
-        for name, path, scheduler_mode, candidate_mode in learned:
-            model, checkpoint = _load_model(path, device)
-            config, max_candidates, long_wait = _learned_config(
-                checkpoint=checkpoint,
-                num_ues=args.num_ues,
-                slots=args.slots,
-                fixed_profile_seed=args.seed,
-                scheduler_mode=scheduler_mode,
-                candidate_mode=candidate_mode,
+        for name, checkpoint_path, model, checkpoint, runtime in loaded:
+            config = protocol.build_config(
+                scheduler_mode=runtime.scheduler_mode,
+                safety_reserve_ues=runtime.safety_reserve_ues,
+                force_harq_retransmissions=runtime.force_harq_retransmissions,
+                safety_wait_threshold_ratio=runtime.long_wait_threshold,
             )
-            rows.append(
-                evaluate_actor_critic(
-                    model=model,
-                    device=device,
-                    config=config,
-                    seed=seed,
-                    name=name,
-                    max_candidates=max_candidates,
-                    candidate_mode=candidate_mode,
-                    long_wait_threshold=long_wait,
-                    constraints=constraints,
+            row = evaluate_actor_critic(
+                model=model,
+                device=device,
+                config=config,
+                seed=seed,
+                name=name,
+                max_candidates=runtime.max_candidates,
+                candidate_mode=runtime.candidate_mode,
+                long_wait_threshold=runtime.long_wait_threshold,
+                constraints=protocol.constraints(),
+            )
+            row.update(
+                learned_provenance(
+                    checkpoint_path=checkpoint_path,
+                    checkpoint=checkpoint,
+                    protocol=protocol,
+                    runtime=runtime,
+                    rollout_seed=seed,
                 )
             )
-        print(f"completed attribution seed={seed}")
+            rows.append(row)
+        print(f"completed unified evaluation seed={seed}")
+
+    protocol_hashes = {str(row["evaluation_protocol_hash"]) for row in rows}
+    if protocol_hashes != {protocol.protocol_hash}:
+        raise RuntimeError("methods were evaluated under inconsistent protocol hashes")
+    for seed in range(args.seed, args.seed + args.seeds):
+        scenario_hashes = {
+            str(row["scenario_hash"]) for row in rows if int(row["seed"]) == seed
+        }
+        if len(scenario_hashes) != 1:
+            raise RuntimeError(f"methods used inconsistent scenario hashes for seed {seed}")
 
     write_csv(args.output, rows)
     write_markdown(
         markdown_report_path(args.output),
-        title="ScaleMAC-RL scheduler attribution",
+        title="ScaleMAC-RL unified scheduler evaluation",
         description=(
-            "RR, PF, Max-CQI, rule-only, hybrid PPO, candidate PPO-only, and full PPO "
-            "are compared under identical scenario seeds when their checkpoints are supplied."
+            "RR, PF, Max-CQI, rule-only, hybrid PPO, candidate PPO-only, and full "
+            "PPO are evaluated under the same static profile, HARQ randomness, "
+            "KPI definitions, reward, constraints, and projector contract."
         ),
         rows=rows,
+        notes=(
+            f"Evaluation protocol hash: {protocol.protocol_hash}",
+            "Checkpoint training rewards are logged for provenance and do not alter the evaluation environment.",
+            "A standalone evaluate_ppo run with the same arguments must produce identical KPI values and hashes for the same checkpoint.",
+        ),
     )
     summary = summarize_by_group(
         rows,
         group_key="method",
         numeric_fields=[
             "mean_reward",
+            "mean_core_reward",
             "mean_goodput_bits_per_slot",
+            "mean_throughput_score",
             "final_jain_fairness",
+            "mean_fairness_score",
             "mean_starvation_rate",
             "max_starvation_rate",
             "final_p99_wait_slots",
             "max_p99_wait_slots",
+            "final_max_wait_slots",
             "max_wait_slots",
             "mean_safety_selected_count",
             "mean_scheduler_selected_count",
@@ -267,12 +301,22 @@ def main() -> None:
     write_csv(summary_path, summary)
     write_markdown(
         markdown_report_path(args.output, suffix="_summary"),
-        title="ScaleMAC-RL scheduler attribution summary",
+        title="ScaleMAC-RL unified scheduler evaluation summary",
         description=f"Mean and sample standard deviation across {args.seeds} seed(s).",
         rows=summary,
     )
+    manifest_rows = _manifest_rows(rows)
+    write_csv(args.manifest_output, manifest_rows)
+    write_markdown(
+        markdown_report_path(args.manifest_output),
+        title="ScaleMAC-RL unified evaluation manifest",
+        description="Protocol, scenario, runtime, and checkpoint hashes for every row.",
+        rows=manifest_rows,
+    )
+    print(f"protocol_hash={protocol.protocol_hash}")
     print(f"saved: {args.output}")
     print(f"saved: {summary_path}")
+    print(f"saved: {args.manifest_output}")
 
 
 if __name__ == "__main__":
