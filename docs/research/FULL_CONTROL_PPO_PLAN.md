@@ -70,7 +70,7 @@ Chỉ chạy tuning khi profile chính không cải thiện hoặc dao động m
 
 | Nhóm | Biến | Giá trị |
 |---|---|---|
-| Input | schema | legacy10 / rank features / full16 |
+| Input/embedding | schema | 16-feature observation with unchanged 64-d shared set encoder |
 | Reward | PF level | 0 / 0.15 / 0.20 |
 | Reward | P10 weight | 0 / 0.10 / 0.15 |
 | Reward | wait pressure | 0 / 0.08 / 0.10 |

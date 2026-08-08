@@ -23,7 +23,7 @@ v0.8.0 starts the **rule-free full-control PPO** research track:
 - PPO observes all 1,200 UEs and selects the complete Top-64 schedule;
 - no heuristic candidate filter, safety reserve, forced HARQ selection, or PF imitation is used;
 - the projector only enforces a valid Top-64 and exact 273-PRB allocation;
-- observation v2 adds six relative/rank/history features, for 16 features per UE;
+- full-control PPO preserves the existing 16-feature shared set embedding;
 - reward v2 adds proportional-fair utility, P10-throughput, urgency-service, and population-wide wait pressure;
 - learning rate and entropy can decay linearly during PPO training;
 - direct 300k, curriculum 300k, and short profile-tuning entry points are provided;
@@ -329,7 +329,7 @@ All scheduler comparisons now use one fixed evaluation contract:
 
 - the same frozen CQI/demand profile;
 - the same rollout seed and HARQ randomness;
-- the same 10-feature observation schema;
+- the same 16-feature observation schema;
 - the same normalized evaluation reward;
 - the same starvation, P99, Jain-fairness, and maximum-wait constraints;
 - the same Top-64, exact-273-PRB projector contract.

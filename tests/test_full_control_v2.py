@@ -14,6 +14,7 @@ from scalemac_rl.env import (
     WAIT_RANK,
     WAIT_TO_DEADLINE,
 )
+from scalemac_rl.models.actor_critic import SharedSetActorCritic
 from scalemac_rl.scripts import train_full_control_ppo_v2
 
 
@@ -38,6 +39,9 @@ def test_v2_observation_contains_relative_and_history_features() -> None:
     ):
         assert np.all(np.isfinite(observation[:, column]))
         assert np.all(observation[:, column] >= 0.0)
+    model = SharedSetActorCritic()
+    assert model.input_dim == 16
+    assert model.hidden_dim == 64
 
 
 def test_v2_reward_components_reconstruct_total() -> None:
@@ -104,6 +108,7 @@ def test_full_control_entrypoint_disables_all_external_selection(monkeypatch) ->
     assert captured[captured.index("--safety-reserve-ues") + 1] == "0"
     assert "--no-force-harq-retransmissions" in captured
     assert captured[captured.index("--max-candidates") + 1] == "1200"
+    assert captured[captured.index("--hidden-dim") + 1] == "64"
 
 
 def test_full_control_profiles_have_normalized_positive_reward_weights() -> None:

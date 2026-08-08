@@ -78,11 +78,12 @@ def _parse_wrapper_args(argv: list[str]) -> tuple[str, list[str]]:
 
 
 def main() -> None:
-    """Train a rule-free PPO scheduler over all 1,200 UEs.
+    """Train a rule-free PPO scheduler over all 1,200 UEs with the unchanged shared set-encoder architecture.
 
-    PPO controls UE ranking and PRB demand for every UE. The projector only
-    enforces Top-64 selection, at least one PRB per selected UE, and exactly 273
-    allocated PRBs. No candidate filter, HARQ override, or oldest-UE rule is used.
+    PPO controls UE ranking and PRB demand for every UE. The shared set-encoder architecture and 64-dimensional embedding are preserved,
+    while the observation uses the expanded 16-feature per-UE schema. The projector
+    only enforces Top-64 selection, at least one PRB per selected UE, and exactly
+    273 allocated PRBs. No candidate filter, HARQ override, or oldest-UE rule is used.
     """
     profile_name, remaining = _parse_wrapper_args(sys.argv[1:])
     profile = PROFILES[profile_name]
@@ -124,7 +125,7 @@ def main() -> None:
         "--milestone-env-steps", MILESTONES,
         "--seed", "1701",
         "--fixed-profile-seed", "1701",
-        "--hidden-dim", "96",
+        "--hidden-dim", "64",
         "--lr", str(profile.learning_rate),
         "--lr-end", str(profile.learning_rate_end),
         "--gamma", str(profile.gamma),

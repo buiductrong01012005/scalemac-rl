@@ -11,3 +11,9 @@
 | D07 | Gamma 0.999 và LR/entropy decay | Hậu quả starvation dài hạn, cần update ổn định | Đang thử |
 | D08 | RPPO sau feed-forward baseline | Tránh đổi input, reward và architecture cùng lúc | Chờ kết quả v0.8 |
 | D09 | CNN không chạy theo UE ID | Quan hệ lân cận UE ID là giả | Giữ |
+
+## D-008 — Expand the observation without changing the encoder architecture
+
+**Decision:** Use the 16-feature per-UE observation while preserving the existing shared set-encoder architecture with hidden dimension 64 and global mean/max pooling. PPO controls all UE selection and PRB-demand decisions.
+
+**Reason:** The research question concerns whether richer state information and reward/hyperparameter tuning let PPO learn the full scheduling trade-off. Changing to GNN, CNN, attention, or recurrent layers in the same experiment would confound representation architecture with observation design.

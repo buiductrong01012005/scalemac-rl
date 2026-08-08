@@ -118,3 +118,7 @@ PPO không cần đứng đầu từng KPI. PPO được xem là tốt hơn về
 3. Phân tích input/reward component và checkpoint trajectory.
 4. Khi Set PPO baseline ổn định mới thử Recurrent Set PPO.
 5. Sorted-CNN chỉ thử sau khi định nghĩa thứ tự UE có ý nghĩa và ổn định.
+
+## v0.8.2 correction — 16 features, unchanged set-encoder architecture
+
+The intended experiment keeps the expanded 16-feature observation but does not replace the existing encoder architecture. Every UE is still processed by the same shared MLP with a 64-dimensional hidden representation, followed by global set pooling. PPO then scores all 1,200 UEs, selects the Top-64, and predicts PRB demand. No candidate rule or safety rule selects UEs for the policy.

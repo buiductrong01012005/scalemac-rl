@@ -38,6 +38,8 @@ Policy không nhất thiết nhìn thấy toàn bộ state thô. Observation là
 
 Các feature rank dùng tie-aware percentile để tránh tạo thứ tự giả khi nhiều UE có giá trị bằng nhau.
 
+Kiến trúc embedding không đổi: cùng một shared MLP mã hóa từng UE thành embedding 64 chiều, sau đó mean/max pooling tạo global cell context. Chỉ schema input được mở rộng lên 16 feature; không thay sang GNN, CNN hay RNN trong thí nghiệm này.
+
 ## 3. Action
 
 Actor xuất hai giá trị liên tục trong `[0,1]` cho mỗi UE:
