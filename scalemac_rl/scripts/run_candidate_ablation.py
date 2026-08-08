@@ -48,6 +48,8 @@ def main() -> None:
     parser.add_argument("--freeze-static-profiles", action="store_true")
     parser.add_argument("--max-starvation-rate", type=float, default=0.0)
     parser.add_argument("--max-p99-wait-slots", type=float, default=50.0)
+    parser.add_argument("--min-jain-fairness", type=float, default=0.60)
+    parser.add_argument("--max-wait-slots", type=float, default=60.0)
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     parser.add_argument("--output", type=Path, default=Path("artifacts/candidate_ablation.csv"))
     args = parser.parse_args()
@@ -85,9 +87,18 @@ def main() -> None:
     deadline_risk_penalty_weight = float(
         training.get("deadline_risk_penalty_weight", 0.15)
     )
+    max_wait_risk_penalty_weight = float(
+        training.get("max_wait_risk_penalty_weight", 0.10)
+    )
+    starvation_threshold_slots = int(training.get("starvation_threshold_slots", 64))
+    reward_throughput_weight = float(training.get("reward_throughput_weight", 0.50))
+    reward_fairness_weight = float(training.get("reward_fairness_weight", 0.35))
+    reward_service_weight = float(training.get("reward_service_weight", 0.15))
     constraints = ServiceConstraints(
         max_starvation_rate=args.max_starvation_rate,
         max_p99_wait_slots=args.max_p99_wait_slots,
+        min_jain_fairness=args.min_jain_fairness,
+        max_wait_slots=args.max_wait_slots,
     )
     constraints.validate()
     config = ScaleMacConfig(
@@ -101,6 +112,12 @@ def main() -> None:
         deadline_target_slots=args.max_p99_wait_slots,
         deadline_risk_start_ratio=deadline_risk_start_ratio,
         reward_deadline_risk_penalty_weight=deadline_risk_penalty_weight,
+        reward_max_wait_risk_penalty_weight=max_wait_risk_penalty_weight,
+        starvation_threshold_slots=starvation_threshold_slots,
+        reward_throughput_weight=reward_throughput_weight,
+        reward_fairness_weight=reward_fairness_weight,
+        reward_service_weight=reward_service_weight,
+        max_wait_target_slots=args.max_wait_slots,
     )
     config.validate()
 
@@ -142,6 +159,11 @@ def main() -> None:
             "mean_starvation_rate",
             "max_starvation_rate",
             "max_p99_wait_slots",
+            "final_max_wait_slots",
+            "max_wait_slots",
+            "max_scheduling_wait_slots",
+            "mean_near_deadline_rate",
+            "mean_scheduling_starvation_rate",
             "mean_candidate_coverage",
             "mean_harq_retention_rate",
             "mean_long_wait_retention_rate",

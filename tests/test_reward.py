@@ -35,13 +35,19 @@ def test_reward_components_are_normalized_and_sum_correctly() -> None:
         + info["reward_service_component"]
         - info["reward_starvation_penalty"]
     )
-    reconstructed = core - info["reward_deadline_risk_penalty"]
+    reconstructed = (
+        core
+        - info["reward_deadline_risk_penalty"]
+        - info["reward_max_wait_risk_penalty"]
+    )
     assert np.isclose(reward, reconstructed)
     assert np.isclose(reward, info["reward_total"])
     assert np.isclose(core, info["reward_core_total"])
     assert np.isclose(
         info["reward_final_target_total"],
-        core - info["reward_reference_deadline_risk_penalty"],
+        core
+        - info["reward_reference_deadline_risk_penalty"]
+        - info["reward_max_wait_risk_penalty"],
     )
 
 

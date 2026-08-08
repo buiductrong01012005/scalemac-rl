@@ -14,26 +14,26 @@ ScaleMAC-RL is a fast DRL training surrogate for **single-cell 5G NR downlink MA
 - required output: selected Top-K UEs and PRBs per selected UE;
 - KPIs: throughput, fairness/service, delay/starvation, candidate coverage, and inference latency.
 
-## What v0.6.1 adds
+## What v0.6.2 adds
 
-v0.6.1 refines the deliberately narrow **single-seed upper-bound experiment** to
-measure how far the current actor/projector design can optimize one known 1,200-UE
-scenario before testing generalization:
+v0.6.2 focuses on a more realistic fairness/service objective for the 1,200-UE
+single-seed experiment:
 
-- one frozen static CQI/demand profile is reused across episode resets;
-- HARQ outcomes remain stochastic because the transition RNG is not reset every episode;
-- the default upper-bound run uses 200,192 environment steps at 1,200 UEs;
-- all 16 safety grants are filled: HARQ first, then the oldest eligible UEs;
-- PPO still selects the remaining 48 grants from a 128-UE candidate pool;
-- dense tail-delay risk shaping is smooth and non-saturating beyond the P99 deadline;
-- the P99 target tightens progressively from 80 to 65 to 55 to 50 slots;
-- PPO training can resume from a full v0.5 checkpoint, including optimizer and dual state;
-- checkpoint ranking always uses the fixed final target of 50 slots;
-- tqdm reports elapsed time, ETA, step rate, reward components, P99 wait, and goodput;
-- `best_lowest_violation.pt` is saved independently of `best_reward.pt`;
-- evaluation scripts recover the frozen-profile settings from checkpoint metadata.
+- the default run remains 200,192 environment steps with tqdm timing and ETA;
+- starvation now means **no successful delivery for at least 64 consecutive slots**;
+- a separate scheduling-wait counter shows whether a UE was selected but failed HARQ;
+- positive reward weights are throughput `0.50`, fairness `0.35`, and service `0.15`;
+- fairness training uses 60% cumulative Jain fairness and 40% EWMA Jain fairness;
+- the fixed validation targets are Jain fairness >= 0.60, P99 wait <= 50 slots,
+  maximum successful-delivery wait <= 60 slots, and starvation rate = 0;
+- the reward includes an additional non-saturating risk term for the single worst UE wait;
+- constrained PPO has separate dual multipliers for starvation, P99 wait, fairness,
+  and maximum wait;
+- checkpoint selection saves the exact validated weights before rollback and exports
+  `checkpoint_manifest.csv` with update, step count, and selection reason;
+- source releases never contain `artifacts/`.
 
-This mode estimates an in-scenario performance ceiling. It must not be presented as
+The single-seed mode remains an in-scenario upper-bound experiment, not evidence of
 multi-seed robustness or OOD generalization.
 
 ## Current roadmap status
@@ -60,41 +60,56 @@ multi-seed robustness or OOD generalization.
 
 ## Objective and constraints
 
-The reward is logged using four separate values so curriculum phases remain interpretable:
+The primary waiting counter is the number of consecutive slots since a UE last
+received **successfully delivered bits**. A UE selected for transmission but failing
+HARQ is therefore still waiting. Scheduling-only waiting time is logged separately.
+
+Default starvation definition:
+
+```text
+starved UE = successful_delivery_wait >= 64 slots
+starvation_rate = number of starved UEs / number of active UEs
+```
+
+The positive reward is:
 
 ```text
 core_reward
-= 0.55 * throughput_score
-+ 0.30 * fairness_score
+= 0.50 * throughput_score
++ 0.35 * fairness_score
 + 0.15 * service_score
-- 0.50 * starvation_violation
-
-active_reward = core_reward - 0.15 * active_target_deadline_risk
-final_target_reward = core_reward - 0.15 * fixed_50_slot_deadline_risk
+- starvation_penalty
 ```
 
-The tail-risk score is zero before the risk-start point, equals one at the
-target, and continues increasing logarithmically beyond the target instead of
-saturating. Checkpoint ranking uses `final_target_reward`, not the changing
-curriculum target.
-
-PPO additionally optimizes a constrained training reward:
+where:
 
 ```text
-constrained_reward
-= base_reward
-- lambda_starvation * starvation_excess
-- lambda_wait * normalized_P99_wait_excess
+fairness_score
+= 0.60 * cumulative_Jain_fairness
++ 0.40 * EWMA_Jain_fairness
 ```
 
-Default validation constraints:
+Tail-delay penalties are then applied:
 
 ```text
-maximum starvation rate = 0
-maximum P99 waiting time = 50 slots
+active_reward
+= core_reward
+- P99_deadline_risk_penalty
+- maximum_wait_risk_penalty
 ```
 
-A checkpoint is marked feasible only when **every held-out validation seed** satisfies both limits. These defaults are starting hypotheses and must later be justified through baseline results and 5G-LENA timing.
+PPO additionally uses Lagrange penalties for four validation constraints:
+
+```text
+starvation rate = 0
+P99 successful-delivery wait <= 50 slots
+minimum Jain fairness >= 0.60
+single worst UE successful-delivery wait <= 60 slots
+```
+
+`best_lowest_violation.pt` is ranked lexicographically: starvation first, then
+maximum wait, P99 wait, fairness deficit, and finally final-target reward. This
+prevents a small throughput gain from hiding a severe service failure.
 
 ## Commands
 
@@ -110,7 +125,7 @@ python -m scalemac_rl.scripts.run_baselines --num-ues 1200 --slots 1000 --seeds 
 # PF imitation pretraining
 python -m scalemac_rl.scripts.train_imitation --num-ues 1200 --steps 2000
 
-# Primary v0.6.1 experiment: one frozen 1,200-UE profile, about 200k steps
+# Primary v0.6.2 experiment: one frozen 1,200-UE profile, about 200k steps
 python -m scalemac_rl.scripts.train_single_seed
 
 # Override the budget when needed, for example 300k aligned steps
@@ -138,7 +153,7 @@ For a quick CPU smoke run:
 python -m scalemac_rl.scripts.train_ppo --init-checkpoint .\artifacts\pf_imitation.pt --curriculum 64,128 --stage-p99-wait-limits 100,100 --steps-per-stage 256 --workers 1 --rollout-steps 16 --episode-slots 80 --max-candidates 128 --safety-reserve-ues 8 --validation-seeds 9101 --validation-repeats 1 --validation-slots 80 --validate-every 1 --checkpoint-every 2 --output .\artifacts\smoke_latest.pt --best-feasible-output .\artifacts\smoke_best_feasible.pt --best-reward-output .\artifacts\smoke_best_reward.pt --log-output .\artifacts\smoke_ppo_training.csv --validation-output .\artifacts\smoke_ppo_validation.csv
 ```
 
-## Files to send back after v0.6.1
+## Files to send back after v0.6.2
 
 Include both numeric artifacts and generated readable reports:
 
@@ -149,8 +164,9 @@ Compress-Archive `
         .\artifacts\ppo_validation_summary.csv,`
         .\artifacts\ppo_evaluation*.csv,`
         .\artifacts\paired_evaluation*.csv,`
+        .\artifacts\checkpoint_manifest.csv,`
         .\docs\reports\*.md `
-  -DestinationPath .\scalemac_results_v061_single_seed.zip `
+  -DestinationPath .\scalemac_results_v062_single_seed.zip `
   -Force
 ```
 
@@ -166,6 +182,7 @@ artifacts/
 ├── ppo_training.csv
 ├── ppo_validation.csv
 ├── ppo_validation_summary.csv
+├── checkpoint_manifest.csv
 ├── ppo_evaluation.csv
 ├── ppo_evaluation_summary.csv
 ├── paired_evaluation.csv

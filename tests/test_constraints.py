@@ -56,3 +56,28 @@ def test_progressive_p99_schedule_selects_expected_segments() -> None:
         stage_index=1, stage_count=1, stage_env_steps=399, steps_per_stage=400,
         default_limit=50.0, final_stage_schedule=schedule,
     ) == 50.0
+
+
+def test_service_constraints_include_fairness_and_single_worst_wait() -> None:
+    constraints = ServiceConstraints(
+        max_starvation_rate=0.0,
+        max_p99_wait_slots=50.0,
+        min_jain_fairness=0.60,
+        max_wait_slots=60.0,
+    )
+    starvation, p99, fairness, max_wait = constraints.all_excesses(
+        starvation_rate=0.0,
+        p99_wait_slots=48.0,
+        jain_fairness=0.45,
+        max_wait_slots=72.0,
+    )
+    assert starvation == 0.0
+    assert p99 == 0.0
+    assert fairness > 0.0
+    assert max_wait == 0.2
+    assert not constraints.feasible(
+        starvation_rate=0.0,
+        p99_wait_slots=48.0,
+        jain_fairness=0.45,
+        max_wait_slots=72.0,
+    )

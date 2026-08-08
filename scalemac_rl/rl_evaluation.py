@@ -27,15 +27,23 @@ _METRIC_KEYS = (
     "cell_goodput_bits",
     "throughput_score",
     "fairness_score",
+    "short_term_jain_fairness",
     "service_score",
     "starvation_rate",
+    "delivery_starvation_rate",
+    "scheduling_starvation_rate",
     "p99_wait_slots",
+    "max_wait_slots",
+    "scheduling_max_wait_slots",
+    "near_deadline_rate",
+    "max_wait_risk",
     "reward_throughput_component",
     "reward_fairness_component",
     "reward_service_component",
     "reward_starvation_penalty",
     "reward_deadline_risk_penalty",
     "reward_reference_deadline_risk_penalty",
+    "reward_max_wait_risk_penalty",
     "deadline_risk",
     "reference_deadline_risk",
     "tail_mean_wait_slots",
@@ -71,11 +79,19 @@ def summarize_episode(
         "mean_throughput_score": mean(metrics["throughput_score"]),
         "final_jain_fairness": float(final_info["jain_fairness"]),
         "mean_fairness_score": mean(metrics["fairness_score"]),
+        "mean_short_term_jain_fairness": mean(metrics["short_term_jain_fairness"]),
         "mean_service_score": mean(metrics["service_score"]),
         "mean_starvation_rate": mean(metrics["starvation_rate"]),
         "max_starvation_rate": max(metrics["starvation_rate"]),
+        "mean_scheduling_starvation_rate": mean(metrics["scheduling_starvation_rate"]),
+        "max_scheduling_starvation_rate": max(metrics["scheduling_starvation_rate"]),
         "final_p99_wait_slots": float(final_info["p99_wait_slots"]),
         "max_p99_wait_slots": max(metrics["p99_wait_slots"]),
+        "final_max_wait_slots": float(final_info["max_wait_slots"]),
+        "max_wait_slots": max(metrics["max_wait_slots"]),
+        "max_scheduling_wait_slots": max(metrics["scheduling_max_wait_slots"]),
+        "mean_near_deadline_rate": mean(metrics["near_deadline_rate"]),
+        "mean_max_wait_risk": mean(metrics["max_wait_risk"]),
         "mean_reward_throughput_component": mean(metrics["reward_throughput_component"]),
         "mean_reward_fairness_component": mean(metrics["reward_fairness_component"]),
         "mean_reward_service_component": mean(metrics["reward_service_component"]),
@@ -85,6 +101,9 @@ def summarize_episode(
         ),
         "mean_reward_reference_deadline_risk_penalty": mean(
             metrics["reward_reference_deadline_risk_penalty"]
+        ),
+        "mean_reward_max_wait_risk_penalty": mean(
+            metrics["reward_max_wait_risk_penalty"]
         ),
         "mean_deadline_risk": mean(metrics["deadline_risk"]),
         "mean_reference_deadline_risk": mean(metrics["reference_deadline_risk"]),
@@ -102,19 +121,32 @@ def summarize_episode(
             if key == "long_wait_missed_count":
                 row["max_long_wait_missed_count"] = max(values) if values else 0.0
     if constraints is not None:
-        starvation_excess, wait_excess = constraints.excesses(
+        (
+            starvation_excess,
+            wait_excess,
+            fairness_excess,
+            max_wait_excess,
+        ) = constraints.all_excesses(
             starvation_rate=row["max_starvation_rate"],
             p99_wait_slots=row["max_p99_wait_slots"],
+            jain_fairness=row["final_jain_fairness"],
+            max_wait_slots=row["max_wait_slots"],
         )
         row.update(
             {
                 "constraint_max_starvation_rate": constraints.max_starvation_rate,
                 "constraint_max_p99_wait_slots": constraints.max_p99_wait_slots,
+                "constraint_min_jain_fairness": constraints.min_jain_fairness,
+                "constraint_max_wait_slots": constraints.max_wait_slots,
                 "starvation_constraint_excess": starvation_excess,
                 "wait_constraint_excess": wait_excess,
+                "fairness_constraint_excess": fairness_excess,
+                "max_wait_constraint_excess": max_wait_excess,
                 "constraint_feasible": constraints.feasible(
                     starvation_rate=row["max_starvation_rate"],
                     p99_wait_slots=row["max_p99_wait_slots"],
+                    jain_fairness=row["final_jain_fairness"],
+                    max_wait_slots=row["max_wait_slots"],
                 ),
             }
         )

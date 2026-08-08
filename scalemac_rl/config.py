@@ -36,7 +36,9 @@ class ScaleMacConfig:
     packet_size_bytes: int = 1500
     full_buffer_base_bytes: int = 1_000_000
 
-    starvation_threshold_slots: int = 100
+    # A UE is considered starved when it has had no successful delivery for
+    # this many consecutive slots. The scheduling-only wait is logged separately.
+    starvation_threshold_slots: int = 64
     ewma_alpha: float = 0.02
 
     harq_enabled: bool = True
@@ -45,14 +47,19 @@ class ScaleMacConfig:
 
     # All positive reward scores are normalized to [0, 1]. Throughput remains
     # the main objective, while fairness and service regularize the solution.
-    reward_throughput_weight: float = 0.55
-    reward_fairness_weight: float = 0.30
+    reward_throughput_weight: float = 0.50
+    reward_fairness_weight: float = 0.35
     reward_service_weight: float = 0.15
 
     # Starvation is a constraint-like penalty applied outside the convex
     # combination above so a high-throughput policy cannot ignore most UEs.
     reward_starvation_penalty_weight: float = 0.50
     starvation_tolerance: float = 0.00
+
+    # Extra dense pressure on the single worst-served UE. This complements
+    # the top-1% P99-style risk and helps reduce the maximum service gap.
+    max_wait_target_slots: float = 60.0
+    reward_max_wait_risk_penalty_weight: float = 0.10
 
     seed: int = 7
 
@@ -92,6 +99,10 @@ class ScaleMacConfig:
             raise ValueError("reward_deadline_risk_penalty_weight must be non-negative")
         if self.starvation_threshold_slots <= 0:
             raise ValueError("starvation_threshold_slots must be positive")
+        if self.max_wait_target_slots <= 0.0:
+            raise ValueError("max_wait_target_slots must be positive")
+        if self.reward_max_wait_risk_penalty_weight < 0.0:
+            raise ValueError("reward_max_wait_risk_penalty_weight must be non-negative")
         if not 0.0 < self.ewma_alpha <= 1.0:
             raise ValueError("ewma_alpha must be in (0, 1]")
         if not 0.0 <= self.target_bler < 1.0:

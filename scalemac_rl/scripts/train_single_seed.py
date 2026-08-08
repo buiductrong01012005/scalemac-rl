@@ -11,7 +11,7 @@ def _has_option(name: str) -> bool:
 
 
 def main() -> None:
-    """Run the approximately 200k-step single-profile upper-bound experiment.
+    """Run the approximately 200k-step fairness-and-tail-delay single-profile experiment.
 
     Defaults intentionally overfit one frozen 1,200-UE CQI/demand profile so the
     project can measure how far the current actor/projector design can optimize a
@@ -39,12 +39,25 @@ def main() -> None:
         "--fixed-profile-seed", "1701",
         "--deadline-risk-start-ratio", "0.60",
         "--deadline-risk-penalty-weight", "0.15",
+        "--max-wait-risk-penalty-weight", "0.10",
+        "--starvation-threshold-slots", "64",
+        "--reward-throughput-weight", "0.50",
+        "--reward-fairness-weight", "0.35",
+        "--reward-service-weight", "0.15",
+        "--max-starvation-rate", "0",
+        "--max-p99-wait-slots", "50",
+        "--min-jain-fairness", "0.60",
+        "--max-wait-slots", "60",
     ]
 
     # Continue from the strongest v0.5 1,200-UE checkpoint when it exists.
-    resume = Path("artifacts/checkpoints/best_stage_1200.pt")
+    resume_candidates = [
+        Path("artifacts/best_lowest_violation.pt"),
+        Path("artifacts/checkpoints/best_stage_1200.pt"),
+    ]
     if not _has_option("--resume-checkpoint") and not _has_option("--init-checkpoint"):
-        if resume.is_file():
+        resume = next((path for path in resume_candidates if path.is_file()), None)
+        if resume is not None:
             defaults.extend(["--resume-checkpoint", str(resume)])
         else:
             defaults.extend(["--init-checkpoint", "artifacts/pf_imitation.pt"])

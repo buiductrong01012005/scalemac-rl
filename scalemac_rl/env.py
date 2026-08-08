@@ -103,7 +103,10 @@ class ScaleMacDownlinkEnv:
         self.queue_target_bytes = np.zeros(n, dtype=np.float64)
         self.ewma_throughput_bits = np.zeros(n, dtype=np.float64)
         self.cumulative_delivered_bits = np.zeros(n, dtype=np.float64)
+        # Primary wait counter: slots since the last successful delivery.
+        # A second counter records scheduling gaps even when HARQ transmission fails.
         self.time_since_service = np.zeros(n, dtype=np.int32)
+        self.time_since_schedule = np.zeros(n, dtype=np.int32)
         self.harq_pending = np.zeros(n, dtype=bool)
         self.harq_retx_count = np.zeros(n, dtype=np.int16)
         self.eligible = np.ones(n, dtype=bool)
@@ -161,6 +164,7 @@ class ScaleMacDownlinkEnv:
         self.ewma_throughput_bits.fill(0.0)
         self.cumulative_delivered_bits.fill(0.0)
         self.time_since_service.fill(0)
+        self.time_since_schedule.fill(0)
         self.harq_pending.fill(False)
         self.harq_retx_count.fill(0)
         self.eligible.fill(True)
@@ -285,8 +289,9 @@ class ScaleMacDownlinkEnv:
         self.last_grant.fill(0)
         self.last_grant[selected] = grant.prbs
 
+        self.time_since_schedule += 1
+        self.time_since_schedule[selected] = 0
         self.time_since_service += 1
-        self.time_since_service[selected] = 0
 
         delivered_bits = np.zeros(n, dtype=np.float64)
         attempted_bits = np.zeros(n, dtype=np.float64)
@@ -319,6 +324,8 @@ class ScaleMacDownlinkEnv:
 
             self.harq_pending[successful_ues] = False
             self.harq_retx_count[successful_ues] = 0
+            # A UE is only considered served when data is actually delivered.
+            self.time_since_service[successful_ues] = 0
 
         # Full-buffer refill: every UE remains backlogged at its heterogeneous target.
         served_bytes = delivered_bits / 8.0
@@ -334,10 +341,18 @@ class ScaleMacDownlinkEnv:
         cell_goodput_bits = float(delivered_bits.sum())
         oracle_goodput = self._slot_oracle_expected_goodput_bits()
         throughput_score = clip01(cell_goodput_bits / max(oracle_goodput, 1.0))
-        fairness_score = jain_fairness(self.cumulative_delivered_bits)
+        cumulative_fairness = jain_fairness(self.cumulative_delivered_bits)
+        short_term_fairness = jain_fairness(self.ewma_throughput_bits)
+        # The cumulative KPI remains visible, while the reward receives a more
+        # responsive fairness signal that can change within an episode.
+        fairness_score = clip01(0.60 * cumulative_fairness + 0.40 * short_term_fairness)
 
         starvation_mask = self.time_since_service >= self.config.starvation_threshold_slots
+        scheduling_starvation_mask = (
+            self.time_since_schedule >= self.config.starvation_threshold_slots
+        )
         starvation_rate = float(starvation_mask.mean())
+        scheduling_starvation_rate = float(scheduling_starvation_mask.mean())
         mean_wait_score = float(
             np.mean(
                 np.clip(
@@ -348,7 +363,18 @@ class ScaleMacDownlinkEnv:
                 )
             )
         )
-        delay_penalty = clip01(0.5 * starvation_rate + 0.5 * mean_wait_score)
+        near_deadline_rate = float(
+            np.mean(
+                self.time_since_service
+                >= self.config.deadline_risk_start_ratio
+                * self.config.deadline_target_slots
+            )
+        )
+        delay_penalty = clip01(
+            0.40 * starvation_rate
+            + 0.35 * mean_wait_score
+            + 0.25 * near_deadline_rate
+        )
         service_score = clip01(1.0 - delay_penalty)
 
         # Dense risk for the worst-served 1% of UEs. It starts increasing before
@@ -366,6 +392,13 @@ class ScaleMacDownlinkEnv:
             start_ratio=self.config.deadline_risk_start_ratio,
         )
         tail_mean_wait_slots = float(np.mean(tail_waits))
+        max_wait_slots = float(np.max(self.time_since_service, initial=0))
+        scheduling_max_wait_slots = float(np.max(self.time_since_schedule, initial=0))
+        max_wait_risk = deadline_risk_score(
+            np.asarray([max_wait_slots], dtype=np.float64),
+            target_slots=self.config.max_wait_target_slots,
+            start_ratio=self.config.deadline_risk_start_ratio,
+        )
 
         return {
             "selected_ues": selected.copy(),
@@ -376,12 +409,21 @@ class ScaleMacDownlinkEnv:
             "oracle_expected_goodput_bits": float(oracle_goodput),
             "throughput_score": throughput_score,
             "throughput_normalized": throughput_score,  # backward-compatible alias
-            "jain_fairness": fairness_score,
+            "jain_fairness": cumulative_fairness,
+            "short_term_jain_fairness": short_term_fairness,
             "fairness_score": fairness_score,
+            # Primary starvation means no successful delivery for the threshold.
             "starvation_rate": starvation_rate,
+            "delivery_starvation_rate": starvation_rate,
+            "scheduling_starvation_rate": scheduling_starvation_rate,
             "mean_wait_slots": float(self.time_since_service.mean()),
+            "max_wait_slots": max_wait_slots,
+            "scheduling_mean_wait_slots": float(self.time_since_schedule.mean()),
+            "scheduling_max_wait_slots": scheduling_max_wait_slots,
             "p95_wait_slots": safe_percentile(self.time_since_service, 95),
             "p99_wait_slots": safe_percentile(self.time_since_service, 99),
+            "near_deadline_rate": near_deadline_rate,
+            "max_wait_risk": max_wait_risk,
             "tail_mean_wait_slots": tail_mean_wait_slots,
             "deadline_risk": deadline_risk,
             "reference_deadline_risk": reference_deadline_risk,
@@ -427,8 +469,13 @@ class ScaleMacDownlinkEnv:
             cfg.reward_deadline_risk_penalty_weight
             * float(metrics["reference_deadline_risk"])
         )
-        total = core_total - deadline_risk_penalty
-        final_target_total = core_total - reference_deadline_risk_penalty
+        max_wait_risk_penalty = (
+            cfg.reward_max_wait_risk_penalty_weight * float(metrics["max_wait_risk"])
+        )
+        total = core_total - deadline_risk_penalty - max_wait_risk_penalty
+        final_target_total = (
+            core_total - reference_deadline_risk_penalty - max_wait_risk_penalty
+        )
 
         return float(total), {
             "reward_total": float(total),
@@ -443,6 +490,7 @@ class ScaleMacDownlinkEnv:
             "reward_reference_deadline_risk_penalty": float(
                 reference_deadline_risk_penalty
             ),
+            "reward_max_wait_risk_penalty": float(max_wait_risk_penalty),
         }
 
     def render(self) -> str:
@@ -451,5 +499,6 @@ class ScaleMacDownlinkEnv:
             f"scheduled={int(np.count_nonzero(self.last_grant))} "
             f"prbs={int(self.last_grant.sum())}/{self.config.num_prbs} "
             f"fairness={jain_fairness(self.cumulative_delivered_bits):.4f} "
-            f"starved={(self.time_since_service >= self.config.starvation_threshold_slots).sum()}"
+            f"starved_delivery={(self.time_since_service >= self.config.starvation_threshold_slots).sum()} "
+            f"max_delivery_wait={int(self.time_since_service.max(initial=0))}"
         )

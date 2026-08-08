@@ -100,6 +100,7 @@ def main() -> None:
         if args.long_wait_threshold is not None
         else training.get("long_wait_threshold", 0.8)
     )
+    starvation_threshold_slots = int(training.get("starvation_threshold_slots", 64))
 
     config = ScaleMacConfig(
         num_ues=args.num_ues,
@@ -107,6 +108,7 @@ def main() -> None:
         episode_slots=1,
         safety_reserve_ues=min(safety_reserve, min(64, args.num_ues) - 1),
         safety_wait_threshold_ratio=long_wait_threshold,
+        starvation_threshold_slots=starvation_threshold_slots,
     )
     env = ScaleMacDownlinkEnv(config)
     observation, _ = env.reset(seed=777)

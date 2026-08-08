@@ -221,7 +221,13 @@ def _checkpoint_payload(
             "fixed_profile_seed": args.fixed_profile_seed,
             "deadline_risk_start_ratio": args.deadline_risk_start_ratio,
             "deadline_risk_penalty_weight": args.deadline_risk_penalty_weight,
+            "max_wait_risk_penalty_weight": args.max_wait_risk_penalty_weight,
+            "starvation_threshold_slots": args.starvation_threshold_slots,
+            "reward_throughput_weight": args.reward_throughput_weight,
+            "reward_fairness_weight": args.reward_fairness_weight,
+            "reward_service_weight": args.reward_service_weight,
             "reference_deadline_target_slots": args.max_p99_wait_slots,
+            "max_wait_target_slots": args.max_wait_slots,
             "learning_rate": args.lr,
             "gamma": args.gamma,
             "gae_lambda": args.gae_lambda,
@@ -326,6 +332,12 @@ def _validate(
     deadline_risk_start_ratio: float,
     deadline_risk_penalty_weight: float,
     reference_deadline_target_slots: float,
+    starvation_threshold_slots: int,
+    reward_throughput_weight: float,
+    reward_fairness_weight: float,
+    reward_service_weight: float,
+    max_wait_target_slots: float,
+    max_wait_risk_penalty_weight: float,
     update_index: int,
     stage_index: int,
     global_env_steps: int,
@@ -343,6 +355,12 @@ def _validate(
         reference_deadline_target_slots=reference_deadline_target_slots,
         deadline_risk_start_ratio=deadline_risk_start_ratio,
         reward_deadline_risk_penalty_weight=deadline_risk_penalty_weight,
+        starvation_threshold_slots=starvation_threshold_slots,
+        reward_throughput_weight=reward_throughput_weight,
+        reward_fairness_weight=reward_fairness_weight,
+        reward_service_weight=reward_service_weight,
+        max_wait_target_slots=max_wait_target_slots,
+        reward_max_wait_risk_penalty_weight=max_wait_risk_penalty_weight,
     )
     rows: list[dict[str, Any]] = []
     for seed in seeds:
@@ -363,8 +381,18 @@ def _validate(
 
     worst_starvation = max(float(row["max_starvation_rate"]) for row in rows)
     worst_wait = max(float(row["max_p99_wait_slots"]) for row in rows)
-    starvation_excess, wait_excess = constraints.excesses(
-        starvation_rate=worst_starvation, p99_wait_slots=worst_wait
+    worst_max_wait = max(float(row["max_wait_slots"]) for row in rows)
+    minimum_fairness = min(float(row["final_jain_fairness"]) for row in rows)
+    (
+        starvation_excess,
+        wait_excess,
+        fairness_excess,
+        max_wait_excess,
+    ) = constraints.all_excesses(
+        starvation_rate=worst_starvation,
+        p99_wait_slots=worst_wait,
+        jain_fairness=minimum_fairness,
+        max_wait_slots=worst_max_wait,
     )
     summary: dict[str, Any] = {
         "update": update_index,
@@ -381,11 +409,17 @@ def _validate(
             float(row["mean_goodput_bits_per_slot"]) for row in rows
         ),
         "mean_jain_fairness": mean(float(row["final_jain_fairness"]) for row in rows),
+        "minimum_jain_fairness": minimum_fairness,
         "worst_starvation_rate": worst_starvation,
         "worst_p99_wait_slots": worst_wait,
+        "worst_max_wait_slots": worst_max_wait,
         "validation_starvation_excess": starvation_excess,
         "validation_wait_excess": wait_excess,
-        "total_constraint_excess": starvation_excess + wait_excess,
+        "validation_fairness_excess": fairness_excess,
+        "validation_max_wait_excess": max_wait_excess,
+        "total_constraint_excess": (
+            starvation_excess + wait_excess + fairness_excess + max_wait_excess
+        ),
         "mean_candidate_coverage": mean(float(row["mean_candidate_coverage"]) for row in rows),
         "mean_long_wait_retention_rate": mean(
             float(row["mean_long_wait_retention_rate"]) for row in rows
@@ -440,6 +474,11 @@ def main() -> None:
     parser.add_argument("--single-seed-upper-bound", action="store_true")
     parser.add_argument("--deadline-risk-start-ratio", type=float, default=0.60)
     parser.add_argument("--deadline-risk-penalty-weight", type=float, default=0.15)
+    parser.add_argument("--max-wait-risk-penalty-weight", type=float, default=0.10)
+    parser.add_argument("--starvation-threshold-slots", type=int, default=64)
+    parser.add_argument("--reward-throughput-weight", type=float, default=0.50)
+    parser.add_argument("--reward-fairness-weight", type=float, default=0.35)
+    parser.add_argument("--reward-service-weight", type=float, default=0.15)
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--gamma", type=float, default=0.99)
@@ -453,6 +492,8 @@ def main() -> None:
     parser.add_argument("--target-kl", type=float, default=0.03)
     parser.add_argument("--max-starvation-rate", type=float, default=0.0)
     parser.add_argument("--max-p99-wait-slots", type=float, default=50.0)
+    parser.add_argument("--min-jain-fairness", type=float, default=0.60)
+    parser.add_argument("--max-wait-slots", type=float, default=60.0)
     parser.add_argument(
         "--stage-p99-wait-limits", type=_parse_float_list, default=[80.0, 80.0, 80.0, 50.0]
     )
@@ -461,6 +502,8 @@ def main() -> None:
     )
     parser.add_argument("--starvation-multiplier", type=float, default=5.0)
     parser.add_argument("--wait-multiplier", type=float, default=1.0)
+    parser.add_argument("--fairness-multiplier", type=float, default=1.0)
+    parser.add_argument("--max-wait-multiplier", type=float, default=1.0)
     parser.add_argument("--lagrangian-lr", type=float, default=0.10)
     parser.add_argument("--validation-lagrangian-scale", type=float, default=1.0)
     parser.add_argument("--max-lagrange-multiplier", type=float, default=50.0)
@@ -490,6 +533,11 @@ def main() -> None:
     parser.add_argument("--checkpoint-dir", type=Path, default=Path("artifacts/checkpoints"))
     parser.add_argument("--log-output", type=Path, default=Path("artifacts/ppo_training.csv"))
     parser.add_argument("--validation-output", type=Path, default=Path("artifacts/ppo_validation.csv"))
+    parser.add_argument(
+        "--checkpoint-manifest-output",
+        type=Path,
+        default=Path("artifacts/checkpoint_manifest.csv"),
+    )
     args = parser.parse_args()
 
     if args.steps_per_stage <= 0 or args.workers <= 0 or args.rollout_steps <= 0:
@@ -508,6 +556,17 @@ def main() -> None:
         parser.error("deadline-risk-start-ratio must be in [0, 1)")
     if args.deadline_risk_penalty_weight < 0.0:
         parser.error("deadline-risk-penalty-weight must be non-negative")
+    if args.max_wait_risk_penalty_weight < 0.0:
+        parser.error("max-wait-risk-penalty-weight must be non-negative")
+    if args.starvation_threshold_slots <= 0:
+        parser.error("starvation-threshold-slots must be positive")
+    reward_weight_sum = (
+        args.reward_throughput_weight
+        + args.reward_fairness_weight
+        + args.reward_service_weight
+    )
+    if abs(reward_weight_sum - 1.0) > 1e-6:
+        parser.error("throughput, fairness, and service reward weights must sum to 1")
     if args.single_seed_upper_bound:
         if args.workers != 1:
             parser.error("single-seed-upper-bound requires --workers 1")
@@ -524,11 +583,15 @@ def main() -> None:
     final_constraints = ServiceConstraints(
         max_starvation_rate=args.max_starvation_rate,
         max_p99_wait_slots=args.max_p99_wait_slots,
+        min_jain_fairness=args.min_jain_fairness,
+        max_wait_slots=args.max_wait_slots,
     )
     final_constraints.validate()
     controller = LagrangeController(
         starvation_multiplier=args.starvation_multiplier,
         wait_multiplier=args.wait_multiplier,
+        fairness_multiplier=args.fairness_multiplier,
+        max_wait_multiplier=args.max_wait_multiplier,
         learning_rate=args.lagrangian_lr,
         max_multiplier=args.max_lagrange_multiplier,
     )
@@ -565,11 +628,12 @@ def main() -> None:
     log_rows: list[dict[str, Any]] = []
     validation_rows: list[dict[str, Any]] = []
     validation_summary_rows: list[dict[str, Any]] = []
+    checkpoint_manifest_rows: list[dict[str, Any]] = []
     global_env_steps = 0
     update_index = 0
     best_feasible_reward = float("-inf")
     best_reward = float("-inf")
-    best_lowest_violation_score: tuple[float, float] | None = None
+    best_lowest_violation_score: tuple[float, float, float, float, float] | None = None
     best_lowest_violation_saved = False
     best_feasible_saved = False
     target_num_ues = args.curriculum[-1]
@@ -618,6 +682,12 @@ def main() -> None:
             reference_deadline_target_slots=args.max_p99_wait_slots,
             deadline_risk_start_ratio=args.deadline_risk_start_ratio,
             reward_deadline_risk_penalty_weight=args.deadline_risk_penalty_weight,
+            reward_max_wait_risk_penalty_weight=args.max_wait_risk_penalty_weight,
+            starvation_threshold_slots=args.starvation_threshold_slots,
+            reward_throughput_weight=args.reward_throughput_weight,
+            reward_fairness_weight=args.reward_fairness_weight,
+            reward_service_weight=args.reward_service_weight,
+            max_wait_target_slots=args.max_wait_slots,
             seed=stage_seed,
         )
         config.validate()
@@ -629,7 +699,7 @@ def main() -> None:
         stage_best_feasible_reward = float("-inf")
         stage_best_feasible_snapshot: dict[str, Any] | None = None
         stage_best_candidate_snapshot: dict[str, Any] | None = None
-        stage_best_candidate_score: tuple[float, float] | None = None
+        stage_best_candidate_score: tuple[float, float, float, float, float] | None = None
         consecutive_infeasible = 0
 
         while stage_env_steps < args.steps_per_stage:
@@ -641,9 +711,14 @@ def main() -> None:
                 default_limit=stage_default_p99_limit,
                 final_stage_schedule=args.final_stage_p99_schedule,
             )
+            active_max_wait_limit = active_p99_limit + max(
+                args.max_wait_slots - args.max_p99_wait_slots, 0.0
+            )
             active_constraints = ServiceConstraints(
                 max_starvation_rate=args.max_starvation_rate,
                 max_p99_wait_slots=active_p99_limit,
+                min_jain_fairness=args.min_jain_fairness,
+                max_wait_slots=active_max_wait_limit,
             )
             active_constraints.validate()
             config.deadline_target_slots = active_p99_limit
@@ -663,9 +738,13 @@ def main() -> None:
                     "base_reward", "core_reward", "final_target_reward",
                     "constrained_reward", "constraint_penalty",
                     "deadline_risk_penalty", "reference_deadline_risk_penalty",
-                    "deadline_risk", "reference_deadline_risk", "tail_mean_wait",
-                    "throughput", "fairness", "service", "starvation", "p99_wait",
-                    "starvation_excess", "wait_excess", "goodput", "candidate_coverage",
+                    "max_wait_risk_penalty", "deadline_risk",
+                    "reference_deadline_risk", "max_wait_risk", "tail_mean_wait",
+                    "throughput", "fairness", "jain_fairness", "short_fairness",
+                    "service", "starvation", "scheduling_starvation",
+                    "p99_wait", "max_wait", "near_deadline_rate",
+                    "starvation_excess", "wait_excess", "fairness_excess",
+                    "max_wait_excess", "goodput", "candidate_coverage",
                     "harq_retention", "long_wait_retention", "long_wait_missed",
                     "safety_selected", "oldest_selected", "learned_selected", "learned_fraction",
                 )
@@ -698,14 +777,23 @@ def main() -> None:
                         full_actions[worker]
                     )
                     done = terminated or truncated
-                    starvation_excess, wait_excess = active_constraints.excesses(
+                    (
+                        starvation_excess,
+                        wait_excess,
+                        fairness_excess,
+                        max_wait_excess,
+                    ) = active_constraints.all_excesses(
                         starvation_rate=float(info["starvation_rate"]),
                         p99_wait_slots=float(info["p99_wait_slots"]),
+                        jain_fairness=float(info["fairness_score"]),
+                        max_wait_slots=float(info["max_wait_slots"]),
                     )
                     constrained_reward, constraint_penalty = controller.adjusted_reward(
                         base_reward,
                         starvation_excess=starvation_excess,
                         wait_excess=wait_excess,
+                        fairness_excess=fairness_excess,
+                        max_wait_excess=max_wait_excess,
                     )
                     rewards[worker] = constrained_reward
                     dones[worker] = float(done)
@@ -719,16 +807,29 @@ def main() -> None:
                         "reference_deadline_risk_penalty": float(
                             info["reward_reference_deadline_risk_penalty"]
                         ),
+                        "max_wait_risk_penalty": float(
+                            info["reward_max_wait_risk_penalty"]
+                        ),
                         "deadline_risk": float(info["deadline_risk"]),
                         "reference_deadline_risk": float(info["reference_deadline_risk"]),
+                        "max_wait_risk": float(info["max_wait_risk"]),
                         "tail_mean_wait": float(info["tail_mean_wait_slots"]),
                         "throughput": float(info["throughput_score"]),
                         "fairness": float(info["fairness_score"]),
+                        "jain_fairness": float(info["jain_fairness"]),
+                        "short_fairness": float(info["short_term_jain_fairness"]),
                         "service": float(info["service_score"]),
                         "starvation": float(info["starvation_rate"]),
+                        "scheduling_starvation": float(
+                            info["scheduling_starvation_rate"]
+                        ),
                         "p99_wait": float(info["p99_wait_slots"]),
+                        "max_wait": float(info["max_wait_slots"]),
+                        "near_deadline_rate": float(info["near_deadline_rate"]),
                         "starvation_excess": starvation_excess,
                         "wait_excess": wait_excess,
+                        "fairness_excess": fairness_excess,
+                        "max_wait_excess": max_wait_excess,
                         "goodput": float(info["cell_goodput_bits"]),
                         "candidate_coverage": diagnostics.candidate_coverage,
                         "harq_retention": diagnostics.harq_retention_rate,
@@ -805,6 +906,8 @@ def main() -> None:
             controller.update(
                 mean_starvation_excess=mean(metric_window["starvation_excess"]),
                 mean_wait_excess=mean(metric_window["wait_excess"]),
+                mean_fairness_excess=mean(metric_window["fairness_excess"]),
+                mean_max_wait_excess=mean(metric_window["max_wait_excess"]),
             )
             collected = args.rollout_steps * args.workers
             stage_env_steps += collected
@@ -820,6 +923,8 @@ def main() -> None:
                 "max_candidates": max_candidates,
                 "safety_reserve_ues": safety_reserve,
                 "stage_max_p99_wait_slots": active_constraints.max_p99_wait_slots,
+                "stage_min_jain_fairness": active_constraints.min_jain_fairness,
+                "stage_max_wait_slots": active_constraints.max_wait_slots,
                 "mean_reward": mean(metric_window["base_reward"]),
                 "mean_core_reward": mean(metric_window["core_reward"]),
                 "mean_final_target_reward": mean(metric_window["final_target_reward"]),
@@ -830,23 +935,39 @@ def main() -> None:
                 "mean_reference_deadline_risk_penalty": mean(
                     metric_window["reference_deadline_risk_penalty"]
                 ),
+                "mean_max_wait_risk_penalty": mean(
+                    metric_window["max_wait_risk_penalty"]
+                ),
                 "mean_deadline_risk": mean(metric_window["deadline_risk"]),
                 "mean_reference_deadline_risk": mean(
                     metric_window["reference_deadline_risk"]
                 ),
+                "mean_max_wait_risk": mean(metric_window["max_wait_risk"]),
                 "mean_tail_mean_wait_slots": mean(metric_window["tail_mean_wait"]),
                 "mean_goodput_bits_per_slot": mean(metric_window["goodput"]),
                 "mean_throughput_score": mean(metric_window["throughput"]),
                 "mean_fairness_score": mean(metric_window["fairness"]),
+                "mean_jain_fairness": mean(metric_window["jain_fairness"]),
+                "mean_short_term_jain_fairness": mean(metric_window["short_fairness"]),
                 "mean_service_score": mean(metric_window["service"]),
                 "mean_starvation_rate": mean(metric_window["starvation"]),
                 "max_starvation_rate": max(metric_window["starvation"]),
+                "mean_scheduling_starvation_rate": mean(
+                    metric_window["scheduling_starvation"]
+                ),
+                "mean_near_deadline_rate": mean(metric_window["near_deadline_rate"]),
                 "mean_p99_wait_slots": mean(metric_window["p99_wait"]),
                 "max_p99_wait_slots": max(metric_window["p99_wait"]),
+                "mean_max_wait_slots": mean(metric_window["max_wait"]),
+                "max_wait_slots": max(metric_window["max_wait"]),
                 "mean_starvation_excess": mean(metric_window["starvation_excess"]),
                 "mean_wait_excess": mean(metric_window["wait_excess"]),
+                "mean_fairness_excess": mean(metric_window["fairness_excess"]),
+                "mean_max_wait_excess": mean(metric_window["max_wait_excess"]),
                 "starvation_multiplier": controller.starvation_multiplier,
                 "wait_multiplier": controller.wait_multiplier,
+                "fairness_multiplier": controller.fairness_multiplier,
+                "max_wait_multiplier": controller.max_wait_multiplier,
                 "mean_candidate_coverage": mean(metric_window["candidate_coverage"]),
                 "mean_harq_retention_rate": mean(metric_window["harq_retention"]),
                 "mean_long_wait_retention_rate": mean(metric_window["long_wait_retention"]),
@@ -877,7 +998,10 @@ def main() -> None:
                 core=f"{row['mean_core_reward']:.3f}",
                 final=f"{row['mean_final_target_reward']:.3f}",
                 train=f"{row['mean_training_reward']:.3f}",
+                fair=f"{row['mean_jain_fairness']:.3f}",
                 p99=f"{row['mean_p99_wait_slots']:.1f}",
+                maxwait=f"{row['mean_max_wait_slots']:.0f}",
+                starve=f"{row['mean_starvation_rate']:.3f}",
                 goodput=f"{row['mean_goodput_bits_per_slot'] / 1000.0:.1f}k",
             )
             if not args.progress:
@@ -887,7 +1011,10 @@ def main() -> None:
                     f"core={row['mean_core_reward']:.4f} "
                     f"final={row['mean_final_target_reward']:.4f} "
                     f"train={row['mean_training_reward']:.4f} "
-                    f"p99={row['mean_p99_wait_slots']:.1f}"
+                    f"fair={row['mean_jain_fairness']:.4f} "
+                    f"p99={row['mean_p99_wait_slots']:.1f} "
+                    f"maxwait={row['mean_max_wait_slots']:.1f} "
+                    f"starvation={row['mean_starvation_rate']:.4f}"
                 )
 
             should_validate = update_index % args.validate_every == 0 or stage_env_steps >= args.steps_per_stage
@@ -910,6 +1037,12 @@ def main() -> None:
                     deadline_risk_start_ratio=args.deadline_risk_start_ratio,
                     deadline_risk_penalty_weight=args.deadline_risk_penalty_weight,
                     reference_deadline_target_slots=args.max_p99_wait_slots,
+                    starvation_threshold_slots=args.starvation_threshold_slots,
+                    reward_throughput_weight=args.reward_throughput_weight,
+                    reward_fairness_weight=args.reward_fairness_weight,
+                    reward_service_weight=args.reward_service_weight,
+                    max_wait_target_slots=args.max_wait_slots,
+                    max_wait_risk_penalty_weight=args.max_wait_risk_penalty_weight,
                     update_index=update_index, stage_index=stage_index,
                     global_env_steps=global_env_steps,
                 )
@@ -923,12 +1056,25 @@ def main() -> None:
                         args.validation_lagrangian_scale
                         * float(summary["validation_wait_excess"])
                     ),
+                    mean_fairness_excess=(
+                        args.validation_lagrangian_scale
+                        * float(summary["validation_fairness_excess"])
+                    ),
+                    mean_max_wait_excess=(
+                        args.validation_lagrangian_scale
+                        * float(summary["validation_max_wait_excess"])
+                    ),
                 )
                 summary["starvation_multiplier_after_validation"] = controller.starvation_multiplier
                 summary["wait_multiplier_after_validation"] = controller.wait_multiplier
+                summary["fairness_multiplier_after_validation"] = controller.fairness_multiplier
+                summary["max_wait_multiplier_after_validation"] = controller.max_wait_multiplier
 
                 score = (
-                    float(summary["total_constraint_excess"]),
+                    float(summary["validation_starvation_excess"]),
+                    float(summary["validation_max_wait_excess"]),
+                    float(summary["validation_wait_excess"]),
+                    float(summary["validation_fairness_excess"]),
                     -float(summary["mean_reward"]),
                 )
                 if stage_best_candidate_score is None or score < stage_best_candidate_score:
@@ -946,6 +1092,115 @@ def main() -> None:
                             tag=f"best_stage_{num_ues}", validation=summary,
                         ),
                     )
+
+                # Freeze the exact validated model before any rollback. Previous
+                # versions could save a later validation label with rolled-back weights.
+                validation_payload = _checkpoint_payload(
+                    model=model, optimizer=optimizer, args=args,
+                    initialized_from=initialized_from,
+                    global_env_steps=global_env_steps, update_index=update_index,
+                    stage_index=stage_index, num_ues=num_ues,
+                    controller=controller, constraints=final_constraints,
+                    tag="validation", validation=summary,
+                )
+
+                if num_ues == target_num_ues:
+                    (
+                        final_starvation_excess,
+                        final_wait_excess,
+                        final_fairness_excess,
+                        final_max_wait_excess,
+                    ) = final_constraints.all_excesses(
+                        starvation_rate=float(summary["worst_starvation_rate"]),
+                        p99_wait_slots=float(summary["worst_p99_wait_slots"]),
+                        jain_fairness=float(summary["minimum_jain_fairness"]),
+                        max_wait_slots=float(summary["worst_max_wait_slots"]),
+                    )
+                    summary["final_target_starvation_excess"] = final_starvation_excess
+                    summary["final_target_wait_excess"] = final_wait_excess
+                    summary["final_target_fairness_excess"] = final_fairness_excess
+                    summary["final_target_max_wait_excess"] = final_max_wait_excess
+                    summary["final_target_total_constraint_excess"] = (
+                        final_starvation_excess
+                        + final_wait_excess
+                        + final_fairness_excess
+                        + final_max_wait_excess
+                    )
+                    final_score = (
+                        float(final_starvation_excess),
+                        float(final_max_wait_excess),
+                        float(final_wait_excess),
+                        float(final_fairness_excess),
+                        -float(summary["mean_final_target_reward"]),
+                    )
+                    if (
+                        best_lowest_violation_score is None
+                        or final_score < best_lowest_violation_score
+                    ):
+                        best_lowest_violation_score = final_score
+                        best_lowest_violation_saved = True
+                        lowest_payload = copy.deepcopy(validation_payload)
+                        lowest_payload["checkpoint_tag"] = "best_lowest_violation"
+                        _save_checkpoint(args.best_lowest_violation_output, lowest_payload)
+                        checkpoint_manifest_rows.append({
+                            "checkpoint": str(args.best_lowest_violation_output),
+                            "tag": "best_lowest_violation",
+                            "update": update_index,
+                            "global_env_steps": global_env_steps,
+                            "selection_reason": "lexicographic_final_constraints",
+                            "starvation_excess": final_starvation_excess,
+                            "max_wait_excess": final_max_wait_excess,
+                            "p99_wait_excess": final_wait_excess,
+                            "fairness_excess": final_fairness_excess,
+                            "final_target_reward": float(summary["mean_final_target_reward"]),
+                        })
+                    if float(summary["mean_final_target_reward"]) > best_reward:
+                        best_reward = float(summary["mean_final_target_reward"])
+                        reward_payload = copy.deepcopy(validation_payload)
+                        reward_payload["checkpoint_tag"] = "best_reward"
+                        _save_checkpoint(args.best_reward_output, reward_payload)
+                        checkpoint_manifest_rows.append({
+                            "checkpoint": str(args.best_reward_output),
+                            "tag": "best_reward",
+                            "update": update_index,
+                            "global_env_steps": global_env_steps,
+                            "selection_reason": "highest_final_target_reward",
+                            "starvation_excess": final_starvation_excess,
+                            "max_wait_excess": final_max_wait_excess,
+                            "p99_wait_excess": final_wait_excess,
+                            "fairness_excess": final_fairness_excess,
+                            "final_target_reward": float(summary["mean_final_target_reward"]),
+                        })
+                    final_feasible = all(
+                        excess <= 1e-12
+                        for excess in (
+                            final_starvation_excess,
+                            final_wait_excess,
+                            final_fairness_excess,
+                            final_max_wait_excess,
+                        )
+                    )
+                    if (
+                        final_feasible
+                        and float(summary["mean_final_target_reward"]) > best_feasible_reward
+                    ):
+                        best_feasible_reward = float(summary["mean_final_target_reward"])
+                        best_feasible_saved = True
+                        feasible_payload = copy.deepcopy(validation_payload)
+                        feasible_payload["checkpoint_tag"] = "best_feasible"
+                        _save_checkpoint(args.best_feasible_output, feasible_payload)
+                        checkpoint_manifest_rows.append({
+                            "checkpoint": str(args.best_feasible_output),
+                            "tag": "best_feasible",
+                            "update": update_index,
+                            "global_env_steps": global_env_steps,
+                            "selection_reason": "all_final_constraints_feasible",
+                            "starvation_excess": final_starvation_excess,
+                            "max_wait_excess": final_max_wait_excess,
+                            "p99_wait_excess": final_wait_excess,
+                            "fairness_excess": final_fairness_excess,
+                            "final_target_reward": float(summary["mean_final_target_reward"]),
+                        })
 
                 if bool(summary["constraint_feasible"]):
                     consecutive_infeasible = 0
@@ -986,9 +1241,10 @@ def main() -> None:
                 validation_message = (
                     f"validation ues={num_ues} active_reward={summary['mean_reward']:.4f} "
                     f"final_reward={summary['mean_final_target_reward']:.4f} "
-                    f"fairness={summary['mean_jain_fairness']:.4f} "
+                    f"fairness={summary['minimum_jain_fairness']:.4f} "
                     f"worst_starvation={summary['worst_starvation_rate']:.4f} "
                     f"worst_p99={summary['worst_p99_wait_slots']:.1f} "
+                    f"worst_max_wait={summary['worst_max_wait_slots']:.1f} "
                     f"feasible={summary['constraint_feasible']} rollback={summary['rolled_back']}"
                 )
                 if args.progress:
@@ -996,55 +1252,6 @@ def main() -> None:
                 else:
                     print(validation_message)
 
-                if num_ues == target_num_ues:
-                    payload = _checkpoint_payload(
-                        model=model, optimizer=optimizer, args=args,
-                        initialized_from=initialized_from,
-                        global_env_steps=global_env_steps, update_index=update_index,
-                        stage_index=stage_index, num_ues=num_ues,
-                        controller=controller, constraints=final_constraints,
-                        tag="validation", validation=summary,
-                    )
-                    final_starvation_excess, final_wait_excess = final_constraints.excesses(
-                        starvation_rate=float(summary["worst_starvation_rate"]),
-                        p99_wait_slots=float(summary["worst_p99_wait_slots"]),
-                    )
-                    summary["final_target_starvation_excess"] = final_starvation_excess
-                    summary["final_target_wait_excess"] = final_wait_excess
-                    summary["final_target_total_constraint_excess"] = (
-                        final_starvation_excess + final_wait_excess
-                    )
-                    final_score = (
-                        float(summary["final_target_total_constraint_excess"]),
-                        -float(summary["mean_final_target_reward"]),
-                    )
-                    if (
-                        best_lowest_violation_score is None
-                        or final_score < best_lowest_violation_score
-                    ):
-                        best_lowest_violation_score = final_score
-                        best_lowest_violation_saved = True
-                        lowest_payload = copy.deepcopy(payload)
-                        lowest_payload["checkpoint_tag"] = "best_lowest_violation"
-                        _save_checkpoint(args.best_lowest_violation_output, lowest_payload)
-                    if float(summary["mean_final_target_reward"]) > best_reward:
-                        best_reward = float(summary["mean_final_target_reward"])
-                        payload["checkpoint_tag"] = "best_reward"
-                        _save_checkpoint(args.best_reward_output, payload)
-                    final_feasible = (
-                        float(summary["worst_starvation_rate"])
-                        <= final_constraints.max_starvation_rate + 1e-12
-                        and float(summary["worst_p99_wait_slots"])
-                        <= final_constraints.max_p99_wait_slots + 1e-12
-                    )
-                    if (
-                        final_feasible
-                        and float(summary["mean_final_target_reward"]) > best_feasible_reward
-                    ):
-                        best_feasible_reward = float(summary["mean_final_target_reward"])
-                        best_feasible_saved = True
-                        payload["checkpoint_tag"] = "best_feasible"
-                        _save_checkpoint(args.best_feasible_output, payload)
 
             if update_index % args.checkpoint_every == 0:
                 _save_checkpoint(
@@ -1094,7 +1301,10 @@ def main() -> None:
             f"Curriculum UE stages: {args.curriculum}",
             f"Environment steps per stage: {args.steps_per_stage}",
             f"Candidate pool: {args.max_candidates}; safety reserve: {args.safety_reserve_ues}; Top-K: 64",
-            f"Stage P99 limits: {args.stage_p99_wait_limits}; fixed comparison target: {args.max_p99_wait_slots}",
+            f"Stage P99 limits: {args.stage_p99_wait_limits}; fixed P99 target: {args.max_p99_wait_slots}",
+            f"Fairness target: Jain >= {args.min_jain_fairness}; maximum successful-delivery wait: {args.max_wait_slots} slots",
+            f"Starvation definition: no successful delivery for >= {args.starvation_threshold_slots} slots",
+            f"Reward weights: throughput={args.reward_throughput_weight}, fairness={args.reward_fairness_weight}, service={args.reward_service_weight}",
             f"Total wall-clock training time: {total_elapsed_seconds:.1f} seconds",
             "Workers are vectorized environments in one process, not distributed RL.",
             "This remains the fast surrogate, not 5G-LENA.",
@@ -1117,6 +1327,16 @@ def main() -> None:
         description="Worst-case constraints, grant attribution, and rollback status at each validation.",
         rows=validation_summary_rows,
     )
+    write_csv(args.checkpoint_manifest_output, checkpoint_manifest_rows)
+    write_markdown(
+        markdown_report_path(args.checkpoint_manifest_output),
+        title="ScaleMAC-RL checkpoint selection manifest",
+        description=(
+            "Checkpoint provenance. Lowest-violation ranking is lexicographic: "
+            "successful-delivery starvation, maximum wait, P99 wait, fairness, then reward."
+        ),
+        rows=checkpoint_manifest_rows,
+    )
 
     print(f"saved: {args.output}")
     print(f"saved: {args.best_reward_output}")
@@ -1129,6 +1349,7 @@ def main() -> None:
     print(f"saved: {args.log_output}")
     print(f"saved: {args.validation_output}")
     print(f"saved: {validation_summary_output}")
+    print(f"saved: {args.checkpoint_manifest_output}")
     print(
         f"training_time={total_elapsed_seconds:.1f}s "
         f"throughput={global_env_steps / max(total_elapsed_seconds, 1e-9):.1f} env_steps/s"

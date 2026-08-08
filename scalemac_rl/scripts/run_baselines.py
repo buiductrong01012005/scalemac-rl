@@ -25,9 +25,12 @@ _TRACKED_METRICS = (
     "cell_goodput_bits",
     "throughput_score",
     "fairness_score",
+    "short_term_jain_fairness",
     "service_score",
     "starvation_rate",
+    "scheduling_starvation_rate",
     "p99_wait_slots",
+    "max_wait_slots",
     "reward_throughput_component",
     "reward_fairness_component",
     "reward_service_component",
@@ -61,9 +64,13 @@ def evaluate(name: str, scheduler: Any, config: ScaleMacConfig, seed: int) -> di
         "mean_throughput_score": mean(history["throughput_score"]),
         "final_jain_fairness": float(final_info["jain_fairness"]),
         "mean_fairness_score": mean(history["fairness_score"]),
+        "mean_short_term_jain_fairness": mean(history["short_term_jain_fairness"]),
         "mean_service_score": mean(history["service_score"]),
         "mean_starvation_rate": mean(history["starvation_rate"]),
+        "mean_scheduling_starvation_rate": mean(history["scheduling_starvation_rate"]),
         "final_p99_wait_slots": float(final_info["p99_wait_slots"]),
+        "final_max_wait_slots": float(final_info["max_wait_slots"]),
+        "max_wait_slots": max(history["max_wait_slots"]),
         "mean_reward_throughput_component": mean(history["reward_throughput_component"]),
         "mean_reward_fairness_component": mean(history["reward_fairness_component"]),
         "mean_reward_service_component": mean(history["reward_service_component"]),
@@ -101,7 +108,8 @@ def main() -> None:
                 f"goodput={row['mean_goodput_bits_per_slot']:.1f} "
                 f"throughput_score={row['mean_throughput_score']:.4f} "
                 f"fairness={row['final_jain_fairness']:.4f} "
-                f"starvation={row['mean_starvation_rate']:.4f}"
+                f"starvation={row['mean_starvation_rate']:.4f} "
+                f"max_wait={row['max_wait_slots']:.1f}"
             )
 
     raw_md = markdown_report_path(args.output)
@@ -129,9 +137,13 @@ def main() -> None:
         "mean_throughput_score",
         "final_jain_fairness",
         "mean_fairness_score",
+        "mean_short_term_jain_fairness",
         "mean_service_score",
         "mean_starvation_rate",
+        "mean_scheduling_starvation_rate",
         "final_p99_wait_slots",
+        "final_max_wait_slots",
+        "max_wait_slots",
         "mean_reward_throughput_component",
         "mean_reward_fairness_component",
         "mean_reward_service_component",

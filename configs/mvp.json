@@ -5,13 +5,13 @@
   "episode_slots": 1000,
   "packet_size_bytes": 1500,
   "full_buffer_base_bytes": 1000000,
-  "starvation_threshold_slots": 100,
+  "starvation_threshold_slots": 64,
   "ewma_alpha": 0.02,
   "harq_enabled": true,
   "target_bler": 0.1,
   "max_harq_retransmissions": 3,
-  "reward_throughput_weight": 0.55,
-  "reward_fairness_weight": 0.3,
+  "reward_throughput_weight": 0.5,
+  "reward_fairness_weight": 0.35,
   "reward_service_weight": 0.15,
   "reward_starvation_penalty_weight": 0.5,
   "starvation_tolerance": 0.0,
@@ -23,5 +23,7 @@
   "deadline_target_slots": 50.0,
   "reference_deadline_target_slots": 50.0,
   "deadline_risk_start_ratio": 0.6,
-  "reward_deadline_risk_penalty_weight": 0.15
+  "reward_deadline_risk_penalty_weight": 0.15,
+  "max_wait_target_slots": 60.0,
+  "reward_max_wait_risk_penalty_weight": 0.1
 }
