@@ -1,0 +1,74 @@
+{
+  "study_id": "full_control_reward_exploration",
+  "round_id": "round_05_service_weight_tuning",
+  "description": "Reduce the service coefficient after the equal-third experiment showed that service contributed more than half of the realized positive reward while only slightly improving waiting-time KPIs.",
+  "common": {
+    "environment_steps": 100096,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_seeds": [
+      1701
+    ],
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "seed": 1701,
+    "profile_seed": 1701,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 2.5e-05,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64,
+    "reward_normalization": "Keep the proven throughput:Jain ratio at 37.5:62.5 inside the non-service portion. Only the service share changes. Delta rewards, standalone penalties and Lagrangian multipliers remain disabled."
+  },
+  "analysis": {
+    "focus_component": "service",
+    "reference_run": "artifacts/runs/reward_study/round_02_throughput_jain_sweep/t0375_j0625",
+    "reference_label": "Reference 37.5% throughput + 62.5% Jain, service = 0",
+    "output": "docs/analysis/reward_study/round_05/service_weight_tuning_analysis.html"
+  },
+  "cases": [
+    {
+      "id": "service_005",
+      "label": "Service 5%, preserve throughput:Jain = 37.5:62.5",
+      "hypothesis": "Can a very small service term preserve the two-slot delay improvement without reducing goodput or Jain fairness?",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.35624999999999996,
+        "fairness": 0.59375,
+        "service": 0.05
+      }
+    },
+    {
+      "id": "service_010",
+      "label": "Service 10%, preserve throughput:Jain = 37.5:62.5",
+      "hypothesis": "Does a moderate service term create a clearer waiting-time benefit while remaining a secondary reward component?",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3375,
+        "fairness": 0.5625,
+        "service": 0.1
+      }
+    },
+    {
+      "id": "service_015",
+      "label": "Service 15%, preserve throughput:Jain = 37.5:62.5",
+      "hypothesis": "How far can service be increased before it starts to dominate the reward and reduce throughput or fairness?",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.31875,
+        "fairness": 0.53125,
+        "service": 0.15
+      }
+    }
+  ]
+}

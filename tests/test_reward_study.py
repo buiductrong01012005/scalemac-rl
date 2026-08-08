@@ -82,6 +82,7 @@ def test_round_plans_are_valid_and_unique() -> None:
         Path("configs/reward_study/round_01_component_screen.json"),
         Path("configs/reward_study/round_02_throughput_jain_sweep.json"),
         Path("configs/reward_study/round_04_add_service_equal.json"),
+        Path("configs/reward_study/round_05_three_component_directional.json"),
     ):
         plan = RewardStudyPlan.from_json(path)
         assert plan.cases
@@ -239,3 +240,129 @@ def test_incremental_reward_analysis_contains_formula_and_plain_kpi_explanations
     assert "99% UE" in content
     assert "64 slot" in content
     assert "Goodput giảm" in content
+
+
+def test_round_05_increases_one_component_and_reduces_the_other_two_equally() -> None:
+    plan = RewardStudyPlan.from_json(
+        Path("configs/reward_study/round_05_three_component_directional.json")
+    )
+    assert [case.case_id for case in plan.cases] == [
+        "throughput_heavy",
+        "jain_heavy",
+        "service_heavy",
+    ]
+    expected = [
+        (0.50, 0.25, 0.25),
+        (0.25, 0.50, 0.25),
+        (0.25, 0.25, 0.50),
+    ]
+    for case, (throughput, fairness, service) in zip(plan.cases, expected, strict=True):
+        actual = case.actual_coefficients()
+        assert np.isclose(actual["coef_throughput"], throughput)
+        assert np.isclose(actual["coef_fairness"], fairness)
+        assert np.isclose(actual["coef_service"], service)
+        assert np.isclose(throughput + fairness + service, 1.0)
+        assert actual["coef_deficit_service"] == 0.0
+        assert actual["coef_pf_utility"] == 0.0
+        assert actual["coef_starvation_penalty"] == 0.0
+    assert plan.analysis["design"] == "directional_three_component"
+
+
+def test_round_04_result_analysis_is_archived() -> None:
+    path = Path(
+        "docs/analysis/reward_study/round_04/add_service_equal_analysis.html"
+    )
+    content = path.read_text(encoding="utf-8")
+    assert "Service chiếm khoảng" in content
+    assert "Worst P99 wait" in content
+    assert "Throughput-heavy" in content
+    assert "mốc trung tâm" in content
+    assert "service_005" not in content
+
+
+def test_directional_three_component_analysis_explains_all_three_cases(tmp_path: Path) -> None:
+    from scalemac_rl.reward_analysis import build_incremental_reward_analysis
+
+    reference_dir = tmp_path / "reference"
+    round_dir = tmp_path / "round"
+    reference_dir.mkdir()
+    fieldnames = [
+        "mean_goodput_bits_per_slot",
+        "final_jain_fairness",
+        "max_starvation_rate",
+        "max_p99_wait_slots",
+        "max_wait_slots",
+        "mean_reward_throughput_component",
+        "mean_reward_fairness_component",
+        "mean_reward_service_component",
+    ]
+    reference_row = {
+        "mean_goodput_bits_per_slot": 97000,
+        "final_jain_fairness": 0.27,
+        "max_starvation_rate": 0.0,
+        "max_p99_wait_slots": 47,
+        "max_wait_slots": 48,
+        "mean_reward_throughput_component": 0.16,
+        "mean_reward_fairness_component": 0.08,
+        "mean_reward_service_component": 0.30,
+    }
+    with (reference_dir / "validation.csv").open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(reference_row)
+
+    cases = [
+        ("throughput_heavy", {"throughput": 0.5, "fairness": 0.25, "service": 0.25}),
+        ("jain_heavy", {"throughput": 0.25, "fairness": 0.5, "service": 0.25}),
+        ("service_heavy", {"throughput": 0.25, "fairness": 0.25, "service": 0.5}),
+    ]
+    payload_cases = []
+    for index, (case_id, weights) in enumerate(cases):
+        case_dir = round_dir / case_id
+        case_dir.mkdir(parents=True)
+        row = dict(reference_row)
+        row["mean_goodput_bits_per_slot"] = 97000 + index * 1000
+        with (case_dir / "validation.csv").open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerow(row)
+        payload_cases.append(
+            {
+                "id": case_id,
+                "label": case_id,
+                "hypothesis": f"understand {case_id}",
+                "positive_weights": weights,
+            }
+        )
+
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "study_id": "test",
+                "round_id": "round_directional",
+                "description": "directional test",
+                "common": {},
+                "analysis": {
+                    "design": "directional_three_component",
+                    "reference_run": str(reference_dir),
+                    "reference_label": "equal baseline",
+                    "output": str(tmp_path / "analysis.html"),
+                },
+                "cases": payload_cases,
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = build_incremental_reward_analysis(
+        plan=RewardStudyPlan.from_json(plan_path),
+        round_dir=round_dir,
+        output_path=tmp_path / "analysis.html",
+    )
+    content = output.read_text(encoding="utf-8")
+    assert "Bảng so sánh tổng quát" in content
+    assert "0.5 × Throughput" in content
+    assert "0.5 × Jain fairness" in content
+    assert "0.5 × Service" in content
+    assert "giảm đều hai thành phần còn lại" in content
+    assert "99% UE" in content
