@@ -1,0 +1,50 @@
+{
+  "study_id": "full_control_reward_exploration",
+  "round_id": "round_04_add_service_equal",
+  "description": "Add the service component to the throughput-Jain reward with equal coefficients. This round asks what service contributes before any coefficient tuning.",
+  "common": {
+    "environment_steps": 100096,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_seeds": [1701],
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "seed": 1701,
+    "profile_seed": 1701,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 0.000025,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64,
+    "reward_normalization": "All three positive components use their existing bounded scores. Delta rewards, standalone penalties and Lagrangian multipliers remain disabled so the result is attributable to adding the service component."
+  },
+  "analysis": {
+    "focus_component": "service",
+    "reference_run": "artifacts/runs/reward_study/round_02_throughput_jain_sweep/t0375_j0625",
+    "reference_label": "Reference 37.5% throughput + 62.5% Jain",
+    "output": "docs/analysis/reward_study/round_04/add_service_equal_analysis.html"
+  },
+  "cases": [
+    {
+      "id": "t_j_service_equal",
+      "label": "Equal throughput + Jain fairness + service",
+      "hypothesis": "Does adding the service score with the same coefficient as throughput and Jain reduce starvation or waiting time, and what does it cost in goodput and fairness?",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      }
+    }
+  ]
+}

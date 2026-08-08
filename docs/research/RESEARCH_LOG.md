@@ -154,3 +154,26 @@ that deterministic Top-K resolves by repeatedly selecting a small UE subset.
 
 No dataset or Pareto workflow is part of the current phase. Those remain a possible
 future study after the scheduler and reward have been optimized and understood.
+
+## v0.8.7 — Exploration alignment after Round 03
+
+Round 03 showed that the deterministic 25/75 policy selected only about 374 unique
+UEs in a typical 64-slot window and retained about 52 of the previous slot's 64
+UEs. The 37.5/62.5 policy covered almost all 1,200 UEs in the same window. Exact
+Top-K ties were not the main failure; the 25/75 mean priority distribution was too
+flat, while stochastic Beta noise was roughly sixty times larger than its mean
+priority variation.
+
+Before changing reward again, Round 04 fixes the reward at 25% throughput and 75%
+Jain fairness and changes only the Beta concentration schedule. The goal is to
+measure whether gradually reducing exploration makes deterministic and stochastic
+performance converge. Dataset and Pareto work remain explicitly out of scope.
+
+
+## v0.8.8 — Incremental reward exploration
+
+- Current goal: understand the environment and the effect of each reward component.
+- Add one component at a time, begin with equal coefficients, then tune only a small number of weights after explaining the observed KPI changes.
+- Do not optimize the failed 25/75 case in isolation.
+- Do not generate a reward-weight dataset or Pareto study in the current phase.
+- Round 04 adds `service` to the throughput–Jain base using equal one-third coefficients.

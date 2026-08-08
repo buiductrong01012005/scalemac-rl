@@ -81,6 +81,7 @@ def test_round_plans_are_valid_and_unique() -> None:
     for path in (
         Path("configs/reward_study/round_01_component_screen.json"),
         Path("configs/reward_study/round_02_throughput_jain_sweep.json"),
+        Path("configs/reward_study/round_04_add_service_equal.json"),
     ):
         plan = RewardStudyPlan.from_json(path)
         assert plan.cases
@@ -138,3 +139,103 @@ def test_round_01_analysis_explains_p99_wait_in_plain_language() -> None:
     assert "99% UE" in content
     assert "Worst P99 wait" in content
     assert "truyền thành công gần nhất" in content
+
+
+def test_round_04_adds_service_with_equal_coefficients() -> None:
+    plan = RewardStudyPlan.from_json(
+        Path("configs/reward_study/round_04_add_service_equal.json")
+    )
+    assert len(plan.cases) == 1
+    case = plan.cases[0]
+    actual = case.actual_coefficients()
+    assert np.isclose(actual["coef_throughput"], 1.0 / 3.0)
+    assert np.isclose(actual["coef_fairness"], 1.0 / 3.0)
+    assert np.isclose(actual["coef_service"], 1.0 / 3.0)
+    assert actual["coef_deficit_service"] == 0.0
+    assert actual["coef_pf_utility"] == 0.0
+    assert actual["coef_starvation_penalty"] == 0.0
+    assert plan.analysis["focus_component"] == "service"
+
+
+def test_incremental_reward_analysis_contains_formula_and_plain_kpi_explanations(
+    tmp_path: Path,
+) -> None:
+    from scalemac_rl.reward_analysis import build_incremental_reward_analysis
+
+    plan_path = tmp_path / "plan.json"
+    reference_dir = tmp_path / "reference"
+    round_dir = tmp_path / "round"
+    case_dir = round_dir / "equal_three"
+    reference_dir.mkdir()
+    case_dir.mkdir(parents=True)
+
+    payload = {
+        "study_id": "test",
+        "round_id": "round_test",
+        "description": "test incremental reward analysis",
+        "common": {},
+        "analysis": {
+            "focus_component": "service",
+            "reference_run": str(reference_dir),
+            "reference_label": "reference",
+            "output": str(tmp_path / "analysis.html"),
+        },
+        "cases": [
+            {
+                "id": "equal_three",
+                "label": "equal three",
+                "hypothesis": "test what service changes",
+                "positive_weights": {
+                    "throughput": 1.0 / 3.0,
+                    "fairness": 1.0 / 3.0,
+                    "service": 1.0 / 3.0,
+                },
+            }
+        ],
+    }
+    plan_path.write_text(json.dumps(payload), encoding="utf-8")
+    fieldnames = [
+        "mean_goodput_bits_per_slot",
+        "final_jain_fairness",
+        "max_starvation_rate",
+        "max_p99_wait_slots",
+        "max_wait_slots",
+    ]
+    with (reference_dir / "validation.csv").open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "mean_goodput_bits_per_slot": 100000,
+                "final_jain_fairness": 0.30,
+                "max_starvation_rate": 0.0,
+                "max_p99_wait_slots": 49,
+                "max_wait_slots": 50,
+            }
+        )
+    with (case_dir / "validation.csv").open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "mean_goodput_bits_per_slot": 98000,
+                "final_jain_fairness": 0.32,
+                "max_starvation_rate": 0.0,
+                "max_p99_wait_slots": 45,
+                "max_wait_slots": 47,
+            }
+        )
+
+    plan = RewardStudyPlan.from_json(plan_path)
+    output = build_incremental_reward_analysis(
+        plan=plan,
+        round_dir=round_dir,
+        output_path=tmp_path / "analysis.html",
+    )
+    content = output.read_text(encoding="utf-8")
+    assert "0.3333 × Throughput" in content
+    assert "0.3333 × Jain fairness" in content
+    assert "0.3333 × Service" in content
+    assert "99% UE" in content
+    assert "64 slot" in content
+    assert "Goodput giảm" in content

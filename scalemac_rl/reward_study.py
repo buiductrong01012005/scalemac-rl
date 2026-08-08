@@ -153,6 +153,7 @@ class RewardStudyPlan:
     round_id: str
     description: str
     common: dict[str, Any]
+    analysis: dict[str, Any]
     cases: tuple[RewardCase, ...]
 
     @classmethod
@@ -173,6 +174,7 @@ class RewardStudyPlan:
             round_id=round_id,
             description=str(payload.get("description", "")),
             common=dict(payload.get("common", {})),
+            analysis=dict(payload.get("analysis", {})),
             cases=cases,
         )
 

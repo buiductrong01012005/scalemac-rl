@@ -32,3 +32,22 @@
 - **Reason:** a larger Jain coefficient produced worse deterministic fairness, suggesting flat priorities or Top-K tie behaviour rather than a simple reward-weight problem.
 - **Controlled variables:** 16 features/UE, shared Set Encoder, PPO, full-control 1200 UE environment, reward weights, and checkpoint remain unchanged.
 - **Deferred:** new rewards, hyperparameter tuning, architecture changes, dataset generation, and Pareto analysis.
+
+
+## v0.8.8 — Incremental reward exploration
+
+- Current goal: understand the environment and the effect of each reward component.
+- Add one component at a time, begin with equal coefficients, then tune only a small number of weights after explaining the observed KPI changes.
+- Do not optimize the failed 25/75 case in isolation.
+- Do not generate a reward-weight dataset or Pareto study in the current phase.
+- Round 04 adds `service` to the throughput–Jain base using equal one-third coefficients.
+
+## Decision 12 — Add one reward component at a time
+
+**Status:** active in v0.8.8.
+
+**Decision:** After screening individual components and establishing the throughput–Jain base, add only one new reward component per round. Start with equal coefficients among active components, explain the KPI effect, then tune only a small number of coefficients if the component is useful.
+
+**Current case:** throughput + Jain fairness + service, each with coefficient `1/3`.
+
+**Deferred:** dense weight grids, optimization of the failed 25/75 case, dataset generation, Pareto analysis, and architecture changes.

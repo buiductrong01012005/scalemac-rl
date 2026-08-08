@@ -9,6 +9,7 @@ import sys
 from time import time
 from typing import Any
 
+from scalemac_rl.reward_analysis import build_incremental_reward_analysis
 from scalemac_rl.reward_study import RewardStudyPlan, write_json
 
 
@@ -101,6 +102,13 @@ def _common_command(
         str(float(common.get("entropy_coef_start", 5.0e-3))),
         "--entropy-coef-end",
         str(float(common.get("entropy_coef_end", 5.0e-4))),
+        "--beta-concentration-start",
+        str(float(common.get("beta_concentration_start", 20.0))),
+        "--beta-concentration-end",
+        str(float(common.get("beta_concentration_end", common.get("beta_concentration_start", 20.0)))),
+        "--freeze-beta-concentration"
+        if bool(common.get("freeze_beta_concentration", False))
+        else "--no-freeze-beta-concentration",
         "--update-epochs",
         str(int(common.get("update_epochs", 4))),
         "--minibatch-size",
@@ -225,6 +233,12 @@ def main() -> None:
         default=True,
     )
     parser.add_argument(
+        "--analysis",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="build the plan-defined plain-language HTML analysis after training",
+    )
+    parser.add_argument(
         "--build-dataset",
         action="store_true",
         help=(
@@ -255,6 +269,7 @@ def main() -> None:
             "round_id": plan.round_id,
             "description": plan.description,
             "common": plan.common,
+            "analysis": plan.analysis,
             "cases": [case.to_dict() for case in cases],
             "source_plan": str(args.plan),
         },
@@ -332,6 +347,17 @@ def main() -> None:
                 run_dir / "status.json",
                 {"status": "completed", "return_code": 0, "finished_unix": time()},
             )
+
+    if not args.dry_run and args.analysis and plan.analysis.get("output"):
+        try:
+            analysis_path = build_incremental_reward_analysis(
+                plan=plan,
+                round_dir=round_dir,
+                output_path=Path(str(plan.analysis["output"])),
+            )
+            print(f"analysis output: {analysis_path}")
+        except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+            print(f"warning: could not build reward analysis: {exc}")
 
     if not args.dry_run and args.build_dataset:
         command = [

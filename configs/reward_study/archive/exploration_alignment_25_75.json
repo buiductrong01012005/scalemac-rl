@@ -1,0 +1,57 @@
+{
+  "round_id": "round_04_exploration_alignment",
+  "description": "Keep the 25/75 throughput-Jain reward fixed and test whether reducing Beta sampling noise over training improves the deterministic mean-policy.",
+  "common": {
+    "environment_steps": 100096,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_seeds": [1701],
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "seed": 1701,
+    "profile_seed": 1701,
+    "hidden_dim": 64,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 0.000025,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "starvation_threshold_slots": 64,
+    "deadline_target_slots": 50.0,
+    "max_wait_target_slots": 60.0,
+    "constraint_training": false
+  },
+  "cases": [
+    {
+      "id": "j075_beta_learned20",
+      "label": "25% throughput + 75% Jain; learned Beta concentration near 20",
+      "hypothesis": "Reproduce the current train-deployment mismatch under the same source version and evaluator.",
+      "beta_concentration_start": 20.0,
+      "beta_concentration_end": 20.0,
+      "freeze_beta_concentration": false
+    },
+    {
+      "id": "j075_beta_20_to80",
+      "label": "25% throughput + 75% Jain; Beta concentration 20 to 80",
+      "hypothesis": "Moderately reduce action noise so the mean priority policy must learn UE rotation.",
+      "beta_concentration_start": 20.0,
+      "beta_concentration_end": 80.0,
+      "freeze_beta_concentration": true
+    },
+    {
+      "id": "j075_beta_20_to200",
+      "label": "25% throughput + 75% Jain; Beta concentration 20 to 200",
+      "hypothesis": "Strong late-stage alignment to deterministic actions may remove the stochastic fairness illusion, but could reduce exploration too quickly.",
+      "beta_concentration_start": 20.0,
+      "beta_concentration_end": 200.0,
+      "freeze_beta_concentration": true
+    }
+  ]
+}

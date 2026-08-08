@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from statistics import mean
@@ -48,6 +49,20 @@ def _resolve_device(name: str) -> torch.device:
     if name == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested but is not available")
     return torch.device(name)
+
+
+def _set_beta_concentration(model: SharedSetActorCritic, concentration: float) -> None:
+    """Set both Beta action heads to the requested total concentration."""
+    if concentration <= 2.0:
+        raise ValueError("Beta concentration must be greater than 2")
+    raw = math.log(math.expm1(concentration - 2.0))
+    with torch.no_grad():
+        model.raw_concentration.fill_(raw)
+
+
+def _current_beta_concentration(model: SharedSetActorCritic) -> tuple[float, float]:
+    values = torch.nn.functional.softplus(model.raw_concentration.detach()) + 2.0
+    return float(values[0].item()), float(values[1].item())
 
 
 def _parse_int_list(value: str) -> list[int]:
@@ -260,6 +275,13 @@ def _checkpoint_payload(
             "learning_rate_end": args.lr_end,
             "entropy_coef": args.entropy_coef,
             "entropy_coef_end": args.entropy_coef_end,
+            "beta_concentration_start": args.beta_concentration_start,
+            "beta_concentration_end": args.beta_concentration_end,
+            "freeze_beta_concentration": args.freeze_beta_concentration,
+            "beta_concentration_schedule_managed": (
+                args.freeze_beta_concentration
+                or abs(args.beta_concentration_end - args.beta_concentration_start) > 1e-12
+            ),
             "gamma": args.gamma,
             "gae_lambda": args.gae_lambda,
             "clip_coef": args.clip_coef,
@@ -609,6 +631,27 @@ def main() -> None:
         "--entropy-coef-end", type=float, default=None,
         help="linearly anneal entropy coefficient to this value; defaults to --entropy-coef",
     )
+    parser.add_argument(
+        "--beta-concentration-start",
+        type=float,
+        default=20.0,
+        help="initial total concentration of each bounded Beta action head",
+    )
+    parser.add_argument(
+        "--beta-concentration-end",
+        type=float,
+        default=None,
+        help=(
+            "linearly anneal Beta concentration to this value; when provided, "
+            "the concentration is schedule-managed rather than learned"
+        ),
+    )
+    parser.add_argument(
+        "--freeze-beta-concentration",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="keep Beta concentration fixed/scheduled instead of optimizing it",
+    )
     parser.add_argument("--update-epochs", type=int, default=4)
     parser.add_argument("--minibatch-size", type=int, default=64)
     parser.add_argument("--max-grad-norm", type=float, default=0.5)
@@ -746,6 +789,10 @@ def main() -> None:
         args.lr_end = args.lr
     if args.entropy_coef_end is None:
         args.entropy_coef_end = args.entropy_coef
+    if args.beta_concentration_end is None:
+        args.beta_concentration_end = args.beta_concentration_start
+    if args.beta_concentration_start <= 2.0 or args.beta_concentration_end <= 2.0:
+        parser.error("Beta concentrations must be greater than 2")
     if args.lr <= 0.0 or args.lr_end <= 0.0:
         parser.error("learning rates must be positive")
     if args.entropy_coef < 0.0 or args.entropy_coef_end < 0.0:
@@ -786,7 +833,17 @@ def main() -> None:
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     device = _resolve_device(args.device)
-    model = SharedSetActorCritic(input_dim=OBSERVATION_FEATURES, hidden_dim=args.hidden_dim).to(device)
+    model = SharedSetActorCritic(
+        input_dim=OBSERVATION_FEATURES,
+        hidden_dim=args.hidden_dim,
+        initial_concentration=args.beta_concentration_start,
+    ).to(device)
+    schedule_managed_concentration = (
+        args.freeze_beta_concentration
+        or abs(args.beta_concentration_end - args.beta_concentration_start) > 1e-12
+    )
+    if schedule_managed_concentration:
+        model.raw_concentration.requires_grad_(False)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     try:
         initialized_from = _load_initial_state(
@@ -799,6 +856,8 @@ def main() -> None:
         )
     except FileNotFoundError as exc:
         parser.error(str(exc))
+    if schedule_managed_concentration:
+        _set_beta_concentration(model, args.beta_concentration_start)
     hyper = PpoHyperparameters(
         gamma=args.gamma,
         gae_lambda=args.gae_lambda,
@@ -829,6 +888,10 @@ def main() -> None:
     last_validation: dict[str, Any] | None = None
     training_started_at = perf_counter()
     total_requested_steps = args.steps_per_stage * len(args.curriculum)
+    total_requested_updates = max(
+        math.ceil(total_requested_steps / max(args.rollout_steps * args.workers, 1)),
+        1,
+    )
     progress = tqdm(
         total=total_requested_steps,
         desc="ScaleMAC PPO",
@@ -953,6 +1016,17 @@ def main() -> None:
                 args.entropy_coef
                 + progress_fraction * (args.entropy_coef_end - args.entropy_coef)
             )
+            if schedule_managed_concentration:
+                beta_progress_fraction = min(
+                    update_index / max(total_requested_updates - 1, 1), 1.0
+                )
+                scheduled_concentration = (
+                    args.beta_concentration_start
+                    + beta_progress_fraction
+                    * (args.beta_concentration_end - args.beta_concentration_start)
+                )
+                _set_beta_concentration(model, scheduled_concentration)
+            current_beta_priority, current_beta_demand = _current_beta_concentration(model)
             for group in optimizer.param_groups:
                 group["lr"] = current_lr
             hyper.entropy_coef = current_entropy_coef
@@ -1243,6 +1317,8 @@ def main() -> None:
                 "mean_rule_selected_count": mean(metric_window["rule_selected"]),
                 "learning_rate": current_lr,
                 "entropy_coef": current_entropy_coef,
+                "beta_concentration_priority": current_beta_priority,
+                "beta_concentration_demand": current_beta_demand,
                 "mean_learned_selected_count": mean(metric_window["learned_selected"]),
                 "mean_learned_selection_fraction": mean(metric_window["learned_fraction"]),
                 "elapsed_seconds": perf_counter() - training_started_at,
@@ -1659,7 +1735,9 @@ def main() -> None:
                 f"deficit={args.reward_deficit_service_weight}, "
                 f"urgency={args.reward_urgency_service_weight}"
             ),
-            f"LR schedule: {args.lr} -> {args.lr_end}; entropy: {args.entropy_coef} -> {args.entropy_coef_end}",
+            f"LR schedule: {args.lr} -> {args.lr_end}; entropy: {args.entropy_coef} -> {args.entropy_coef_end}; "
+            f"Beta concentration: {args.beta_concentration_start} -> {args.beta_concentration_end} "
+            f"({'managed' if schedule_managed_concentration else 'learned'})",
             f"Total wall-clock training time: {total_elapsed_seconds:.1f} seconds",
             "best_tradeoff minimizes the largest fixed-target KPI gap, then maximizes the geometric balanced score.",
             "Workers are vectorized environments in one process, not distributed RL.",
