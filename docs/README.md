@@ -408,3 +408,37 @@ Compress-Archive `
   -DestinationPath .\scalemac_results_v074_300k.zip `
   -Force
 ```
+
+## v0.7.5: measuring whether rules lift PPO
+
+Before training more policies, run a fixed-weight ablation. The same hybrid actor is
+executed as pure PPO, HARQ-only hybrid, and fixed rule/PPO splits. Because actor
+weights, seeds, profiles, reward, KPI definitions, candidate set, and projector are
+held fixed, the output directly measures how much the rule changes performance.
+
+```powershell
+python -m scalemac_rl.scripts.run_rule_ppo_split_ablation `
+  --hybrid-checkpoint .\artifacts\hybrid_300k_best_tradeoff.pt `
+  --ppo-only-checkpoint .\artifacts\ppo_only_300k_best_tradeoff.pt `
+  --rule-reserves 8,16,24,32,48,64 `
+  --include-all-ues-ablation `
+  --num-ues 1200 `
+  --slots 5000 `
+  --seed 1701 `
+  --seeds 5
+```
+
+The key report is `artifacts/rule_ppo_split_ablation_dependency.csv`. Positive
+`rule_lift_*` means the projector safety rule improved that KPI compared with the
+same actor running with the projector rules disabled. The heuristic candidate filter
+is held fixed on the main curve; `--include-all-ues-ablation` separately tests how
+much the candidate filter supports the checkpoint.
+
+Only after this dependency curve is known should promising splits be fine-tuned:
+
+```powershell
+python -m scalemac_rl.scripts.train_hybrid_split --reserve 24
+```
+
+The default fine-tuning budget is 120,064 environment steps. Every split starts
+from the same existing hybrid checkpoint unless `--start-checkpoint` is provided.
