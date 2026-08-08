@@ -7,7 +7,7 @@ from torch import nn
 class SharedSetPolicy(nn.Module):
     """Permutation-equivariant per-UE policy with global mean context."""
 
-    def __init__(self, input_dim: int = 10, hidden_dim: int = 64):
+    def __init__(self, input_dim: int = 16, hidden_dim: int = 64):
         super().__init__()
         self.encoder = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),

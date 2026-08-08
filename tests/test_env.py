@@ -16,7 +16,7 @@ def test_environment_step_contract() -> None:
     observation, info = env.reset(seed=11)
     scheduler = RoundRobinScheduler(cfg.max_selected_ues)
 
-    assert observation.shape == (128, 10)
+    assert observation.shape == (128, 16)
     assert info["num_active_ues"] == 128
 
     action = scheduler.act(observation)

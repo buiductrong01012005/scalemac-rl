@@ -236,11 +236,16 @@ def _checkpoint_payload(
             "deadline_risk_start_ratio": args.deadline_risk_start_ratio,
             "deadline_risk_penalty_weight": args.deadline_risk_penalty_weight,
             "max_wait_risk_penalty_weight": args.max_wait_risk_penalty_weight,
+            "population_wait_penalty_weight": args.population_wait_penalty_weight,
+            "low_throughput_percentile": args.low_throughput_percentile,
             "starvation_threshold_slots": args.starvation_threshold_slots,
             "reward_throughput_weight": args.reward_throughput_weight,
             "reward_fairness_weight": args.reward_fairness_weight,
             "reward_service_weight": args.reward_service_weight,
             "reward_deficit_service_weight": args.reward_deficit_service_weight,
+            "reward_pf_utility_weight": args.reward_pf_utility_weight,
+            "reward_low_throughput_weight": args.reward_low_throughput_weight,
+            "reward_urgency_service_weight": args.reward_urgency_service_weight,
             "reward_fairness_delta_weight": args.reward_fairness_delta_weight,
             "reward_pf_utility_delta_weight": args.reward_pf_utility_delta_weight,
             "fairness_target_schedule": args.fairness_target_schedule,
@@ -250,6 +255,9 @@ def _checkpoint_payload(
             "milestone_env_steps": args.milestone_env_steps,
             "training_budget_env_steps": args.steps_per_stage * len(args.curriculum),
             "learning_rate": args.lr,
+            "learning_rate_end": args.lr_end,
+            "entropy_coef": args.entropy_coef,
+            "entropy_coef_end": args.entropy_coef_end,
             "gamma": args.gamma,
             "gae_lambda": args.gae_lambda,
             "clip_coef": args.clip_coef,
@@ -382,10 +390,15 @@ def _validate(
     reward_fairness_weight: float,
     reward_service_weight: float,
     reward_deficit_service_weight: float,
+    reward_pf_utility_weight: float,
+    reward_low_throughput_weight: float,
+    reward_urgency_service_weight: float,
     reward_fairness_delta_weight: float,
     reward_pf_utility_delta_weight: float,
     max_wait_target_slots: float,
     max_wait_risk_penalty_weight: float,
+    population_wait_penalty_weight: float,
+    low_throughput_percentile: float,
     update_index: int,
     stage_index: int,
     global_env_steps: int,
@@ -410,10 +423,15 @@ def _validate(
         reward_fairness_weight=reward_fairness_weight,
         reward_service_weight=reward_service_weight,
         reward_deficit_service_weight=reward_deficit_service_weight,
+        reward_pf_utility_weight=reward_pf_utility_weight,
+        reward_low_throughput_weight=reward_low_throughput_weight,
+        reward_urgency_service_weight=reward_urgency_service_weight,
         reward_fairness_delta_weight=reward_fairness_delta_weight,
         reward_pf_utility_delta_weight=reward_pf_utility_delta_weight,
         max_wait_target_slots=max_wait_target_slots,
         reward_max_wait_risk_penalty_weight=max_wait_risk_penalty_weight,
+        reward_population_wait_penalty_weight=population_wait_penalty_weight,
+        low_throughput_percentile=low_throughput_percentile,
     )
     rows: list[dict[str, Any]] = []
     for seed in seeds:
@@ -552,24 +570,37 @@ def main() -> None:
     parser.add_argument("--long-wait-threshold", type=float, default=0.8)
     parser.add_argument("--freeze-static-profiles", action="store_true")
     parser.add_argument("--fixed-profile-seed", type=int, default=None)
-    parser.add_argument("--single-seed-upper-bound", action="store_true")
+    parser.add_argument("--single-seed-upper-bound", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--deadline-risk-start-ratio", type=float, default=0.60)
     parser.add_argument("--deadline-risk-penalty-weight", type=float, default=0.15)
     parser.add_argument("--max-wait-risk-penalty-weight", type=float, default=0.10)
+    parser.add_argument("--population-wait-penalty-weight", type=float, default=0.0)
+    parser.add_argument("--low-throughput-percentile", type=float, default=10.0)
     parser.add_argument("--starvation-threshold-slots", type=int, default=64)
     parser.add_argument("--reward-throughput-weight", type=float, default=0.45)
     parser.add_argument("--reward-fairness-weight", type=float, default=0.35)
     parser.add_argument("--reward-service-weight", type=float, default=0.15)
     parser.add_argument("--reward-deficit-service-weight", type=float, default=0.05)
+    parser.add_argument("--reward-pf-utility-weight", type=float, default=0.0)
+    parser.add_argument("--reward-low-throughput-weight", type=float, default=0.0)
+    parser.add_argument("--reward-urgency-service-weight", type=float, default=0.0)
     parser.add_argument("--reward-fairness-delta-weight", type=float, default=0.03)
     parser.add_argument("--reward-pf-utility-delta-weight", type=float, default=0.02)
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument(
+        "--lr-end", type=float, default=None,
+        help="linearly anneal Adam learning rate to this value; defaults to --lr",
+    )
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--gae-lambda", type=float, default=0.95)
     parser.add_argument("--clip-coef", type=float, default=0.2)
     parser.add_argument("--value-coef", type=float, default=0.5)
     parser.add_argument("--entropy-coef", type=float, default=0.001)
+    parser.add_argument(
+        "--entropy-coef-end", type=float, default=None,
+        help="linearly anneal entropy coefficient to this value; defaults to --entropy-coef",
+    )
     parser.add_argument("--update-epochs", type=int, default=4)
     parser.add_argument("--minibatch-size", type=int, default=64)
     parser.add_argument("--max-grad-norm", type=float, default=0.5)
@@ -667,6 +698,10 @@ def main() -> None:
         parser.error("deadline-risk-penalty-weight must be non-negative")
     if args.max_wait_risk_penalty_weight < 0.0:
         parser.error("max-wait-risk-penalty-weight must be non-negative")
+    if args.population_wait_penalty_weight < 0.0:
+        parser.error("population-wait-penalty-weight must be non-negative")
+    if not 0.0 < args.low_throughput_percentile < 50.0:
+        parser.error("low-throughput-percentile must be in (0, 50)")
     if not 0.0 < args.min_throughput_score <= 1.0:
         parser.error("min-throughput-score must be in (0, 1]")
     if args.starvation_threshold_slots <= 0:
@@ -676,9 +711,27 @@ def main() -> None:
         + args.reward_fairness_weight
         + args.reward_service_weight
         + args.reward_deficit_service_weight
+        + args.reward_pf_utility_weight
+        + args.reward_low_throughput_weight
+        + args.reward_urgency_service_weight
     )
     if abs(reward_weight_sum - 1.0) > 1e-6:
         parser.error("positive reward weights must sum to 1")
+    for name in (
+        "reward_pf_utility_weight",
+        "reward_low_throughput_weight",
+        "reward_urgency_service_weight",
+    ):
+        if getattr(args, name) < 0.0:
+            parser.error(f"{name.replace('_', '-')} must be non-negative")
+    if args.lr_end is None:
+        args.lr_end = args.lr
+    if args.entropy_coef_end is None:
+        args.entropy_coef_end = args.entropy_coef
+    if args.lr <= 0.0 or args.lr_end <= 0.0:
+        parser.error("learning rates must be positive")
+    if args.entropy_coef < 0.0 or args.entropy_coef_end < 0.0:
+        parser.error("entropy coefficients must be non-negative")
     if args.single_seed_upper_bound:
         if args.workers != 1:
             parser.error("single-seed-upper-bound requires --workers 1")
@@ -817,9 +870,14 @@ def main() -> None:
             reward_fairness_weight=args.reward_fairness_weight,
             reward_service_weight=args.reward_service_weight,
             reward_deficit_service_weight=args.reward_deficit_service_weight,
+            reward_pf_utility_weight=args.reward_pf_utility_weight,
+            reward_low_throughput_weight=args.reward_low_throughput_weight,
+            reward_urgency_service_weight=args.reward_urgency_service_weight,
             reward_fairness_delta_weight=args.reward_fairness_delta_weight,
             reward_pf_utility_delta_weight=args.reward_pf_utility_delta_weight,
             max_wait_target_slots=args.max_wait_slots,
+            reward_population_wait_penalty_weight=args.population_wait_penalty_weight,
+            low_throughput_percentile=args.low_throughput_percentile,
             seed=stage_seed,
         )
         config.validate()
@@ -865,6 +923,20 @@ def main() -> None:
             for env in envs:
                 env.config.deadline_target_slots = active_p99_limit
 
+            # Linear schedules are based on the global requested budget so each
+            # curriculum stage continues the same optimization schedule.
+            progress_fraction = min(
+                global_env_steps / max(total_requested_steps, 1), 1.0
+            )
+            current_lr = args.lr + progress_fraction * (args.lr_end - args.lr)
+            current_entropy_coef = (
+                args.entropy_coef
+                + progress_fraction * (args.entropy_coef_end - args.entropy_coef)
+            )
+            for group in optimizer.param_groups:
+                group["lr"] = current_lr
+            hyper.entropy_coef = current_entropy_coef
+
             obs_buffer: list[np.ndarray] = []
             action_buffer: list[np.ndarray] = []
             compact_mask_buffer: list[np.ndarray] = []
@@ -878,10 +950,12 @@ def main() -> None:
                     "base_reward", "core_reward", "final_target_reward",
                     "constrained_reward", "constraint_penalty",
                     "deadline_risk_penalty", "reference_deadline_risk_penalty",
-                    "max_wait_risk_penalty", "deadline_risk",
-                    "reference_deadline_risk", "max_wait_risk", "tail_mean_wait",
+                    "max_wait_risk_penalty", "population_wait_penalty", "deadline_risk",
+                    "reference_deadline_risk", "max_wait_risk", "population_wait_risk",
+                    "tail_mean_wait",
                     "throughput", "fairness", "jain_fairness", "short_fairness",
-                    "deficit_service", "fairness_progress", "pf_utility_progress",
+                    "deficit_service", "urgency_service", "low_throughput",
+                    "pf_utility_score", "fairness_progress", "pf_utility_progress",
                     "service", "starvation", "scheduling_starvation",
                     "p99_wait", "max_wait", "near_deadline_rate",
                     "starvation_excess", "wait_excess", "fairness_excess",
@@ -954,15 +1028,22 @@ def main() -> None:
                         "max_wait_risk_penalty": float(
                             info["reward_max_wait_risk_penalty"]
                         ),
+                        "population_wait_penalty": float(
+                            info["reward_population_wait_penalty"]
+                        ),
                         "deadline_risk": float(info["deadline_risk"]),
                         "reference_deadline_risk": float(info["reference_deadline_risk"]),
                         "max_wait_risk": float(info["max_wait_risk"]),
+                        "population_wait_risk": float(info["population_wait_risk"]),
                         "tail_mean_wait": float(info["tail_mean_wait_slots"]),
                         "throughput": float(info["throughput_score"]),
                         "fairness": float(info["fairness_score"]),
                         "jain_fairness": float(info["jain_fairness"]),
                         "short_fairness": float(info["short_term_jain_fairness"]),
                         "deficit_service": float(info["deficit_service_score"]),
+                        "urgency_service": float(info["urgency_service_score"]),
+                        "low_throughput": float(info["low_throughput_score"]),
+                        "pf_utility_score": float(info["pf_utility_score"]),
                         "fairness_progress": float(info["fairness_progress"]),
                         "pf_utility_progress": float(info["pf_utility_progress"]),
                         "service": float(info["service_score"]),
@@ -1090,11 +1171,15 @@ def main() -> None:
                 "mean_max_wait_risk_penalty": mean(
                     metric_window["max_wait_risk_penalty"]
                 ),
+                "mean_population_wait_penalty": mean(
+                    metric_window["population_wait_penalty"]
+                ),
                 "mean_deadline_risk": mean(metric_window["deadline_risk"]),
                 "mean_reference_deadline_risk": mean(
                     metric_window["reference_deadline_risk"]
                 ),
                 "mean_max_wait_risk": mean(metric_window["max_wait_risk"]),
+                "mean_population_wait_risk": mean(metric_window["population_wait_risk"]),
                 "mean_tail_mean_wait_slots": mean(metric_window["tail_mean_wait"]),
                 "mean_goodput_bits_per_slot": mean(metric_window["goodput"]),
                 "mean_throughput_score": mean(metric_window["throughput"]),
@@ -1102,6 +1187,9 @@ def main() -> None:
                 "mean_jain_fairness": mean(metric_window["jain_fairness"]),
                 "mean_short_term_jain_fairness": mean(metric_window["short_fairness"]),
                 "mean_deficit_service_score": mean(metric_window["deficit_service"]),
+                "mean_urgency_service_score": mean(metric_window["urgency_service"]),
+                "mean_low_throughput_score": mean(metric_window["low_throughput"]),
+                "mean_pf_utility_score": mean(metric_window["pf_utility_score"]),
                 "mean_fairness_progress": mean(metric_window["fairness_progress"]),
                 "mean_pf_utility_progress": mean(metric_window["pf_utility_progress"]),
                 "mean_service_score": mean(metric_window["service"]),
@@ -1133,6 +1221,8 @@ def main() -> None:
                 "mean_scheduler_selection_fraction": mean(metric_window["scheduler_fraction"]),
                 "mean_ppo_selected_count": mean(metric_window["ppo_selected"]),
                 "mean_rule_selected_count": mean(metric_window["rule_selected"]),
+                "learning_rate": current_lr,
+                "entropy_coef": current_entropy_coef,
                 "mean_learned_selected_count": mean(metric_window["learned_selected"]),
                 "mean_learned_selection_fraction": mean(metric_window["learned_fraction"]),
                 "elapsed_seconds": perf_counter() - training_started_at,
@@ -1204,10 +1294,15 @@ def main() -> None:
                     reward_fairness_weight=args.reward_fairness_weight,
                     reward_service_weight=args.reward_service_weight,
                     reward_deficit_service_weight=args.reward_deficit_service_weight,
+                    reward_pf_utility_weight=args.reward_pf_utility_weight,
+                    reward_low_throughput_weight=args.reward_low_throughput_weight,
+                    reward_urgency_service_weight=args.reward_urgency_service_weight,
                     reward_fairness_delta_weight=args.reward_fairness_delta_weight,
                     reward_pf_utility_delta_weight=args.reward_pf_utility_delta_weight,
                     max_wait_target_slots=args.max_wait_slots,
                     max_wait_risk_penalty_weight=args.max_wait_risk_penalty_weight,
+                    population_wait_penalty_weight=args.population_wait_penalty_weight,
+                    low_throughput_percentile=args.low_throughput_percentile,
                     update_index=update_index, stage_index=stage_index,
                     global_env_steps=global_env_steps,
                 )
@@ -1520,19 +1615,29 @@ def main() -> None:
         markdown_report_path(args.log_output),
         title=f"ScaleMAC-RL {args.scheduler_mode} constrained PPO training",
         description=(
-            "Long curriculum PPO run with a deterministic safety reserve, learned UE selection, "
-            "validation-driven Lagrange updates, rollback, and per-stage checkpoint selection."
+            "Constraint-aware PPO run with configurable full-UE or candidate inputs, "
+            "validation-driven Lagrange updates, rollback, and checkpoint selection."
         ),
         rows=log_rows,
         notes=(
             f"Initialized from: `{initialized_from}`",
             f"Curriculum UE stages: {args.curriculum}",
             f"Environment steps per stage: {args.steps_per_stage}",
-            f"Candidate pool: {args.max_candidates}; safety reserve: {args.safety_reserve_ues}; Top-K: 64",
+            f"Candidate mode: {args.candidate_mode}; pool: {args.max_candidates}; safety reserve: {args.safety_reserve_ues}; Top-K: 64",
             f"Stage P99 limits: {args.stage_p99_wait_limits}; fixed P99 target: {args.max_p99_wait_slots}",
             f"Fairness target: Jain >= {args.min_jain_fairness}; maximum successful-delivery wait: {args.max_wait_slots} slots",
             f"Starvation definition: no successful delivery for >= {args.starvation_threshold_slots} slots",
-            f"Reward weights: throughput={args.reward_throughput_weight}, fairness={args.reward_fairness_weight}, service={args.reward_service_weight}",
+            (
+                "Reward weights: "
+                f"throughput={args.reward_throughput_weight}, "
+                f"fairness={args.reward_fairness_weight}, "
+                f"PF={args.reward_pf_utility_weight}, "
+                f"low-throughput={args.reward_low_throughput_weight}, "
+                f"service={args.reward_service_weight}, "
+                f"deficit={args.reward_deficit_service_weight}, "
+                f"urgency={args.reward_urgency_service_weight}"
+            ),
+            f"LR schedule: {args.lr} -> {args.lr_end}; entropy: {args.entropy_coef} -> {args.entropy_coef_end}",
             f"Total wall-clock training time: {total_elapsed_seconds:.1f} seconds",
             "best_tradeoff minimizes the largest fixed-target KPI gap, then maximizes the geometric balanced score.",
             "Workers are vectorized environments in one process, not distributed RL.",

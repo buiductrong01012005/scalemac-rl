@@ -1,0 +1,32 @@
+{
+  "experiment": "full_control_v2_balanced",
+  "num_ues": 1200,
+  "candidate_mode": "all",
+  "scheduler_mode": "ppo_only",
+  "safety_reserve_ues": 0,
+  "force_harq_retransmissions": false,
+  "environment_steps": 300032,
+  "rollout_steps": 256,
+  "hidden_dim": 96,
+  "gamma": 0.999,
+  "gae_lambda": 0.97,
+  "clip_coef": 0.1,
+  "learning_rate_start": 0.0001,
+  "learning_rate_end": 0.000025,
+  "entropy_coef_start": 0.005,
+  "entropy_coef_end": 0.0005,
+  "reward_weights": {
+    "throughput": 0.4,
+    "fairness": 0.15,
+    "service": 0.1,
+    "deficit_service": 0.05,
+    "pf_utility": 0.15,
+    "low_throughput": 0.1,
+    "urgency_service": 0.05
+  },
+  "penalties": {
+    "deadline_risk": 0.1,
+    "max_wait_risk": 0.08,
+    "population_wait": 0.08
+  }
+}

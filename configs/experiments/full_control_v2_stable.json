@@ -1,0 +1,12 @@
+{
+  "experiment": "full_control_v2_stable",
+  "num_ues": 1200,
+  "candidate_mode": "all",
+  "scheduler_mode": "ppo_only",
+  "environment_steps": 300032,
+  "clip_coef": 0.08,
+  "learning_rate_start": 0.00005,
+  "learning_rate_end": 0.00001,
+  "entropy_coef_start": 0.003,
+  "entropy_coef_end": 0.0003
+}

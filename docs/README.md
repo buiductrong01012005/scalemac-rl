@@ -15,6 +15,42 @@ ScaleMAC-RL is a fast DRL training surrogate for **single-cell 5G NR downlink MA
 - KPIs: throughput, fairness/service, delay/starvation, candidate coverage, and inference latency.
 
 
+
+## What v0.8.0 adds
+
+v0.8.0 starts the **rule-free full-control PPO** research track:
+
+- PPO observes all 1,200 UEs and selects the complete Top-64 schedule;
+- no heuristic candidate filter, safety reserve, forced HARQ selection, or PF imitation is used;
+- the projector only enforces a valid Top-64 and exact 273-PRB allocation;
+- observation v2 adds six relative/rank/history features, for 16 features per UE;
+- reward v2 adds proportional-fair utility, P10-throughput, urgency-service, and population-wide wait pressure;
+- learning rate and entropy can decay linearly during PPO training;
+- direct 300k, curriculum 300k, and short profile-tuning entry points are provided;
+- `docs/research/` records hypotheses, decisions, negative results, and experiment protocols;
+- a Markdown research-report generator is included.
+
+Main experiment:
+
+```powershell
+python -m scalemac_rl.scripts.train_full_control_ppo_v2 --profile balanced
+```
+
+Optional comparison:
+
+```powershell
+python -m scalemac_rl.scripts.train_full_control_curriculum_v2
+python -m scalemac_rl.scripts.run_full_control_tuning --steps 100096
+```
+
+Research documentation starts at [`research/README.md`](research/README.md).
+
+After training, generate a report from the exported CSV files:
+
+```powershell
+python -m scalemac_rl.scripts.build_full_control_report --training .\artifacts\full_control_v2_balanced_training.csv --validation-summary .\artifacts\full_control_v2_balanced_validation_summary.csv --checkpoint-manifest .\artifacts\full_control_v2_balanced_checkpoint_manifest.csv --evaluation .\artifacts\full_control_v2_unified_tradeoff.csv
+```
+
 ## What v0.7.4 adds
 
 v0.7.4 shortens both diagnostic PPO runs to approximately 300k environment steps

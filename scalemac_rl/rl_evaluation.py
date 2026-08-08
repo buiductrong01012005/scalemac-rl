@@ -32,6 +32,9 @@ _METRIC_KEYS = (
     "short_term_jain_fairness",
     "throughput_deficit_mean",
     "deficit_service_score",
+    "urgency_service_score",
+    "low_throughput_score",
+    "pf_utility_score",
     "fairness_delta",
     "fairness_progress",
     "pf_utility",
@@ -46,16 +49,21 @@ _METRIC_KEYS = (
     "scheduling_max_wait_slots",
     "near_deadline_rate",
     "max_wait_risk",
+    "population_wait_risk",
     "reward_throughput_component",
     "reward_fairness_component",
     "reward_service_component",
     "reward_deficit_service_component",
+    "reward_pf_utility_component",
+    "reward_low_throughput_component",
+    "reward_urgency_service_component",
     "reward_fairness_progress_component",
     "reward_pf_utility_progress_component",
     "reward_starvation_penalty",
     "reward_deadline_risk_penalty",
     "reward_reference_deadline_risk_penalty",
     "reward_max_wait_risk_penalty",
+    "reward_population_wait_penalty",
     "deadline_risk",
     "reference_deadline_risk",
     "tail_mean_wait_slots",
@@ -99,6 +107,9 @@ def summarize_episode(
         "mean_short_term_jain_fairness": mean(metrics["short_term_jain_fairness"]),
         "mean_throughput_deficit": mean(metrics["throughput_deficit_mean"]),
         "mean_deficit_service_score": mean(metrics["deficit_service_score"]),
+        "mean_urgency_service_score": mean(metrics["urgency_service_score"]),
+        "mean_low_throughput_score": mean(metrics["low_throughput_score"]),
+        "mean_pf_utility_score": mean(metrics["pf_utility_score"]),
         "mean_fairness_delta": mean(metrics["fairness_delta"]),
         "mean_fairness_progress": mean(metrics["fairness_progress"]),
         "mean_pf_utility": mean(metrics["pf_utility"]),
@@ -116,11 +127,21 @@ def summarize_episode(
         "max_scheduling_wait_slots": max(metrics["scheduling_max_wait_slots"]),
         "mean_near_deadline_rate": mean(metrics["near_deadline_rate"]),
         "mean_max_wait_risk": mean(metrics["max_wait_risk"]),
+        "mean_population_wait_risk": mean(metrics["population_wait_risk"]),
         "mean_reward_throughput_component": mean(metrics["reward_throughput_component"]),
         "mean_reward_fairness_component": mean(metrics["reward_fairness_component"]),
         "mean_reward_service_component": mean(metrics["reward_service_component"]),
         "mean_reward_deficit_service_component": mean(
             metrics["reward_deficit_service_component"]
+        ),
+        "mean_reward_pf_utility_component": mean(
+            metrics["reward_pf_utility_component"]
+        ),
+        "mean_reward_low_throughput_component": mean(
+            metrics["reward_low_throughput_component"]
+        ),
+        "mean_reward_urgency_service_component": mean(
+            metrics["reward_urgency_service_component"]
         ),
         "mean_reward_fairness_progress_component": mean(
             metrics["reward_fairness_progress_component"]
@@ -137,6 +158,9 @@ def summarize_episode(
         ),
         "mean_reward_max_wait_risk_penalty": mean(
             metrics["reward_max_wait_risk_penalty"]
+        ),
+        "mean_reward_population_wait_penalty": mean(
+            metrics["reward_population_wait_penalty"]
         ),
         "mean_deadline_risk": mean(metrics["deadline_risk"]),
         "mean_reference_deadline_risk": mean(metrics["reference_deadline_risk"]),

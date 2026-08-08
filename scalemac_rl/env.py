@@ -43,7 +43,13 @@ HARQ_RETX_COUNT = 6
 ELIGIBLE = 7
 THROUGHPUT_DEFICIT = 8
 SERVICE_DEFICIT = 9
-OBSERVATION_FEATURES = 10
+CQI_RANK = 10
+THROUGHPUT_DEFICIT_RANK = 11
+WAIT_RANK = 12
+THROUGHPUT_TO_MEAN = 13
+WAIT_TO_DEADLINE = 14
+LAST_PRB_SHARE = 15
+OBSERVATION_FEATURES = 16
 
 
 def deadline_risk_score(
@@ -113,6 +119,7 @@ class ScaleMacDownlinkEnv:
         self.harq_retx_count = np.zeros(n, dtype=np.int16)
         self.eligible = np.ones(n, dtype=bool)
         self.last_grant = np.zeros(n, dtype=np.int32)
+        self.last_success = np.zeros(n, dtype=bool)
         self._frozen_cqi: np.ndarray | None = None
         self._frozen_demand_factor: np.ndarray | None = None
         self._frozen_speed_mps: np.ndarray | None = None
@@ -173,6 +180,7 @@ class ScaleMacDownlinkEnv:
         self.harq_retx_count.fill(0)
         self.eligible.fill(True)
         self.last_grant.fill(0)
+        self.last_success.fill(False)
         self._previous_cumulative_fairness = 0.0
         self._previous_pf_utility = 0.0
 
@@ -270,7 +278,57 @@ class ScaleMacDownlinkEnv:
         observation[:, SERVICE_DEFICIT] = np.clip(
             self.time_since_service / expected_cycle, 0.0, 2.0
         )
+
+        demand_normalized_throughput = self.ewma_throughput_bits / np.maximum(
+            self.demand_factor, 1e-6
+        )
+        observation[:, CQI_RANK] = self._percentile_rank(self.cqi.astype(np.float64))
+        # High value means that the UE is relatively underserved.
+        observation[:, THROUGHPUT_DEFICIT_RANK] = 1.0 - self._percentile_rank(
+            demand_normalized_throughput
+        )
+        observation[:, WAIT_RANK] = self._percentile_rank(
+            self.time_since_service.astype(np.float64)
+        )
+        eligible_values = demand_normalized_throughput[self.eligible]
+        mean_throughput = float(eligible_values.mean()) if eligible_values.size else 0.0
+        if mean_throughput <= 1e-9:
+            observation[:, THROUGHPUT_TO_MEAN] = 0.0
+        else:
+            observation[:, THROUGHPUT_TO_MEAN] = np.clip(
+                demand_normalized_throughput / mean_throughput / 2.0,
+                0.0,
+                1.0,
+            )
+        observation[:, WAIT_TO_DEADLINE] = np.clip(
+            self.time_since_service / max(self.config.deadline_target_slots, 1e-9),
+            0.0,
+            2.0,
+        )
+        observation[:, LAST_PRB_SHARE] = np.clip(
+            self.last_grant / max(self.config.num_prbs, 1), 0.0, 1.0
+        )
         return observation
+
+    @staticmethod
+    def _percentile_rank(values: np.ndarray) -> np.ndarray:
+        """Tie-aware percentile ranks in [0, 1]."""
+        array = np.asarray(values, dtype=np.float64)
+        n = int(array.size)
+        if n <= 1:
+            return np.zeros(n, dtype=np.float32)
+        order = np.argsort(array, kind="mergesort")
+        sorted_values = array[order]
+        ranks = np.empty(n, dtype=np.float64)
+        start = 0
+        while start < n:
+            end = start + 1
+            while end < n and sorted_values[end] == sorted_values[start]:
+                end += 1
+            average_rank = 0.5 * (start + end - 1)
+            ranks[order[start:end]] = average_rank / (n - 1)
+            start = end
+        return ranks.astype(np.float32)
 
     def _throughput_deficit(self) -> np.ndarray:
         """Demand-normalized per-UE throughput deficit used as dense actor input."""
@@ -286,6 +344,23 @@ class ScaleMacDownlinkEnv:
         normalized = self.ewma_throughput_bits / np.maximum(self.demand_factor, 1e-6)
         scale = max(float(normalized.max(initial=1.0)), 1.0)
         return float(np.mean(np.log1p(normalized / scale)))
+
+    def _pf_utility_score(self) -> float:
+        # _pf_utility is bounded by log(2) because values are normalized by max.
+        return clip01(self._pf_utility() / np.log(2.0))
+
+    def _low_throughput_score(self) -> float:
+        normalized = self.ewma_throughput_bits / np.maximum(self.demand_factor, 1e-6)
+        eligible_values = normalized[self.eligible]
+        if eligible_values.size == 0:
+            return 0.0
+        cell_mean = float(eligible_values.mean())
+        if cell_mean <= 1e-9:
+            return 0.0
+        percentile = float(
+            np.percentile(eligible_values, self.config.low_throughput_percentile)
+        )
+        return clip01(percentile / cell_mean)
 
     @staticmethod
     def _bits_per_prb(efficiency: np.ndarray | float) -> np.ndarray | float:
@@ -319,10 +394,12 @@ class ScaleMacDownlinkEnv:
         selected = grant.selected_ues
         self.last_grant.fill(0)
         self.last_grant[selected] = grant.prbs
+        self.last_success.fill(False)
 
         self.time_since_schedule += 1
         self.time_since_schedule[selected] = 0
         self.time_since_service += 1
+        pre_service_wait = self.time_since_service.astype(np.float64).copy()
 
         pre_throughput_deficit = self._throughput_deficit().astype(np.float64)
         delivered_bits = np.zeros(n, dtype=np.float64)
@@ -358,6 +435,7 @@ class ScaleMacDownlinkEnv:
             self.harq_retx_count[successful_ues] = 0
             # A UE is only considered served when data is actually delivered.
             self.time_since_service[successful_ues] = 0
+            self.last_success[successful_ues] = True
 
         # Full-buffer refill: every UE remains backlogged at its heterogeneous target.
         served_bytes = delivered_bits / 8.0
@@ -383,6 +461,8 @@ class ScaleMacDownlinkEnv:
             np.tanh(self.config.fairness_delta_scale * fairness_delta)
         )
         pf_utility = self._pf_utility()
+        pf_utility_score = self._pf_utility_score()
+        low_throughput_score = self._low_throughput_score()
         pf_utility_delta = pf_utility - self._previous_pf_utility
         pf_utility_progress = float(
             np.tanh(self.config.pf_utility_delta_scale * pf_utility_delta)
@@ -390,6 +470,23 @@ class ScaleMacDownlinkEnv:
         successful_mask = delivered_bits > 0.0
         deficit_service_score = (
             clip01(float(np.mean(pre_throughput_deficit[successful_mask])))
+            if np.any(successful_mask)
+            else 0.0
+        )
+        pre_wait_pressure = np.clip(
+            pre_service_wait / max(self.config.reference_deadline_target_slots, 1e-9),
+            0.0,
+            2.0,
+        )
+        urgency_service_score = (
+            clip01(
+                float(
+                    np.mean(
+                        0.5 * pre_throughput_deficit[successful_mask]
+                        + 0.5 * np.minimum(pre_wait_pressure[successful_mask], 1.0)
+                    )
+                )
+            )
             if np.any(successful_mask)
             else 0.0
         )
@@ -448,6 +545,11 @@ class ScaleMacDownlinkEnv:
             target_slots=self.config.max_wait_target_slots,
             start_ratio=self.config.deadline_risk_start_ratio,
         )
+        population_wait_risk = deadline_risk_score(
+            self.time_since_service.astype(np.float64),
+            target_slots=self.config.reference_deadline_target_slots,
+            start_ratio=self.config.deadline_risk_start_ratio,
+        )
 
         return {
             "selected_ues": selected.copy(),
@@ -463,6 +565,9 @@ class ScaleMacDownlinkEnv:
             "fairness_score": fairness_score,
             "throughput_deficit_mean": float(self._throughput_deficit().mean()),
             "deficit_service_score": deficit_service_score,
+            "urgency_service_score": urgency_service_score,
+            "low_throughput_score": low_throughput_score,
+            "pf_utility_score": pf_utility_score,
             "fairness_delta": float(fairness_delta),
             "fairness_progress": fairness_progress,
             "pf_utility": pf_utility,
@@ -480,6 +585,7 @@ class ScaleMacDownlinkEnv:
             "p99_wait_slots": safe_percentile(self.time_since_service, 99),
             "near_deadline_rate": near_deadline_rate,
             "max_wait_risk": max_wait_risk,
+            "population_wait_risk": population_wait_risk,
             "tail_mean_wait_slots": tail_mean_wait_slots,
             "deadline_risk": deadline_risk,
             "reference_deadline_risk": reference_deadline_risk,
@@ -517,6 +623,15 @@ class ScaleMacDownlinkEnv:
         deficit_service_component = (
             cfg.reward_deficit_service_weight * metrics["deficit_service_score"]
         )
+        pf_utility_component = (
+            cfg.reward_pf_utility_weight * metrics["pf_utility_score"]
+        )
+        low_throughput_component = (
+            cfg.reward_low_throughput_weight * metrics["low_throughput_score"]
+        )
+        urgency_service_component = (
+            cfg.reward_urgency_service_weight * metrics["urgency_service_score"]
+        )
         fairness_progress_component = (
             cfg.reward_fairness_delta_weight * metrics["fairness_progress"]
         )
@@ -534,6 +649,9 @@ class ScaleMacDownlinkEnv:
             + fairness_component
             + service_component
             + deficit_service_component
+            + pf_utility_component
+            + low_throughput_component
+            + urgency_service_component
             - starvation_penalty
         )
         shaped_core_total = (
@@ -549,9 +667,21 @@ class ScaleMacDownlinkEnv:
         max_wait_risk_penalty = (
             cfg.reward_max_wait_risk_penalty_weight * float(metrics["max_wait_risk"])
         )
-        total = shaped_core_total - deadline_risk_penalty - max_wait_risk_penalty
+        population_wait_penalty = (
+            cfg.reward_population_wait_penalty_weight
+            * float(metrics["population_wait_risk"])
+        )
+        total = (
+            shaped_core_total
+            - deadline_risk_penalty
+            - max_wait_risk_penalty
+            - population_wait_penalty
+        )
         final_target_total = (
-            shaped_core_total - reference_deadline_risk_penalty - max_wait_risk_penalty
+            shaped_core_total
+            - reference_deadline_risk_penalty
+            - max_wait_risk_penalty
+            - population_wait_penalty
         )
 
         return float(total), {
@@ -563,6 +693,9 @@ class ScaleMacDownlinkEnv:
             "reward_fairness_component": float(fairness_component),
             "reward_service_component": float(service_component),
             "reward_deficit_service_component": float(deficit_service_component),
+            "reward_pf_utility_component": float(pf_utility_component),
+            "reward_low_throughput_component": float(low_throughput_component),
+            "reward_urgency_service_component": float(urgency_service_component),
             "reward_fairness_progress_component": float(fairness_progress_component),
             "reward_pf_utility_progress_component": float(pf_utility_progress_component),
             "starvation_violation": float(starvation_violation),
@@ -572,6 +705,7 @@ class ScaleMacDownlinkEnv:
                 reference_deadline_risk_penalty
             ),
             "reward_max_wait_risk_penalty": float(max_wait_risk_penalty),
+            "reward_population_wait_penalty": float(population_wait_penalty),
         }
 
     def render(self) -> str:

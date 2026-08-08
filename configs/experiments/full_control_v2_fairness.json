@@ -1,0 +1,17 @@
+{
+  "experiment": "full_control_v2_fairness",
+  "num_ues": 1200,
+  "candidate_mode": "all",
+  "scheduler_mode": "ppo_only",
+  "environment_steps": 300032,
+  "reward_weights": {
+    "throughput": 0.35,
+    "fairness": 0.15,
+    "service": 0.08,
+    "deficit_service": 0.05,
+    "pf_utility": 0.17,
+    "low_throughput": 0.15,
+    "urgency_service": 0.05
+  },
+  "population_wait_penalty": 0.1
+}

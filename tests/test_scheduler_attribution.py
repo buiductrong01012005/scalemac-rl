@@ -79,7 +79,7 @@ def test_legacy_input_dimension_is_recorded_and_adapted(tmp_path: Path) -> None:
     path = tmp_path / "legacy.pt"
     torch.save(checkpoint, path)
     model, loaded = load_policy_checkpoint(path, torch.device("cpu"))
-    assert model.input_dim == 10
+    assert model.input_dim == 16
     assert checkpoint_input_features(loaded) == 8
 
     protocol = UnifiedEvaluationProtocol(num_ues=64, slots=10, profile_seed=11)

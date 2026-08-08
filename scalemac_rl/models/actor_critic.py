@@ -29,7 +29,7 @@ class SharedSetActorCritic(nn.Module):
     exploration over priority and PRB-demand scores in [0, 1].
     """
 
-    def __init__(self, input_dim: int = 10, hidden_dim: int = 64, initial_concentration: float = 20.0):
+    def __init__(self, input_dim: int = 16, hidden_dim: int = 64, initial_concentration: float = 20.0):
         super().__init__()
         if initial_concentration <= 2.0:
             raise ValueError("initial_concentration must be > 2")

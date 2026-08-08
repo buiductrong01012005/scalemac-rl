@@ -59,6 +59,10 @@ class ScaleMacConfig:
     reward_fairness_weight: float = 0.35
     reward_service_weight: float = 0.15
     reward_deficit_service_weight: float = 0.05
+    # Optional v2 reward terms. Defaults are zero for legacy compatibility.
+    reward_pf_utility_weight: float = 0.0
+    reward_low_throughput_weight: float = 0.0
+    reward_urgency_service_weight: float = 0.0
 
     # Signed dense shaping terms. They reward immediate improvements in Jain
     # fairness and proportional-fair utility without replacing KPI reporting.
@@ -76,6 +80,9 @@ class ScaleMacConfig:
     # the top-1% P99-style risk and helps reduce the maximum service gap.
     max_wait_target_slots: float = 60.0
     reward_max_wait_risk_penalty_weight: float = 0.10
+    # Dense population-wide pressure before P99/max-wait constraints are crossed.
+    reward_population_wait_penalty_weight: float = 0.0
+    low_throughput_percentile: float = 10.0
 
     seed: int = 7
 
@@ -121,6 +128,10 @@ class ScaleMacConfig:
             raise ValueError("max_wait_target_slots must be positive")
         if self.reward_max_wait_risk_penalty_weight < 0.0:
             raise ValueError("reward_max_wait_risk_penalty_weight must be non-negative")
+        if self.reward_population_wait_penalty_weight < 0.0:
+            raise ValueError("reward_population_wait_penalty_weight must be non-negative")
+        if not 0.0 < self.low_throughput_percentile < 50.0:
+            raise ValueError("low_throughput_percentile must be in (0, 50)")
         if not 0.0 < self.ewma_alpha <= 1.0:
             raise ValueError("ewma_alpha must be in (0, 1]")
         if not 0.0 <= self.target_bler < 1.0:
@@ -144,9 +155,19 @@ class ScaleMacConfig:
             + self.reward_fairness_weight
             + self.reward_service_weight
             + self.reward_deficit_service_weight
+            + self.reward_pf_utility_weight
+            + self.reward_low_throughput_weight
+            + self.reward_urgency_service_weight
         )
         if abs(reward_sum - 1.0) > 1e-6:
             raise ValueError("positive reward weights must sum to 1")
+        for name, value in (
+            ("reward_pf_utility_weight", self.reward_pf_utility_weight),
+            ("reward_low_throughput_weight", self.reward_low_throughput_weight),
+            ("reward_urgency_service_weight", self.reward_urgency_service_weight),
+        ):
+            if value < 0.0:
+                raise ValueError(f"{name} must be non-negative")
         if self.reward_fairness_delta_weight < 0.0:
             raise ValueError("reward_fairness_delta_weight must be non-negative")
         if self.reward_pf_utility_delta_weight < 0.0:

@@ -16,7 +16,7 @@ from .models import SharedSetActorCritic
 
 UNIFIED_EVALUATION_VERSION = "unified-v1"
 EVALUATION_REWARD_VERSION = "balanced-kpi-v1"
-OBSERVATION_SCHEMA_VERSION = "ue-features-10-v1"
+OBSERVATION_SCHEMA_VERSION = "ue-features-16-v2"
 PROJECTOR_CONTRACT_VERSION = "top64-exact273-v1"
 
 
@@ -48,6 +48,8 @@ def checkpoint_input_features(checkpoint: dict[str, Any]) -> int:
 
 def checkpoint_reward_version(checkpoint: dict[str, Any]) -> str:
     training = checkpoint.get("training", {})
+    if "reward_pf_utility_weight" in training or "reward_low_throughput_weight" in training:
+        return "full-control-tradeoff-v0.8"
     if "reward_deficit_service_weight" in training:
         return "dense-deficit-v0.7"
     if "reward_max_wait_risk_penalty_weight" in training or "max_wait_target_slots" in training:
@@ -62,10 +64,15 @@ def checkpoint_reward_signature(checkpoint: dict[str, Any]) -> str:
         "reward_fairness_weight",
         "reward_service_weight",
         "reward_deficit_service_weight",
+        "reward_pf_utility_weight",
+        "reward_low_throughput_weight",
+        "reward_urgency_service_weight",
         "reward_fairness_delta_weight",
         "reward_pf_utility_delta_weight",
         "deadline_risk_penalty_weight",
         "max_wait_risk_penalty_weight",
+        "population_wait_penalty_weight",
+        "low_throughput_percentile",
         "starvation_threshold_slots",
         "reference_deadline_target_slots",
         "max_wait_target_slots",
