@@ -8,7 +8,12 @@ import numpy as np
 import pytest
 
 from scalemac_rl import ScaleMacConfig, ScaleMacDownlinkEnv
-from scalemac_rl.reward_study import RewardCase, RewardStudyPlan, pareto_front_indices
+from scalemac_rl.reward_study import (
+    POSITIVE_COMPONENTS,
+    RewardCase,
+    RewardStudyPlan,
+    pareto_front_indices,
+)
 
 
 def test_reward_positive_scale_sets_actual_component_coefficient() -> None:
@@ -84,6 +89,7 @@ def test_round_plans_are_valid_and_unique() -> None:
         Path("configs/reward_study/round_04_add_service_equal.json"),
         Path("configs/reward_study/round_05_three_component_directional.json"),
         Path("configs/reward_study/round_06_three_component_coordinate.json"),
+        Path("configs/reward_study/round_07_fourth_component_screen.json"),
     ):
         plan = RewardStudyPlan.from_json(path)
         assert plan.cases
@@ -432,9 +438,11 @@ def test_reward_analysis_archive_is_linked() -> None:
     index = Path("docs/analysis/reward_study/index.html").read_text(encoding="utf-8")
     assert "Round 01" in index
     assert "Round 06" in index
-    assert "synthesis_round_01_to_05.html" in index
+    assert "synthesis_round_01_to_06.html" in index
+    assert "ablation_map.html" in index
     assert "literature_context.html" in index
-    assert Path("docs/analysis/reward_study/synthesis_round_01_to_05.html").is_file()
+    assert Path("docs/analysis/reward_study/synthesis_round_01_to_06.html").is_file()
+    assert Path("docs/analysis/reward_study/ablation_map.html").is_file()
     assert Path("docs/analysis/reward_study/literature_context.html").is_file()
 
 
@@ -447,3 +455,270 @@ def test_round_06_analysis_plan_explains_all_fixed_component_pairs() -> None:
     assert "Giữ Throughput" in content
     assert "0,4000" in content
     assert "0,2667" in content
+
+
+def test_round_06_result_analysis_records_anchor_interaction_and_late_collapse() -> None:
+    path = Path(
+        "docs/analysis/reward_study/round_06/three_component_coordinate_analysis.html"
+    )
+    content = path.read_text(encoding="utf-8")
+    assert "Throughput và Service đang đóng vai trò hai “neo” bổ trợ" in content
+    assert "late-training collapse" in content
+    assert "stochastic–deterministic" in content
+    assert "0,40/0,2667/0,3333" in content
+    assert Path(
+        "docs/analysis/reward_study/round_06/round_06_final_metrics.csv"
+    ).is_file()
+    assert Path(
+        "docs/analysis/reward_study/round_06/round_06_validation_trajectory.csv"
+    ).is_file()
+
+
+def test_round_07_integrates_eight_regimes_for_each_remaining_component() -> None:
+    plan = RewardStudyPlan.from_json(
+        Path("configs/reward_study/round_07_fourth_component_screen.json")
+    )
+    assert plan.analysis["design"] == "fourth_component_comprehensive_screen"
+    assert len(plan.cases) == 32
+    component_case_map = plan.analysis["component_case_map"]
+    expected_components = {
+        "deficit_service",
+        "pf_utility",
+        "low_throughput",
+        "urgency_service",
+    }
+    expected_regimes = {
+        "equal_quarter",
+        "new_component_heavy",
+        "hold_throughput",
+        "hold_fairness",
+        "hold_service",
+        "group_throughput_fairness",
+        "group_throughput_service",
+        "group_fairness_service",
+    }
+    assert set(component_case_map) == expected_components
+    assert set(plan.analysis["regime_order"]) == expected_regimes
+    by_id = {case.case_id: case for case in plan.cases}
+    expected_weights = {
+        "equal_quarter": (0.25, 0.25, 0.25, 0.25),
+        "new_component_heavy": (0.20, 0.20, 0.20, 0.40),
+        "hold_throughput": (0.25, 0.20, 0.20, 0.35),
+        "hold_fairness": (0.20, 0.25, 0.20, 0.35),
+        "hold_service": (0.20, 0.20, 0.25, 0.35),
+        "group_throughput_fairness": (0.30, 0.30, 0.10, 0.30),
+        "group_throughput_service": (0.30, 0.10, 0.30, 0.30),
+        "group_fairness_service": (0.10, 0.30, 0.30, 0.30),
+    }
+    for component, mapping in component_case_map.items():
+        assert set(mapping) == expected_regimes
+        for regime, expected in expected_weights.items():
+            coefficients = by_id[mapping[regime]].actual_coefficients()
+            observed = (
+                coefficients["coef_throughput"],
+                coefficients["coef_fairness"],
+                coefficients["coef_service"],
+                coefficients[f"coef_{component}"],
+            )
+            assert np.allclose(observed, expected)
+            assert np.isclose(
+                sum(coefficients[f"coef_{name}"] for name in POSITIVE_COMPONENTS),
+                1.0,
+            )
+            assert coefficients["coef_starvation_penalty"] == 0.0
+            assert coefficients["coef_deadline_risk_penalty"] == 0.0
+
+
+def test_round_07_plan_is_linked_from_analysis_archive() -> None:
+    index = Path("docs/analysis/reward_study/index.html").read_text(encoding="utf-8")
+    plan = Path(
+        "docs/analysis/reward_study/round_07/experiment_plan.html"
+    ).read_text(encoding="utf-8")
+    assert "Round 07" in index
+    assert "round_07/experiment_plan.html" in index
+    assert "Equal-quarter" in plan
+    assert "New-component-heavy" in plan
+    assert "Giữ Throughput" in plan
+    assert "Giữ Jain" in plan
+    assert "Giữ Service" in plan
+    assert "Giữ T+J" in plan
+    assert "Giữ T+S" in plan
+    assert "Giữ J+S" in plan
+    assert "32 case" in plan
+
+def test_comprehensive_fourth_component_analysis_exports_matrix_and_summary(
+    tmp_path: Path,
+) -> None:
+    from scalemac_rl.reward_analysis import build_incremental_reward_analysis
+
+    round_dir = tmp_path / "round"
+    case_dir = round_dir / "pf_equal"
+    case_dir.mkdir(parents=True)
+    fields = [
+        "mean_goodput_bits_per_slot",
+        "final_jain_fairness",
+        "max_starvation_rate",
+        "max_p99_wait_slots",
+        "max_wait_slots",
+    ]
+    with (case_dir / "validation.csv").open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerow({
+            "mean_goodput_bits_per_slot": 98000,
+            "final_jain_fairness": 0.28,
+            "max_starvation_rate": 0,
+            "max_p99_wait_slots": 48,
+            "max_wait_slots": 49,
+        })
+
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps({
+        "study_id": "test",
+        "round_id": "round_comprehensive",
+        "description": "comprehensive",
+        "common": {},
+        "analysis": {
+            "design": "fourth_component_comprehensive_screen",
+            "case_focus": {"pf_equal": "pf_utility"},
+            "case_regime": {"pf_equal": "equal_quarter"},
+            "component_case_map": {"pf_utility": {"equal_quarter": "pf_equal"}},
+            "regime_order": ["equal_quarter"],
+            "regime_labels": {"equal_quarter": "Equal-quarter"},
+            "regime_family": {"equal_quarter": "baseline_addition"},
+            "final_metrics_output": str(tmp_path / "final.csv"),
+            "trajectory_output": str(tmp_path / "trajectory.csv"),
+            "comparison_output": str(tmp_path / "comparison.csv"),
+            "stability_output": str(tmp_path / "stability.csv"),
+            "regime_summary_output": str(tmp_path / "summary.csv"),
+            "reference_metrics": {
+                "mean_goodput_bits_per_slot": 97000,
+                "final_jain_fairness": 0.27,
+                "max_starvation_rate": 0,
+                "max_p99_wait_slots": 47,
+                "max_wait_slots": 48,
+            },
+        },
+        "cases": [{
+            "id": "pf_equal",
+            "label": "PF equal",
+            "hypothesis": "test",
+            "positive_weights": {
+                "throughput": 0.25,
+                "fairness": 0.25,
+                "service": 0.25,
+                "pf_utility": 0.25,
+            },
+        }],
+    }), encoding="utf-8")
+    output = build_incremental_reward_analysis(
+        plan=RewardStudyPlan.from_json(plan_path),
+        round_dir=round_dir,
+        output_path=tmp_path / "analysis.html",
+    )
+    content = output.read_text(encoding="utf-8")
+    assert "So sánh bốn reward tại regime" in content
+    assert "<details" in content
+    assert (tmp_path / "stability.csv").is_file()
+    assert (tmp_path / "summary.csv").is_file()
+
+
+def test_fourth_component_analysis_uses_case_focus_and_equal_quarter_formula(
+    tmp_path: Path,
+) -> None:
+    from scalemac_rl.reward_analysis import build_incremental_reward_analysis
+
+    round_dir = tmp_path / "round"
+    case_dir = round_dir / "add_pf"
+    case_dir.mkdir(parents=True)
+    fields = [
+        "mean_goodput_bits_per_slot",
+        "final_jain_fairness",
+        "max_starvation_rate",
+        "max_p99_wait_slots",
+        "max_wait_slots",
+        "mean_reward_throughput_component",
+        "mean_reward_fairness_component",
+        "mean_reward_service_component",
+        "mean_reward_pf_utility_component",
+    ]
+    with (case_dir / "validation.csv").open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "mean_goodput_bits_per_slot": 98000,
+                "final_jain_fairness": 0.28,
+                "max_starvation_rate": 0,
+                "max_p99_wait_slots": 48,
+                "max_wait_slots": 49,
+                "mean_reward_throughput_component": 0.12,
+                "mean_reward_fairness_component": 0.06,
+                "mean_reward_service_component": 0.23,
+                "mean_reward_pf_utility_component": 0.03,
+            }
+        )
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "study_id": "test",
+                "round_id": "round_fourth",
+                "description": "fourth component test",
+                "common": {},
+                "analysis": {
+                    "design": "fourth_component_integrated_screen",
+                    "focus_component": "service",
+                    "case_focus": {"add_pf": "pf_utility"},
+                    "case_regime": {"add_pf": "equal_quarter"},
+                    "component_case_map": {
+                        "pf_utility": {
+                            "equal_quarter": "add_pf",
+                            "new_component_heavy": "missing_heavy",
+                            "anchor_preserving": "missing_anchor"
+                        }
+                    },
+                    "regime_labels": {"equal_quarter": "Equal-quarter"},
+                    "final_metrics_output": str(tmp_path / "final.csv"),
+                    "trajectory_output": str(tmp_path / "trajectory.csv"),
+                    "comparison_output": str(tmp_path / "comparison.csv"),
+                    "reference_label": "equal-three",
+                    "reference_metrics": {
+                        "mean_goodput_bits_per_slot": 97000,
+                        "final_jain_fairness": 0.27,
+                        "max_starvation_rate": 0,
+                        "max_p99_wait_slots": 47,
+                        "max_wait_slots": 48,
+                    },
+                },
+                "cases": [
+                    {
+                        "id": "add_pf",
+                        "label": "add PF",
+                        "hypothesis": "test PF",
+                        "positive_weights": {
+                            "throughput": 0.25,
+                            "fairness": 0.25,
+                            "service": 0.25,
+                            "pf_utility": 0.25,
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = build_incremental_reward_analysis(
+        plan=RewardStudyPlan.from_json(plan_path),
+        round_dir=round_dir,
+        output_path=tmp_path / "analysis.html",
+    )
+    content = output.read_text(encoding="utf-8")
+    assert "0.25 × Throughput" in content
+    assert "0.25 × PF utility" in content
+    assert "ba regime" in content
+    assert "PF utility" in content
+    assert "Equal-quarter" in content
+    assert (tmp_path / "final.csv").is_file()
+    assert (tmp_path / "trajectory.csv").is_file()
+    assert (tmp_path / "comparison.csv").is_file()

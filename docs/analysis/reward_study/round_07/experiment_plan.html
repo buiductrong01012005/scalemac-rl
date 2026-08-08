@@ -1,0 +1,30 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Round 07 – Comprehensive Fourth-Component Study</title>
+<style>body{font-family:Segoe UI,Arial,sans-serif;background:#f5f7fb;color:#172033;margin:0;line-height:1.62}main{max-width:1180px;margin:auto;padding:28px}header,section,nav{background:#fff;border:1px solid #dfe5ee;border-radius:16px;padding:22px;margin-bottom:16px}header{background:linear-gradient(135deg,#18264a,#315efb);color:#fff}table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:10px;border-bottom:1px solid #dfe5ee;text-align:left;vertical-align:top}th{background:#f0f3f8}pre{background:#111827;color:#edf2f7;padding:16px;border-radius:12px;overflow:auto}a{color:#315efb}.note{background:#fff5d8;padding:14px;border-radius:11px}.info{background:#eaf1ff;padding:14px;border-radius:11px}</style></head><body><main>
+<nav><a href="../index.html">← Mục lục reward study</a> · <a href="../round_06/three_component_coordinate_analysis.html">Round 06</a> · <a href="../ablation_map.html">Bản đồ ablation</a></nav>
+<header><h1>Round 07 — phân tích tổng quát reward thứ tư</h1><p>Gộp toàn bộ 32 case trong một lần chạy: 4 reward mới × 8 regime. Mục tiêu là phân tích một thể thay vì mở nhiều round nhỏ.</p></header>
+<section><h2>Tám regime cho mỗi reward mới</h2><table><thead><tr><th>Regime</th><th>Công thức T/J/S/X</th><th>Câu hỏi nghiên cứu</th></tr></thead><tbody><tr><td><strong>Equal-quarter</strong></td><td><code>T=0.25; J=0.25; S=0.25; X=0.25</code></td><td>X tạo lợi ích biên gì khi được thêm bằng trọng số với T–J–S?</td></tr><tr><td><strong>New-component-heavy</strong></td><td><code>T=0.20; J=0.20; S=0.20; X=0.40</code></td><td>X có thể làm objective chính hay bị khai thác khi cả ba reward nền cùng yếu đi?</td></tr><tr><td><strong>Giữ Throughput</strong></td><td><code>T=0.25; J=0.20; S=0.20; X=0.35</code></td><td>Khi giữ Throughput ở mốc 0,25, X tăng lên 0,35 có hoạt động dù Jain và Service cùng giảm nhẹ?</td></tr><tr><td><strong>Giữ Jain</strong></td><td><code>T=0.20; J=0.25; S=0.20; X=0.35</code></td><td>Khi giữ Jain ở mốc 0,25, X tăng lên 0,35 có hoạt động dù Throughput và Service cùng giảm nhẹ?</td></tr><tr><td><strong>Giữ Service</strong></td><td><code>T=0.20; J=0.20; S=0.25; X=0.35</code></td><td>Khi giữ Service ở mốc 0,25, X tăng lên 0,35 có hoạt động dù Throughput và Jain cùng giảm nhẹ?</td></tr><tr><td><strong>Giữ T+J (Throughput + Jain)</strong></td><td><code>T=0.30; J=0.30; S=0.10; X=0.30</code></td><td>Khi giữ mạnh nhóm hiệu suất–phân phối T+J, X có thay phần lớn Service mà vẫn giữ coverage không?</td></tr><tr><td><strong>Giữ T+S (Throughput + Service)</strong></td><td><code>T=0.30; J=0.10; S=0.30; X=0.30</code></td><td>Khi giữ hai neo Throughput + Service, X có thay phần lớn Jain mà vẫn giữ policy ổn định không?</td></tr><tr><td><strong>Giữ J+S (Jain + Service)</strong></td><td><code>T=0.10; J=0.30; S=0.30; X=0.30</code></td><td>Khi giữ mạnh nhóm phân phối–coverage J+S, X có thay phần lớn Throughput mà vẫn tạo transmission hữu ích không?</td></tr></tbody></table></section>
+<section><h2>Ba lớp ablation</h2><table><thead><tr><th>Lớp</th><th>Case</th><th>Ý nghĩa</th></tr></thead><tbody>
+<tr><td><strong>Thêm và tăng X</strong></td><td>Equal-quarter, New-component-heavy</td><td>Đo lợi ích biên và khả năng X làm objective chi phối.</td></tr>
+<tr><td><strong>Giữ một reward nền</strong></td><td>Giữ T, giữ J, giữ S</td><td>Xác định reward nền nào là anchor tối thiểu để X hoạt động.</td></tr>
+<tr><td><strong>Giữ một nhóm hai reward</strong></td><td>Giữ T+J, T+S, J+S</td><td>Kiểm tra X có thể thay phần lớn reward nền còn lại hay không.</td></tr>
+</tbody></table><div class="info"><strong>Cách đọc:</strong> cùng một reward X được đọc theo hàng để tìm anchor; cùng một regime được đọc theo cột để so sánh bốn reward X dưới đúng một hình học trọng số.</div></section>
+<section><h2>Bốn reward thứ tư</h2><table><thead><tr><th>Reward</th><th>Mục tiêu</th><th>Nhóm case</th></tr></thead><tbody><tr><td><strong>Throughput-deficit service</strong></td><td>nâng nhóm UE có throughput thấp hơn mức trung bình.</td><td>deficit_service_*</td></tr><tr><td><strong>PF utility</strong></td><td>tạo trade-off hiệu suất–fairness theo log-throughput.</td><td>pf_utility_*</td></tr><tr><td><strong>Low-throughput percentile</strong></td><td>nâng đáy phân phối throughput và tránh P10 bị mất tín hiệu.</td><td>low_throughput_*</td></tr><tr><td><strong>Urgency service</strong></td><td>ưu tiên UE vừa chờ lâu vừa thiếu throughput.</td><td>urgency_service_*</td></tr></tbody></table></section>
+<section><h2>32 case trong cùng một lần chạy</h2><pre>4 reward × 8 regime = 32 case
+
+Equal addition:       4 case
+Component dominance:  4 case
+Single-anchor holds:  12 case
+Pair/group holds:     12 case</pre><p>Giữ nguyên ID của 12 case v0.9.4. Nếu chúng đã hoàn thành, script tự bỏ qua và chỉ chạy 20 case mới.</p></section>
+<section><h2>Output tự động</h2><pre>artifacts/runs/reward_study/round_07_fourth_component_integrated/
+  ├── 32 case folders
+  └── round_plan_snapshot.json
+
+docs/analysis/reward_study/round_07/
+  ├── fourth_component_comprehensive_analysis.html
+  ├── round_07_final_metrics.csv
+  ├── round_07_validation_trajectory.csv
+  ├── round_07_regime_comparison.csv
+  ├── round_07_stability_matrix.csv
+  └── round_07_regime_summary.csv</pre></section>
+<section class="note"><strong>Phạm vi:</strong> one-seed controlled exploration. Không làm Pareto/dataset, không đổi PPO, state, action, projector hoặc môi trường. Mọi khác biệt giữa case chỉ đến từ reward weights.</section>
+</main></body></html>

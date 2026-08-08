@@ -66,6 +66,29 @@ def _read_last_csv_row(path: Path) -> dict[str, str] | None:
     return rows[-1] if rows else None
 
 
+def _read_csv_rows(path: Path) -> list[dict[str, str]]:
+    if not path.is_file():
+        return []
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
+def _write_csv_rows(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not rows:
+        path.write_text("", encoding="utf-8")
+        return
+    fieldnames: list[str] = []
+    for row in rows:
+        for key in row:
+            if key not in fieldnames:
+                fieldnames.append(key)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def _fmt_metric(key: str, value: float) -> str:
     if key == "mean_goodput_bits_per_slot":
         return f"{value:,.1f}"
@@ -199,6 +222,242 @@ def _reward_contribution_table(row: Mapping[str, Any] | None) -> str:
     )
 
 
+def _integrated_status(row: Mapping[str, Any] | None) -> str:
+    if row is None:
+        return "Chưa có kết quả"
+    starvation = safe_float(row, "max_starvation_rate")
+    p99_wait = safe_float(row, "max_p99_wait_slots")
+    max_wait = safe_float(row, "max_wait_slots")
+    if starvation > 0.10 or p99_wait >= 5000 or max_wait >= 5000:
+        return "Collapse coverage"
+    if starvation > 0.0 or p99_wait > 64 or max_wait > 80:
+        return "Không ổn định"
+    return "Ổn định"
+
+
+def _regime_order(analysis_cfg: Mapping[str, Any]) -> tuple[str, ...]:
+    configured = analysis_cfg.get("regime_order")
+    if isinstance(configured, (list, tuple)):
+        values = tuple(str(value) for value in configured if str(value).strip())
+        if values:
+            return values
+    return ("equal_quarter", "new_component_heavy", "anchor_preserving")
+
+
+def _integrated_interpretation(
+    *,
+    component: str,
+    rows: Mapping[str, Mapping[str, Any] | None],
+    analysis_cfg: Mapping[str, Any],
+) -> str:
+    statuses = {regime: _integrated_status(row) for regime, row in rows.items()}
+    name = COMPONENT_GUIDE[component]["name"]
+    completed = {key: value for key, value in statuses.items() if value != "Chưa có kết quả"}
+    if not completed:
+        return f"Chưa có kết quả để kết luận vai trò của {name}."
+
+    stable = [key for key, value in completed.items() if value == "Ổn định"]
+    unstable = [key for key, value in completed.items() if value != "Ổn định"]
+    labels = dict(analysis_cfg.get("regime_labels", {}))
+    families = dict(analysis_cfg.get("regime_family", {}))
+    sentences = [f"{name} ổn định ở {len(stable)}/{len(completed)} regime đã hoàn thành."]
+
+    equal_status = statuses.get("equal_quarter")
+    heavy_status = statuses.get("new_component_heavy")
+    if equal_status == "Ổn định":
+        sentences.append("Equal-quarter cho thấy component có thể được thêm vào nền T–J–S mà chưa phá coverage.")
+    elif equal_status and equal_status != "Chưa có kết quả":
+        sentences.append("Equal-quarter không ổn định, nên chỉ việc thêm component đã làm policy rời vùng tốt.")
+    if heavy_status == "Ổn định":
+        sentences.append("New-component-heavy vẫn ổn định, vì vậy component có tiềm năng làm objective mạnh hơn.")
+    elif heavy_status and heavy_status != "Chưa có kết quả":
+        sentences.append("New-component-heavy thất bại; component không nên được xem là objective chi phối ở công thức hiện tại.")
+
+    single_stable = [
+        key for key in stable if families.get(key) == "single_hold"
+    ]
+    pair_stable = [
+        key for key in stable if families.get(key) == "pair_hold"
+    ]
+    if single_stable:
+        names = ", ".join(labels.get(key, key).split(":", 1)[0] for key in single_stable)
+        sentences.append(f"Các phép giữ một anchor còn ổn định: {names}; đây là bằng chứng component phụ thuộc vào anchor cụ thể.")
+    if pair_stable:
+        names = ", ".join(labels.get(key, key).split(":", 1)[0] for key in pair_stable)
+        sentences.append(f"Các nhóm giữ được policy ổn định: {names}; dùng chúng để xác định X có thể thay reward nào.")
+    if unstable and not stable:
+        sentences.append("Mọi regime đã chạy đều không ổn định; nên xem lại công thức score trước khi tune hệ số sâu hơn.")
+    return " ".join(sentences)
+
+
+def _integrated_component_comparison(
+    *,
+    plan: RewardStudyPlan,
+    round_path: Path,
+    analysis_cfg: Mapping[str, Any],
+) -> str:
+    component_case_map = dict(analysis_cfg.get("component_case_map", {}))
+    regime_labels = dict(analysis_cfg.get("regime_labels", {}))
+    order = _regime_order(analysis_cfg)
+    sections: list[str] = []
+    for component, mapping_raw in component_case_map.items():
+        mapping = dict(mapping_raw)
+        rows_by_regime: dict[str, Mapping[str, Any] | None] = {}
+        table_rows: list[str] = []
+        for regime in order:
+            case_id = str(mapping.get(regime, ""))
+            row = _read_last_csv_row(round_path / case_id / "validation.csv") if case_id else None
+            rows_by_regime[regime] = row
+            if row is None:
+                table_rows.append(
+                    "<tr>"
+                    f"<td>{html.escape(regime_labels.get(regime, regime))}</td>"
+                    "<td colspan='6'>Chưa có kết quả</td></tr>"
+                )
+                continue
+            table_rows.append(
+                "<tr>"
+                f"<td>{html.escape(regime_labels.get(regime, regime))}</td>"
+                f"<td>{safe_float(row, 'mean_goodput_bits_per_slot'):,.1f}</td>"
+                f"<td>{safe_float(row, 'final_jain_fairness'):.4f}</td>"
+                f"<td>{100.0 * safe_float(row, 'max_starvation_rate'):.2f}%</td>"
+                f"<td>{safe_float(row, 'max_p99_wait_slots'):.1f}</td>"
+                f"<td>{safe_float(row, 'max_wait_slots'):.1f}</td>"
+                f"<td>{html.escape(_integrated_status(row))}</td>"
+                "</tr>"
+            )
+        interpretation = _integrated_interpretation(
+            component=component,
+            rows=rows_by_regime,
+            analysis_cfg=analysis_cfg,
+        )
+        sections.append(
+            "<section class='card'>"
+            f"<h2>Tám regime của {html.escape(COMPONENT_GUIDE[component]['name'])}</h2>"
+            f"<p>{html.escape(COMPONENT_GUIDE[component]['meaning'])}</p>"
+            "<table><thead><tr><th>Regime</th><th>Goodput</th><th>Jain</th><th>Starvation</th>"
+            "<th>Worst P99</th><th>Max wait</th><th>Trạng thái</th></tr></thead>"
+            f"<tbody>{''.join(table_rows)}</tbody></table>"
+            f"<div class='callout info'><strong>Cách đọc:</strong> {html.escape(interpretation)}</div>"
+            "</section>"
+        )
+
+    # Cross-component reading: one table per regime so all four reward candidates
+    # can be compared under exactly the same weight geometry.
+    for regime in order:
+        table_rows = []
+        for component, mapping_raw in component_case_map.items():
+            case_id = str(dict(mapping_raw).get(regime, ""))
+            row = _read_last_csv_row(round_path / case_id / "validation.csv") if case_id else None
+            if row is None:
+                table_rows.append(
+                    "<tr>"
+                    f"<td>{html.escape(COMPONENT_GUIDE[component]['name'])}</td>"
+                    "<td colspan='6'>Chưa có kết quả</td></tr>"
+                )
+                continue
+            table_rows.append(
+                "<tr>"
+                f"<td>{html.escape(COMPONENT_GUIDE[component]['name'])}</td>"
+                f"<td>{safe_float(row, 'mean_goodput_bits_per_slot'):,.1f}</td>"
+                f"<td>{safe_float(row, 'final_jain_fairness'):.4f}</td>"
+                f"<td>{100.0 * safe_float(row, 'max_starvation_rate'):.2f}%</td>"
+                f"<td>{safe_float(row, 'max_p99_wait_slots'):.1f}</td>"
+                f"<td>{safe_float(row, 'max_wait_slots'):.1f}</td>"
+                f"<td>{html.escape(_integrated_status(row))}</td>"
+                "</tr>"
+            )
+        sections.append(
+            "<section class='card'>"
+            f"<h2>So sánh bốn reward tại regime: {html.escape(regime_labels.get(regime, regime))}</h2>"
+            "<table><thead><tr><th>Reward thứ tư</th><th>Goodput</th><th>Jain</th><th>Starvation</th>"
+            "<th>Worst P99</th><th>Max wait</th><th>Trạng thái</th></tr></thead>"
+            f"<tbody>{''.join(table_rows)}</tbody></table>"
+            "</section>"
+        )
+    return "".join(sections)
+
+def _export_integrated_round_tables(
+    *,
+    plan: RewardStudyPlan,
+    round_path: Path,
+    analysis_cfg: Mapping[str, Any],
+    reference_row: Mapping[str, Any] | None,
+) -> None:
+    case_focus = dict(analysis_cfg.get("case_focus", {}))
+    case_regime = dict(analysis_cfg.get("case_regime", {}))
+    final_rows: list[dict[str, Any]] = []
+    trajectory_rows: list[dict[str, Any]] = []
+    comparison_rows: list[dict[str, Any]] = []
+
+    for case in plan.cases:
+        coefficients = case.actual_coefficients()
+        metadata = {
+            "case_id": case.case_id,
+            "label": case.label,
+            "focus_component": case_focus.get(case.case_id, ""),
+            "regime": case_regime.get(case.case_id, ""),
+            **coefficients,
+        }
+        validation_rows = _read_csv_rows(round_path / case.case_id / "validation.csv")
+        for row in validation_rows:
+            trajectory_rows.append({**metadata, **row})
+        if not validation_rows:
+            continue
+        final = {**metadata, **validation_rows[-1]}
+        final_rows.append(final)
+        comparison = dict(final)
+        comparison["status"] = _integrated_status(final)
+        if reference_row is not None:
+            for key, _ in KPI_COLUMNS:
+                comparison[f"delta_{key}"] = safe_float(final, key) - safe_float(reference_row, key)
+        comparison_rows.append(comparison)
+
+    stability_rows: list[dict[str, Any]] = []
+    component_case_map = dict(analysis_cfg.get("component_case_map", {}))
+    regime_order = _regime_order(analysis_cfg)
+    for component, mapping_raw in component_case_map.items():
+        mapping = dict(mapping_raw)
+        row: dict[str, Any] = {
+            "focus_component": component,
+            "component_label": COMPONENT_GUIDE.get(component, {}).get("name", component),
+        }
+        for regime in regime_order:
+            case_id = str(mapping.get(regime, ""))
+            final = _read_last_csv_row(round_path / case_id / "validation.csv") if case_id else None
+            row[f"{regime}_case_id"] = case_id
+            row[f"{regime}_status"] = _integrated_status(final)
+        stability_rows.append(row)
+
+    regime_summary_rows: list[dict[str, Any]] = []
+    for regime in regime_order:
+        matching = [row for row in comparison_rows if row.get("regime") == regime]
+        completed = [row for row in matching if row.get("status") != "Chưa có kết quả"]
+        stable = [row for row in completed if row.get("status") == "Ổn định"]
+        regime_summary_rows.append({
+            "regime": regime,
+            "regime_label": dict(analysis_cfg.get("regime_labels", {})).get(regime, regime),
+            "completed_cases": len(completed),
+            "stable_cases": len(stable),
+            "collapse_or_unstable_cases": len(completed) - len(stable),
+            "best_goodput_bits_per_slot": max((safe_float(row, "mean_goodput_bits_per_slot") for row in stable), default=0.0),
+            "best_jain_fairness": max((safe_float(row, "final_jain_fairness") for row in stable), default=0.0),
+            "lowest_p99_wait_slots": min((safe_float(row, "max_p99_wait_slots") for row in stable), default=0.0),
+        })
+
+    outputs = [
+        ("final_metrics_output", final_rows),
+        ("trajectory_output", trajectory_rows),
+        ("comparison_output", comparison_rows),
+        ("stability_output", stability_rows),
+        ("regime_summary_output", regime_summary_rows),
+    ]
+    for config_key, rows in outputs:
+        raw = str(analysis_cfg.get(config_key, "")).strip()
+        if raw:
+            _write_csv_rows(Path(raw), rows)
+
+
 def build_incremental_reward_analysis(
     *,
     plan: RewardStudyPlan,
@@ -233,7 +492,7 @@ def build_incremental_reward_analysis(
         case_dir = round_path / case.case_id
         row = _read_last_csv_row(case_dir / "validation.csv")
         coefficients = case.actual_coefficients()
-        if design == "three_component_coordinate_perturbation":
+        if design in {"three_component_coordinate_perturbation", "fourth_component_equal_screen", "fourth_component_integrated_screen", "fourth_component_comprehensive_screen"}:
             focus_map = dict(analysis_cfg.get("case_focus", {}))
             case_focus = str(focus_map.get(case.case_id, _dominant_component(coefficients)))
         else:
@@ -307,20 +566,37 @@ def build_incremental_reward_analysis(
                 f"<td>{100.0 * safe_float(row, 'max_starvation_rate'):.2f}%</td>"
                 f"<td>{safe_float(row, 'max_p99_wait_slots'):.1f}</td>"
                 f"<td>{safe_float(row, 'max_wait_slots'):.1f}</td>"
-                f"<td>{html.escape(COMPONENT_GUIDE[case_focus]['name'])}</td>"
-                "</tr>"
+                f"<td>{html.escape(COMPONENT_GUIDE[case_focus]['name'])}"
+                + (
+                    " · " + html.escape(str(dict(analysis_cfg.get('regime_labels', {})).get(
+                        dict(analysis_cfg.get('case_regime', {})).get(case.case_id, ''),
+                        dict(analysis_cfg.get('case_regime', {})).get(case.case_id, ''),
+                    )))
+                    if design in {"fourth_component_integrated_screen", "fourth_component_comprehensive_screen"}
+                    else ""
+                )
+                + "</td></tr>"
             )
 
-        case_sections.append(
-            "<section class='card'>"
-            f"<h2>{html.escape(case.label)}</h2>"
+        case_body = (
             f"<p><strong>Câu hỏi:</strong> {html.escape(case.hypothesis)}</p>"
             f"<pre>Reward = {html.escape(_formula(coefficients))}</pre>"
             "<table><thead><tr><th>Thành phần</th><th>Hệ số thực tế</th>"
             f"<th>Thành phần này đo gì?</th></tr></thead><tbody>{''.join(coefficient_rows)}</tbody></table>"
             f"{result_block}"
-            "</section>"
         )
+        if design == "fourth_component_comprehensive_screen":
+            case_sections.append(
+                "<details class='card'>"
+                f"<summary><strong>{html.escape(case.label)}</strong></summary>"
+                f"{case_body}</details>"
+            )
+        else:
+            case_sections.append(
+                "<section class='card'>"
+                f"<h2>{html.escape(case.label)}</h2>"
+                f"{case_body}</section>"
+            )
 
     reference_note = (
         f"Run tham chiếu được đọc từ <code>{html.escape(str(reference_path))}</code>."
@@ -362,6 +638,39 @@ def build_incremental_reward_analysis(
             "đúng mục tiêu cải thiện, starvation/wait không collapse và trajectory không chỉ tốt ở một "
             "checkpoint ngắn. Sau vòng này mới chọn 1–2 hướng đáng tinh chỉnh; không sweep dày."
         )
+    elif design == "fourth_component_comprehensive_screen":
+        objective_text = (
+            "Với mỗi reward thứ tư, Round 07 dùng tám regime trong cùng một plan: equal-quarter; component-heavy; "
+            "ba phép giữ riêng Throughput, Jain hoặc Service; và ba phép giữ nhóm T+J, T+S hoặc J+S. "
+            "Thiết kế này kiểm tra đồng thời lợi ích biên, khả năng chi phối, phụ thuộc vào từng anchor và khả năng thay thế từng reward nền."
+        )
+        decision_text = (
+            "Đọc kết quả theo hai chiều. Theo hàng component để biết reward mới cần anchor nào; theo cột regime để so sánh bốn reward dưới cùng hình học trọng số. "
+            "Chỉ giữ component nếu nó ổn định ở nhiều hơn một regime liên quan và cải thiện KPI mục tiêu. Một case đơn lẻ tốt chưa đủ; phải kiểm tra trajectory và late-collapse."
+        )
+    elif design in {"fourth_component_integrated_screen", "fourth_component_comprehensive_screen"}:
+        objective_text = (
+            "Với mỗi reward thứ tư, Round 07 chạy ba regime trong cùng một plan: thêm bằng nhau; tăng component "
+            "mới lên 0,40 và giảm đều ba thành phần nền; sau đó giữ Throughput và Service ở 0,30 rồi thay phần lớn "
+            "Jain bằng component mới. Thiết kế này phân biệt ba nguyên nhân: component có lợi ích biên hay không; "
+            "component có chịu được vai trò chi phối hay không; và collapse có phải do làm yếu hai neo Throughput–Service hay không."
+        )
+        decision_text = (
+            "Đọc ba case của cùng một component như một ablation thống nhất. Equal-quarter đo lợi ích biên; heavy đo khả năng làm objective chính; "
+            "anchor-preserving đo khả năng thay một phần Jain khi hai neo còn mạnh. Chỉ giữ component nếu KPI mục tiêu cải thiện ở ít nhất một regime ổn định "
+            "và trajectory không late-collapse. Không mở Round 08 chỉ để tune một component không có bằng chứng."
+        )
+    elif design == "fourth_component_equal_screen":
+        objective_text = (
+            "Giữ cùng nền Throughput–Jain–Service và thêm đúng một reward thứ tư trong mỗi case. "
+            "Bốn thành phần đang hoạt động đều có hệ số 0,25. Đây là vòng sàng lọc tác dụng biên: "
+            "component mới tạo KPI mới, trùng lặp tín hiệu hay phá vùng ổn định."
+        )
+        decision_text = (
+            "Không tune đồng thời cả bốn case. Chỉ component nào cải thiện đúng KPI mục tiêu, không "
+            "collapse deterministic và có trajectory ổn định mới được giữ để tăng/giảm hệ số ở vòng sau. "
+            "Các component còn lại được ghi nhận như kết quả âm hoặc cần thiết kế lại công thức."
+        )
     else:
         focus = COMPONENT_GUIDE.get(focus_component, COMPONENT_GUIDE["service"])
         objective_text = (
@@ -376,7 +685,7 @@ def build_incremental_reward_analysis(
         )
 
     summary_block = ""
-    if design in {"directional_three_component", "three_component_coordinate_perturbation"}:
+    if design in {"directional_three_component", "three_component_coordinate_perturbation", "fourth_component_equal_screen", "fourth_component_integrated_screen", "fourth_component_comprehensive_screen"}:
         reference_summary = ""
         if reference_row is not None:
             reference_summary = (
@@ -395,6 +704,20 @@ def build_incremental_reward_analysis(
             f"<tbody>{reference_summary}{''.join(summary_rows)}</tbody></table></section>"
         )
 
+    integrated_sections = ""
+    if design in {"fourth_component_integrated_screen", "fourth_component_comprehensive_screen"}:
+        _export_integrated_round_tables(
+            plan=plan,
+            round_path=round_path,
+            analysis_cfg=analysis_cfg,
+            reference_row=reference_row,
+        )
+        integrated_sections = _integrated_component_comparison(
+            plan=plan,
+            round_path=round_path,
+            analysis_cfg=analysis_cfg,
+        )
+
     document = f"""<!doctype html>
 <html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(plan.round_id)} – Phân tích reward</title>
@@ -402,12 +725,13 @@ def build_incremental_reward_analysis(
 body{{margin:0;background:#f4f7fb;color:#172033;font-family:Segoe UI,Arial,sans-serif;line-height:1.6}}
 main{{max-width:1120px;margin:auto;padding:28px 18px 60px}}header,.card{{background:#fff;border:1px solid #dfe5ee;border-radius:16px;padding:22px;margin-bottom:16px}}
 header{{background:linear-gradient(135deg,#18264a,#315efb);color:#fff}}table{{width:100%;border-collapse:collapse;font-size:14px}}th,td{{padding:10px;border-bottom:1px solid #dfe5ee;text-align:left;vertical-align:top}}th{{background:#f0f3f8}}
-pre{{background:#111827;color:#edf2f7;padding:15px;border-radius:10px;overflow:auto}}code{{background:#eef1f7;color:#172033;padding:2px 5px;border-radius:5px}}.callout{{padding:14px 16px;border-radius:11px}}.warn{{background:#fff5d8}}small{{color:#5f6e82}}.nav{{margin:0 0 14px;padding:10px 14px;background:#fff;border:1px solid #dfe5ee;border-radius:12px}}.nav a{{color:#315efb;text-decoration:none}}
+pre{{background:#111827;color:#edf2f7;padding:15px;border-radius:10px;overflow:auto}}code{{background:#eef1f7;color:#172033;padding:2px 5px;border-radius:5px}}.callout{{padding:14px 16px;border-radius:11px}}.warn{{background:#fff5d8}}.info{{background:#eaf1ff}}small{{color:#5f6e82}}.nav{{margin:0 0 14px;padding:10px 14px;background:#fff;border:1px solid #dfe5ee;border-radius:12px}}.nav a{{color:#315efb;text-decoration:none}}details summary{{cursor:pointer;font-size:18px;padding:4px 0}}details[open] summary{{margin-bottom:14px}}
 </style></head><body><main>
 <nav class="nav"><a href="../index.html">← Mục lục reward study</a> · <a href="../../index.html">Kho phân tích</a></nav>
 <header><h1>{html.escape(plan.round_id)}</h1><p>{html.escape(plan.description)}</p></header>
 <section class="card"><h2>Mục tiêu của vòng này</h2><p>{objective_text}</p><p>{reference_note}</p></section>
 {summary_block}
+{integrated_sections}
 {''.join(case_sections)}
 <section class="card"><h2>Giải nghĩa KPI dễ nhầm</h2>
 <p><strong>Starvation rate:</strong> tỷ lệ UE từng có hơn 64 slot liên tiếp không có lần truyền thành công. Một slot tương ứng một action scheduling.</p>

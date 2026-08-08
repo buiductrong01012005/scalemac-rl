@@ -1,6 +1,6 @@
 # ScaleMAC-RL
 
-> Repository documentation lives under `docs/`; generated Markdown experiment reports are written to `docs/reports/`.
+> Repository documentation lives under `docs/`; experiment analyses and ablations are archived under `docs/analysis/`, while `docs/reports/` is reserved for later formal reports.
 
 ScaleMAC-RL is a fast DRL training surrogate for **single-cell 5G NR downlink MAC scheduling** with:
 
@@ -15,6 +15,23 @@ ScaleMAC-RL is a fast DRL training surrogate for **single-cell 5G NR downlink MA
 - KPIs: throughput, fairness/service, delay/starvation, candidate coverage, and inference latency.
 
 
+
+## What v0.9.5 adds
+
+v0.9.5 completes Round 07 as one comprehensive 32-case fourth-component experiment. For each of deficit service, PF utility, low-throughput and urgency service, the plan runs:
+
+- equal-quarter addition;
+- new-component-heavy direction;
+- hold Throughput, hold Jain, and hold Service;
+- preserve Throughput + Jain, Throughput + Service, and Jain + Service.
+
+The existing 12 v0.9.4 case IDs and output folder are retained. A rerun therefore skips completed cases and trains only the missing additions. The automatic analysis compares all eight regimes per component, all four components per regime, and exports final KPI, trajectory, stability-matrix and regime-summary CSV files under `docs/analysis/reward_study/round_07/`.
+
+Primary next experiment:
+
+```powershell
+python -m scalemac_rl.scripts.run_reward_study --plan .\configs\reward_study\round_07_fourth_component_screen.json
+```
 
 ## What v0.8.0 adds
 

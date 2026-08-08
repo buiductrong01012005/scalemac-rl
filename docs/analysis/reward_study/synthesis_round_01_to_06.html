@@ -1,0 +1,16 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tổng hợp Reward Study Round 01–06</title>
+<style>body{font-family:Segoe UI,Arial,sans-serif;background:#f5f7fb;color:#172033;margin:0;line-height:1.62}main{max-width:1120px;margin:auto;padding:28px}header,section,nav{background:#fff;border:1px solid #dfe5ee;border-radius:16px;padding:22px;margin-bottom:16px}header{background:linear-gradient(135deg,#18264a,#315efb);color:#fff}table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px solid #dfe5ee;text-align:left;vertical-align:top}th{background:#f0f3f8}a{color:#315efb}.note{background:#fff5d8}</style></head>
+<body><main><nav><a href="index.html">← Mục lục reward study</a></nav><header><h1>Tổng hợp bằng chứng Round 01–06</h1><p>Chuỗi kiến giải dùng để viết phần thiết kế reward và phân tích ablation trong khóa luận.</p></header>
+<section><h2>1. Tiến trình bằng chứng</h2><table><thead><tr><th>Round</th><th>Câu hỏi</th><th>Kết luận</th></tr></thead><tbody>
+<tr><td>01</td><td>Mỗi reward riêng lẻ tạo hành vi gì?</td><td>Throughput và Jain học được; Service/deficit/urgency/low-throughput có credit-assignment hoặc saturation problem.</td></tr>
+<tr><td>02–03</td><td>Ghép Throughput–Jain và vì sao một số tỷ lệ collapse?</td><td>37,5/62,5 ổn định; stochastic rollout có thể công bằng trong khi deterministic mean-policy quay vòng chậm.</td></tr>
+<tr><td>04</td><td>Service bổ sung gì?</td><td>Service tăng tốc thoát starvation nhưng ở cuối training trùng đáng kể với coverage do Jain tạo ra.</td></tr>
+<tr><td>05</td><td>Tăng một reward lên 0,50 sẽ ra sao?</td><td>Cả ba hướng đều rời vùng ổn định; Throughput-heavy greedy, Jain-heavy không tăng deterministic fairness, Service-heavy collapse.</td></tr>
+<tr><td>06</td><td>Dịch nhẹ trọng số quanh mốc bằng nhau?</td><td>Ba case ổn định, ba collapse. Throughput và Service là hai neo bổ trợ; Jain điều chỉnh phân phối khi hai neo còn đủ mạnh.</td></tr>
+</tbody></table></section>
+<section><h2>2. Mô hình vai trò reward hiện tại</h2><pre>Throughput → tạo transmission thành công và dùng PRB hiệu quả
+Service    → ngăn bỏ UE quá lâu, hỗ trợ coverage/wait
+Jain       → phân phối throughput giữa UE khi hai điều kiện trên đã tồn tại</pre><p>Đây là kiến giải mạnh hơn việc chỉ nói “trọng số bằng nhau nhưng contribution khác nhau”: nó mô tả reward nào cung cấp tín hiệu gì và vì sao giảm một tín hiệu làm policy mất khả năng học.</p></section>
+<section class="note"><h2>3. Giới hạn claim QoS</h2><p>Scheduler hiện có multi-objective behavior liên quan hiệu suất, fairness và thời gian không được phục vụ. Nó chưa phải QoS-aware/Maximum QoS Satisfaction đầy đủ vì chưa có traffic class, 5QI, GBR, packet deadline, finite queue hay per-flow requirements.</p></section>
+<section><h2>4. Quy tắc nghiên cứu tiếp theo</h2><ol><li>Mỗi round chỉ thay đổi một cấu trúc reward rõ ràng.</li><li>Luôn đọc deterministic validation, trajectory và stochastic–deterministic gap.</li><li>Không dùng reward contribution cuối run để suy ra policy influence.</li><li>Round 07 thêm lần lượt một reward thứ tư với trọng số bằng nhau; chưa tune trước khi biết tác dụng.</li></ol></section>
+</main></body></html>

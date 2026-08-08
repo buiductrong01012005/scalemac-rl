@@ -1,0 +1,585 @@
+{
+  "study_id": "full_control_reward_exploration",
+  "round_id": "round_07_fourth_component_integrated",
+  "description": "Comprehensive fourth-component study extending the existing integrated Round 07. Existing equal, heavy, and Throughput-Service anchor-preserving case IDs are retained so completed v0.9.4 runs can be reused; twenty new single-anchor and pair/group cases complete the 32-case design.",
+  "common": {
+    "environment_steps": 100096,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_seeds": [
+      1701
+    ],
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "seed": 1701,
+    "profile_seed": 1701,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 2.5e-05,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64,
+    "reward_normalization": "All cases keep positive_scale=1.0 and normalized positive weights. No delta rewards, penalties, Lagrangian multipliers, rules, candidate filters, or forced HARQ selections are enabled. The eight regimes distinguish equal addition, component dominance, single-anchor dependence, and pair/group dependence."
+  },
+  "analysis": {
+    "design": "fourth_component_comprehensive_screen",
+    "components": [
+      "throughput",
+      "fairness",
+      "service"
+    ],
+    "reference_run": "artifacts/runs/reward_study/round_04_add_service_equal/t_j_service_equal",
+    "reference_label": "Equal-three baseline: 1/3 throughput + 1/3 Jain + 1/3 service",
+    "output": "docs/analysis/reward_study/round_07/fourth_component_comprehensive_analysis.html",
+    "final_metrics_output": "docs/analysis/reward_study/round_07/round_07_final_metrics.csv",
+    "trajectory_output": "docs/analysis/reward_study/round_07/round_07_validation_trajectory.csv",
+    "comparison_output": "docs/analysis/reward_study/round_07/round_07_regime_comparison.csv",
+    "stability_output": "docs/analysis/reward_study/round_07/round_07_stability_matrix.csv",
+    "regime_summary_output": "docs/analysis/reward_study/round_07/round_07_regime_summary.csv",
+    "case_focus": {
+      "add_deficit_service_equal": "deficit_service",
+      "deficit_service_heavy": "deficit_service",
+      "deficit_service_hold_throughput": "deficit_service",
+      "deficit_service_hold_jain": "deficit_service",
+      "deficit_service_hold_service": "deficit_service",
+      "deficit_service_group_tj": "deficit_service",
+      "deficit_service_anchor_preserving": "deficit_service",
+      "deficit_service_group_js": "deficit_service",
+      "add_pf_utility_equal": "pf_utility",
+      "pf_utility_heavy": "pf_utility",
+      "pf_utility_hold_throughput": "pf_utility",
+      "pf_utility_hold_jain": "pf_utility",
+      "pf_utility_hold_service": "pf_utility",
+      "pf_utility_group_tj": "pf_utility",
+      "pf_utility_anchor_preserving": "pf_utility",
+      "pf_utility_group_js": "pf_utility",
+      "add_low_throughput_equal": "low_throughput",
+      "low_throughput_heavy": "low_throughput",
+      "low_throughput_hold_throughput": "low_throughput",
+      "low_throughput_hold_jain": "low_throughput",
+      "low_throughput_hold_service": "low_throughput",
+      "low_throughput_group_tj": "low_throughput",
+      "low_throughput_anchor_preserving": "low_throughput",
+      "low_throughput_group_js": "low_throughput",
+      "add_urgency_service_equal": "urgency_service",
+      "urgency_service_heavy": "urgency_service",
+      "urgency_service_hold_throughput": "urgency_service",
+      "urgency_service_hold_jain": "urgency_service",
+      "urgency_service_hold_service": "urgency_service",
+      "urgency_service_group_tj": "urgency_service",
+      "urgency_service_anchor_preserving": "urgency_service",
+      "urgency_service_group_js": "urgency_service"
+    },
+    "case_regime": {
+      "add_deficit_service_equal": "equal_quarter",
+      "deficit_service_heavy": "new_component_heavy",
+      "deficit_service_hold_throughput": "hold_throughput",
+      "deficit_service_hold_jain": "hold_fairness",
+      "deficit_service_hold_service": "hold_service",
+      "deficit_service_group_tj": "group_throughput_fairness",
+      "deficit_service_anchor_preserving": "group_throughput_service",
+      "deficit_service_group_js": "group_fairness_service",
+      "add_pf_utility_equal": "equal_quarter",
+      "pf_utility_heavy": "new_component_heavy",
+      "pf_utility_hold_throughput": "hold_throughput",
+      "pf_utility_hold_jain": "hold_fairness",
+      "pf_utility_hold_service": "hold_service",
+      "pf_utility_group_tj": "group_throughput_fairness",
+      "pf_utility_anchor_preserving": "group_throughput_service",
+      "pf_utility_group_js": "group_fairness_service",
+      "add_low_throughput_equal": "equal_quarter",
+      "low_throughput_heavy": "new_component_heavy",
+      "low_throughput_hold_throughput": "hold_throughput",
+      "low_throughput_hold_jain": "hold_fairness",
+      "low_throughput_hold_service": "hold_service",
+      "low_throughput_group_tj": "group_throughput_fairness",
+      "low_throughput_anchor_preserving": "group_throughput_service",
+      "low_throughput_group_js": "group_fairness_service",
+      "add_urgency_service_equal": "equal_quarter",
+      "urgency_service_heavy": "new_component_heavy",
+      "urgency_service_hold_throughput": "hold_throughput",
+      "urgency_service_hold_jain": "hold_fairness",
+      "urgency_service_hold_service": "hold_service",
+      "urgency_service_group_tj": "group_throughput_fairness",
+      "urgency_service_anchor_preserving": "group_throughput_service",
+      "urgency_service_group_js": "group_fairness_service"
+    },
+    "component_case_map": {
+      "deficit_service": {
+        "equal_quarter": "add_deficit_service_equal",
+        "new_component_heavy": "deficit_service_heavy",
+        "hold_throughput": "deficit_service_hold_throughput",
+        "hold_fairness": "deficit_service_hold_jain",
+        "hold_service": "deficit_service_hold_service",
+        "group_throughput_fairness": "deficit_service_group_tj",
+        "group_throughput_service": "deficit_service_anchor_preserving",
+        "group_fairness_service": "deficit_service_group_js"
+      },
+      "pf_utility": {
+        "equal_quarter": "add_pf_utility_equal",
+        "new_component_heavy": "pf_utility_heavy",
+        "hold_throughput": "pf_utility_hold_throughput",
+        "hold_fairness": "pf_utility_hold_jain",
+        "hold_service": "pf_utility_hold_service",
+        "group_throughput_fairness": "pf_utility_group_tj",
+        "group_throughput_service": "pf_utility_anchor_preserving",
+        "group_fairness_service": "pf_utility_group_js"
+      },
+      "low_throughput": {
+        "equal_quarter": "add_low_throughput_equal",
+        "new_component_heavy": "low_throughput_heavy",
+        "hold_throughput": "low_throughput_hold_throughput",
+        "hold_fairness": "low_throughput_hold_jain",
+        "hold_service": "low_throughput_hold_service",
+        "group_throughput_fairness": "low_throughput_group_tj",
+        "group_throughput_service": "low_throughput_anchor_preserving",
+        "group_fairness_service": "low_throughput_group_js"
+      },
+      "urgency_service": {
+        "equal_quarter": "add_urgency_service_equal",
+        "new_component_heavy": "urgency_service_heavy",
+        "hold_throughput": "urgency_service_hold_throughput",
+        "hold_fairness": "urgency_service_hold_jain",
+        "hold_service": "urgency_service_hold_service",
+        "group_throughput_fairness": "urgency_service_group_tj",
+        "group_throughput_service": "urgency_service_anchor_preserving",
+        "group_fairness_service": "urgency_service_group_js"
+      }
+    },
+    "regime_order": [
+      "equal_quarter",
+      "new_component_heavy",
+      "hold_throughput",
+      "hold_fairness",
+      "hold_service",
+      "group_throughput_fairness",
+      "group_throughput_service",
+      "group_fairness_service"
+    ],
+    "regime_labels": {
+      "equal_quarter": "Equal-quarter: 0.25/0.25/0.25/0.25",
+      "new_component_heavy": "New-component-heavy: 0.20/0.20/0.20/0.40",
+      "hold_throughput": "Giữ Throughput: 0.25/0.20/0.20/0.35",
+      "hold_fairness": "Giữ Jain: 0.20/0.25/0.20/0.35",
+      "hold_service": "Giữ Service: 0.20/0.20/0.25/0.35",
+      "group_throughput_fairness": "Giữ nhóm Throughput + Jain: 0.30/0.30/0.10/0.30",
+      "group_throughput_service": "Giữ nhóm Throughput + Service: 0.30/0.10/0.30/0.30",
+      "group_fairness_service": "Giữ nhóm Jain + Service: 0.10/0.30/0.30/0.30"
+    },
+    "regime_family": {
+      "equal_quarter": "baseline_addition",
+      "new_component_heavy": "dominance",
+      "hold_throughput": "single_hold",
+      "hold_fairness": "single_hold",
+      "hold_service": "single_hold",
+      "group_throughput_fairness": "pair_hold",
+      "group_throughput_service": "pair_hold",
+      "group_fairness_service": "pair_hold"
+    },
+    "reference_metrics": {
+      "mean_goodput_bits_per_slot": 97411.018965,
+      "final_jain_fairness": 0.2676396421,
+      "max_starvation_rate": 0.0,
+      "max_p99_wait_slots": 47.0,
+      "max_wait_slots": 48.0,
+      "mean_reward_throughput_component": 0.16467,
+      "mean_reward_fairness_component": 0.082817,
+      "mean_reward_service_component": 0.308745
+    }
+  },
+  "cases": [
+    {
+      "id": "add_deficit_service_equal",
+      "label": "Equal-quarter: Throughput-deficit service",
+      "hypothesis": "X tạo lợi ích biên gì khi được thêm bằng trọng số với T–J–S? Mục tiêu riêng của Throughput-deficit service là nâng nhóm UE có throughput thấp hơn mức trung bình.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.25,
+        "service": 0.25,
+        "deficit_service": 0.25
+      }
+    },
+    {
+      "id": "deficit_service_heavy",
+      "label": "New-component-heavy: Throughput-deficit service",
+      "hypothesis": "X có thể làm objective chính hay bị khai thác khi cả ba reward nền cùng yếu đi? Mục tiêu riêng của Throughput-deficit service là nâng nhóm UE có throughput thấp hơn mức trung bình.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.2,
+        "fairness": 0.2,
+        "service": 0.2,
+        "deficit_service": 0.4
+      }
+    },
+    {
+      "id": "deficit_service_hold_throughput",
+      "label": "Giữ Throughput: Throughput-deficit service",
+      "hypothesis": "Khi giữ Throughput ở mốc 0,25, X tăng lên 0,35 có hoạt động dù Jain và Service cùng giảm nhẹ? Mục tiêu riêng của Throughput-deficit service là nâng nhóm UE có throughput thấp hơn mức trung bình.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.2,
+        "service": 0.2,
+        "deficit_service": 0.35
+      }
+    },
+    {
+      "id": "deficit_service_hold_jain",
+      "label": "Giữ Jain: Throughput-deficit service",
+      "hypothesis": "Khi giữ Jain ở mốc 0,25, X tăng lên 0,35 có hoạt động dù Throughput và Service cùng giảm nhẹ? Mục tiêu riêng của Throughput-deficit service là nâng nhóm UE có throughput thấp hơn mức trung bình.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.2,
+        "fairness": 0.25,
+        "service": 0.2,
+        "deficit_service": 0.35
+      }
+    },
+    {
+      "id": "deficit_service_hold_service",
+      "label": "Giữ Service: Throughput-deficit service",
+      "hypothesis": "Khi giữ Service ở mốc 0,25, X tăng lên 0,35 có hoạt động dù Throughput và Jain cùng giảm nhẹ? Mục tiêu riêng của Throughput-deficit service là nâng nhóm UE có throughput thấp hơn mức trung bình.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.2,
+        "fairness": 0.2,
+        "service": 0.25,
+        "deficit_service": 0.35
+      }
+    },
+    {
+      "id": "deficit_service_group_tj",
+      "label": "Giữ nhóm Throughput + Jain: Throughput-deficit service",
+      "hypothesis": "Khi giữ mạnh nhóm hiệu suất–phân phối T+J, X có thay phần lớn Service mà vẫn giữ coverage không? Mục tiêu riêng của Throughput-deficit service là nâng nhóm UE có throughput thấp hơn mức trung bình.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.1,
+        "deficit_service": 0.3
+      }
+    },
+    {
+      "id": "deficit_service_anchor_preserving",
+      "label": "Giữ nhóm Throughput + Service: Throughput-deficit service",
+      "hypothesis": "Khi giữ hai neo Throughput + Service, X có thay phần lớn Jain mà vẫn giữ policy ổn định không? Mục tiêu riêng của Throughput-deficit service là nâng nhóm UE có throughput thấp hơn mức trung bình.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.1,
+        "service": 0.3,
+        "deficit_service": 0.3
+      }
+    },
+    {
+      "id": "deficit_service_group_js",
+      "label": "Giữ nhóm Jain + Service: Throughput-deficit service",
+      "hypothesis": "Khi giữ mạnh nhóm phân phối–coverage J+S, X có thay phần lớn Throughput mà vẫn tạo transmission hữu ích không? Mục tiêu riêng của Throughput-deficit service là nâng nhóm UE có throughput thấp hơn mức trung bình.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.1,
+        "fairness": 0.3,
+        "service": 0.3,
+        "deficit_service": 0.3
+      }
+    },
+    {
+      "id": "add_pf_utility_equal",
+      "label": "Equal-quarter: PF utility",
+      "hypothesis": "X tạo lợi ích biên gì khi được thêm bằng trọng số với T–J–S? Mục tiêu riêng của PF utility là tạo trade-off hiệu suất–fairness theo log-throughput.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.25,
+        "service": 0.25,
+        "pf_utility": 0.25
+      }
+    },
+    {
+      "id": "pf_utility_heavy",
+      "label": "New-component-heavy: PF utility",
+      "hypothesis": "X có thể làm objective chính hay bị khai thác khi cả ba reward nền cùng yếu đi? Mục tiêu riêng của PF utility là tạo trade-off hiệu suất–fairness theo log-throughput.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.2,
+        "fairness": 0.2,
+        "service": 0.2,
+        "pf_utility": 0.4
+      }
+    },
+    {
+      "id": "pf_utility_hold_throughput",
+      "label": "Giữ Throughput: PF utility",
+      "hypothesis": "Khi giữ Throughput ở mốc 0,25, X tăng lên 0,35 có hoạt động dù Jain và Service cùng giảm nhẹ? Mục tiêu riêng của PF utility là tạo trade-off hiệu suất–fairness theo log-throughput.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.2,
+        "service": 0.2,
+        "pf_utility": 0.35
+      }
+    },
+    {
+      "id": "pf_utility_hold_jain",
+      "label": "Giữ Jain: PF utility",
+      "hypothesis": "Khi giữ Jain ở mốc 0,25, X tăng lên 0,35 có hoạt động dù Throughput và Service cùng giảm nhẹ? Mục tiêu riêng của PF utility là tạo trade-off hiệu suất–fairness theo log-throughput.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.2,
+        "fairness": 0.25,
+        "service": 0.2,
+        "pf_utility": 0.35
+      }
+    },
+    {
+      "id": "pf_utility_hold_service",
+      "label": "Giữ Service: PF utility",
+      "hypothesis": "Khi giữ Service ở mốc 0,25, X tăng lên 0,35 có hoạt động dù Throughput và Jain cùng giảm nhẹ? Mục tiêu riêng của PF utility là tạo trade-off hiệu suất–fairness theo log-throughput.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.2,
+        "fairness": 0.2,
+        "service": 0.25,
+        "pf_utility": 0.35
+      }
+    },
+    {
+      "id": "pf_utility_group_tj",
+      "label": "Giữ nhóm Throughput + Jain: PF utility",
+      "hypothesis": "Khi giữ mạnh nhóm hiệu suất–phân phối T+J, X có thay phần lớn Service mà vẫn giữ coverage không? Mục tiêu riêng của PF utility là tạo trade-off hiệu suất–fairness theo log-throughput.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.1,
+        "pf_utility": 0.3
+      }
+    },
+    {
+      "id": "pf_utility_anchor_preserving",
+      "label": "Giữ nhóm Throughput + Service: PF utility",
+      "hypothesis": "Khi giữ hai neo Throughput + Service, X có thay phần lớn Jain mà vẫn giữ policy ổn định không? Mục tiêu riêng của PF utility là tạo trade-off hiệu suất–fairness theo log-throughput.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.1,
+        "service": 0.3,
+        "pf_utility": 0.3
+      }
+    },
+    {
+      "id": "pf_utility_group_js",
+      "label": "Giữ nhóm Jain + Service: PF utility",
+      "hypothesis": "Khi giữ mạnh nhóm phân phối–coverage J+S, X có thay phần lớn Throughput mà vẫn tạo transmission hữu ích không? Mục tiêu riêng của PF utility là tạo trade-off hiệu suất–fairness theo log-throughput.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.1,
+        "fairness": 0.3,
+        "service": 0.3,
+        "pf_utility": 0.3
+      }
+    },
+    {
+      "id": "add_low_throughput_equal",
+      "label": "Equal-quarter: Low-throughput percentile",
+      "hypothesis": "X tạo lợi ích biên gì khi được thêm bằng trọng số với T–J–S? Mục tiêu riêng của Low-throughput percentile là nâng đáy phân phối throughput và tránh P10 bị mất tín hiệu.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.25,
+        "service": 0.25,
+        "low_throughput": 0.25
+      }
+    },
+    {
+      "id": "low_throughput_heavy",
+      "label": "New-component-heavy: Low-throughput percentile",
+      "hypothesis": "X có thể làm objective chính hay bị khai thác khi cả ba reward nền cùng yếu đi? Mục tiêu riêng của Low-throughput percentile là nâng đáy phân phối throughput và tránh P10 bị mất tín hiệu.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.2,
+        "fairness": 0.2,
+        "service": 0.2,
+        "low_throughput": 0.4
+      }
+    },
+    {
+      "id": "low_throughput_hold_throughput",
+      "label": "Giữ Throughput: Low-throughput percentile",
+      "hypothesis": "Khi giữ Throughput ở mốc 0,25, X tăng lên 0,35 có hoạt động dù Jain và Service cùng giảm nhẹ? Mục tiêu riêng của Low-throughput percentile là nâng đáy phân phối throughput và tránh P10 bị mất tín hiệu.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.2,
+        "service": 0.2,
+        "low_throughput": 0.35
+      }
+    },
+    {
+      "id": "low_throughput_hold_jain",
+      "label": "Giữ Jain: Low-throughput percentile",
+      "hypothesis": "Khi giữ Jain ở mốc 0,25, X tăng lên 0,35 có hoạt động dù Throughput và Service cùng giảm nhẹ? Mục tiêu riêng của Low-throughput percentile là nâng đáy phân phối throughput và tránh P10 bị mất tín hiệu.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.2,
+        "fairness": 0.25,
+        "service": 0.2,
+        "low_throughput": 0.35
+      }
+    },
+    {
+      "id": "low_throughput_hold_service",
+      "label": "Giữ Service: Low-throughput percentile",
+      "hypothesis": "Khi giữ Service ở mốc 0,25, X tăng lên 0,35 có hoạt động dù Throughput và Jain cùng giảm nhẹ? Mục tiêu riêng của Low-throughput percentile là nâng đáy phân phối throughput và tránh P10 bị mất tín hiệu.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.2,
+        "fairness": 0.2,
+        "service": 0.25,
+        "low_throughput": 0.35
+      }
+    },
+    {
+      "id": "low_throughput_group_tj",
+      "label": "Giữ nhóm Throughput + Jain: Low-throughput percentile",
+      "hypothesis": "Khi giữ mạnh nhóm hiệu suất–phân phối T+J, X có thay phần lớn Service mà vẫn giữ coverage không? Mục tiêu riêng của Low-throughput percentile là nâng đáy phân phối throughput và tránh P10 bị mất tín hiệu.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.1,
+        "low_throughput": 0.3
+      }
+    },
+    {
+      "id": "low_throughput_anchor_preserving",
+      "label": "Giữ nhóm Throughput + Service: Low-throughput percentile",
+      "hypothesis": "Khi giữ hai neo Throughput + Service, X có thay phần lớn Jain mà vẫn giữ policy ổn định không? Mục tiêu riêng của Low-throughput percentile là nâng đáy phân phối throughput và tránh P10 bị mất tín hiệu.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.1,
+        "service": 0.3,
+        "low_throughput": 0.3
+      }
+    },
+    {
+      "id": "low_throughput_group_js",
+      "label": "Giữ nhóm Jain + Service: Low-throughput percentile",
+      "hypothesis": "Khi giữ mạnh nhóm phân phối–coverage J+S, X có thay phần lớn Throughput mà vẫn tạo transmission hữu ích không? Mục tiêu riêng của Low-throughput percentile là nâng đáy phân phối throughput và tránh P10 bị mất tín hiệu.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.1,
+        "fairness": 0.3,
+        "service": 0.3,
+        "low_throughput": 0.3
+      }
+    },
+    {
+      "id": "add_urgency_service_equal",
+      "label": "Equal-quarter: Urgency service",
+      "hypothesis": "X tạo lợi ích biên gì khi được thêm bằng trọng số với T–J–S? Mục tiêu riêng của Urgency service là ưu tiên UE vừa chờ lâu vừa thiếu throughput.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.25,
+        "service": 0.25,
+        "urgency_service": 0.25
+      }
+    },
+    {
+      "id": "urgency_service_heavy",
+      "label": "New-component-heavy: Urgency service",
+      "hypothesis": "X có thể làm objective chính hay bị khai thác khi cả ba reward nền cùng yếu đi? Mục tiêu riêng của Urgency service là ưu tiên UE vừa chờ lâu vừa thiếu throughput.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.2,
+        "fairness": 0.2,
+        "service": 0.2,
+        "urgency_service": 0.4
+      }
+    },
+    {
+      "id": "urgency_service_hold_throughput",
+      "label": "Giữ Throughput: Urgency service",
+      "hypothesis": "Khi giữ Throughput ở mốc 0,25, X tăng lên 0,35 có hoạt động dù Jain và Service cùng giảm nhẹ? Mục tiêu riêng của Urgency service là ưu tiên UE vừa chờ lâu vừa thiếu throughput.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.2,
+        "service": 0.2,
+        "urgency_service": 0.35
+      }
+    },
+    {
+      "id": "urgency_service_hold_jain",
+      "label": "Giữ Jain: Urgency service",
+      "hypothesis": "Khi giữ Jain ở mốc 0,25, X tăng lên 0,35 có hoạt động dù Throughput và Service cùng giảm nhẹ? Mục tiêu riêng của Urgency service là ưu tiên UE vừa chờ lâu vừa thiếu throughput.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.2,
+        "fairness": 0.25,
+        "service": 0.2,
+        "urgency_service": 0.35
+      }
+    },
+    {
+      "id": "urgency_service_hold_service",
+      "label": "Giữ Service: Urgency service",
+      "hypothesis": "Khi giữ Service ở mốc 0,25, X tăng lên 0,35 có hoạt động dù Throughput và Jain cùng giảm nhẹ? Mục tiêu riêng của Urgency service là ưu tiên UE vừa chờ lâu vừa thiếu throughput.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.2,
+        "fairness": 0.2,
+        "service": 0.25,
+        "urgency_service": 0.35
+      }
+    },
+    {
+      "id": "urgency_service_group_tj",
+      "label": "Giữ nhóm Throughput + Jain: Urgency service",
+      "hypothesis": "Khi giữ mạnh nhóm hiệu suất–phân phối T+J, X có thay phần lớn Service mà vẫn giữ coverage không? Mục tiêu riêng của Urgency service là ưu tiên UE vừa chờ lâu vừa thiếu throughput.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.1,
+        "urgency_service": 0.3
+      }
+    },
+    {
+      "id": "urgency_service_anchor_preserving",
+      "label": "Giữ nhóm Throughput + Service: Urgency service",
+      "hypothesis": "Khi giữ hai neo Throughput + Service, X có thay phần lớn Jain mà vẫn giữ policy ổn định không? Mục tiêu riêng của Urgency service là ưu tiên UE vừa chờ lâu vừa thiếu throughput.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.1,
+        "service": 0.3,
+        "urgency_service": 0.3
+      }
+    },
+    {
+      "id": "urgency_service_group_js",
+      "label": "Giữ nhóm Jain + Service: Urgency service",
+      "hypothesis": "Khi giữ mạnh nhóm phân phối–coverage J+S, X có thay phần lớn Throughput mà vẫn tạo transmission hữu ích không? Mục tiêu riêng của Urgency service là ưu tiên UE vừa chờ lâu vừa thiếu throughput.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.1,
+        "fairness": 0.3,
+        "service": 0.3,
+        "urgency_service": 0.3
+      }
+    }
+  ]
+}

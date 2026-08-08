@@ -51,9 +51,15 @@ PAGES: tuple[AnalysisPage, ...] = (
     ),
     AnalysisPage(
         "Round 06 — sáu hướng cục bộ",
-        "round_06/experiment_plan.html",
+        "round_06/three_component_coordinate_analysis.html",
         "Giữ một thành phần và dịch nhẹ trọng số giữa hai thành phần còn lại thì KPI đổi thế nào?",
-        "Đang chờ kết quả; đây là vòng tiếp theo cần chạy.",
+        "Throughput và Service là hai neo bổ trợ; Jain chỉ phát huy khi cả hai neo chưa bị làm yếu quá mức.",
+    ),
+    AnalysisPage(
+        "Round 07 — thêm reward thứ tư",
+        "round_07/experiment_plan.html",
+        "Mỗi reward còn lại tạo tác dụng gì khi thêm vào nền Throughput–Jain–Service?",
+        "Đang chờ chạy bốn case equal-quarter; chưa tune trước khi biết tác dụng biên.",
     ),
 )
 
@@ -78,7 +84,7 @@ main{{max-width:1180px;margin:auto;padding:28px}}header,section{{background:#fff
 header{{background:linear-gradient(135deg,#18264a,#315efb);color:#fff}}table{{width:100%;border-collapse:collapse}}th,td{{padding:11px;border-bottom:1px solid #dfe5ee;text-align:left;vertical-align:top}}th{{background:#f0f3f8}}a{{color:#315efb}}code{{background:#eef1f7;padding:2px 5px;border-radius:5px}}
 </style></head><body><main>
 <header><h1>ScaleMAC-RL — Mục lục phân tích reward</h1><p>Chuỗi bằng chứng phục vụ nghiên cứu và tổng hợp khóa luận. Các trang được sắp theo thứ tự thí nghiệm.</p></header>
-<section><p><a href='../index.html'>← Kho phân tích</a> · <a href='methodology.html'>Phương pháp nghiên cứu reward</a> · <a href='synthesis_round_01_to_05.html'>Tổng hợp Round 01–05</a> · <a href='literature_context.html'>Liên hệ tài liệu nền</a></p></section>
+<section><p><a href='../index.html'>← Kho phân tích</a> · <a href='methodology.html'>Phương pháp nghiên cứu reward</a> · <a href='synthesis_round_01_to_06.html'>Tổng hợp Round 01–06</a> · <a href='ablation_map.html'>Bản đồ ablation</a> · <a href='literature_context.html'>Liên hệ tài liệu nền</a></p></section>
 <section><table><thead><tr><th>Trang</th><th>Câu hỏi nghiên cứu</th><th>Kết luận hiện tại</th></tr></thead><tbody>{rows}</tbody></table></section>
 <section><h2>Phạm vi hiện tại</h2><p>Đây là giai đoạn khám phá môi trường và reward. Chưa sinh dataset trọng số, chưa làm Pareto chính thức và chưa tối ưu surrogate model.</p></section>
 </main></body></html>"""

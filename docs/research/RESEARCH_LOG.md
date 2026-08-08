@@ -177,3 +177,48 @@ performance converge. Dataset and Pareto work remain explicitly out of scope.
 - Do not optimize the failed 25/75 case in isolation.
 - Do not generate a reward-weight dataset or Pareto study in the current phase.
 - Round 04 adds `service` to the throughput–Jain base using equal one-third coefficients.
+
+## v0.9.3 — Round 06 coordinate ablation and Round 07 screen
+
+Round 06 completed all six small coordinate moves around the equal-third
+Throughput–Jain–Service point.
+
+Observed deterministic pattern:
+
+- keeping Service at one third allowed both a mild Throughput tilt and a mild
+  Jain tilt to remain starvation-free;
+- reducing Service to 0.2667 caused collapse in both tested directions;
+- increasing Service to 0.40 remained stable only when Throughput stayed at one
+  third; reducing Throughput to 0.2667 still collapsed;
+- stochastic training metrics remained much fairer than deterministic
+  validation, reinforcing the action-alignment finding from Round 03;
+- the equal-third point remains the balanced reference, while
+  `0.40 Throughput / 0.2667 Jain / 0.3333 Service` is retained only as a
+  throughput-oriented local alternative.
+
+Interpretation: Throughput provides the useful-transmission anchor, Service
+provides coverage/wait shaping, and Jain redistributes successful throughput
+when the first two signals remain sufficiently strong. This is an empirical
+one-seed local result, not a universal coefficient threshold.
+
+Round 07 therefore stops tuning the same three coefficients and adds one new
+positive component at a time with four equal 0.25 coefficients. The screened
+components are deficit service, PF utility, low-throughput, and urgency service.
+
+## v0.9.4 — Integrated Round 07 fourth-component study
+
+Round 07 is intentionally expanded before execution so all first-order questions
+about a fourth reward component are answered in one controlled batch. Each new
+component is observed under equal-quarter addition, 0.40 component dominance, and
+an anchor-preserving substitution that keeps Throughput and Service at 0.30 while
+reducing Jain to 0.10.
+
+This design separates three explanations: the component has no useful marginal
+signal; the component is useful only as shaping and fails when dominant; or the
+component appears to fail only because the Throughput and Service anchors were
+diluted. All 12 cases use the same one-seed environment, PPO architecture and
+100,096-step budget. Dataset/Pareto work remains out of scope.
+
+## v0.9.5 — Comprehensive fourth-component geometry
+
+Round 07 now covers 32 controlled cases: equal and heavy introductions, three single-anchor holds, and three pair/group-preserving substitutions for each remaining positive reward. The analysis is intentionally kept in one round so anchor dependence, group dependence and component comparison can be interpreted together.
