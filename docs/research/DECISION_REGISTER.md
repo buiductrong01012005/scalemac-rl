@@ -84,3 +84,24 @@ behaviour, and record whether a component is retained, parked or redesigned.
 
 **Reason:** a technically complete report is not reusable if a future reader
 cannot reconstruct what each case added or why a reward was kept or removed.
+
+## Decision 15 — Confirm retained reward candidates on common seeds before tuning
+
+**Status:** active in v0.9.8.
+
+**Decision:** run exactly nine cases: three fixed reward profiles on seeds 1701,
+2701 and 3701. The profiles are equal-third T–J–S, Urgency hold-Throughput, and
+Deficit group Throughput+Service. Use the same seed as training, static-profile and
+validation seed within each paired comparison.
+
+**Reason:** Round 07 used one seed and therefore identified candidates but did not
+establish repeatability. A common-seed design isolates profile differences more
+cleanly than another broad coefficient sweep.
+
+**Pre-registered decision rule:** Urgency must be stable on all seeds, improve Jain
+repeatedly, and retain at least 98% of baseline mean goodput. Deficit may be retained
+as a delay-sensitive profile only if tail-delay gains repeat and its goodput cost is
+acceptable. If neither condition is met, equal-third T–J–S remains the active reward.
+
+**Deferred:** new reward components, coefficient micro-sweeps, PPO tuning, Beta
+concentration tuning, architecture changes, and dataset/Pareto work.

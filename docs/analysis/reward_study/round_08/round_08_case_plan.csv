@@ -1,0 +1,10 @@
+case_id,profile,profile_label,seed,throughput_weight,jain_weight,service_weight,urgency_weight,deficit_weight,research_question
+tjs_equal_seed1701,tjs_equal,Baseline T–J–S equal-third,1701,0.3333333333333333,0.3333333333333333,0.3333333333333333,0,0,Mốc chuẩn đã ổn định từ Round 04–07; dùng để kiểm tra reward thứ tư có tạo lợi ích lặp lại hay không.
+tjs_equal_seed2701,tjs_equal,Baseline T–J–S equal-third,2701,0.3333333333333333,0.3333333333333333,0.3333333333333333,0,0,Mốc chuẩn đã ổn định từ Round 04–07; dùng để kiểm tra reward thứ tư có tạo lợi ích lặp lại hay không.
+tjs_equal_seed3701,tjs_equal,Baseline T–J–S equal-third,3701,0.3333333333333333,0.3333333333333333,0.3333333333333333,0,0,Mốc chuẩn đã ổn định từ Round 04–07; dùng để kiểm tra reward thứ tư có tạo lợi ích lặp lại hay không.
+urgency_hold_throughput_seed1701,urgency_hold_throughput,Ứng viên cân bằng: Urgency hold-Throughput,1701,0.25,0.2,0.2,0.35,0,"Ứng viên số 1 từ Round 07; kiểm tra fairness tăng lặp lại mà vẫn giữ goodput, zero-starvation và tail delay."
+urgency_hold_throughput_seed2701,urgency_hold_throughput,Ứng viên cân bằng: Urgency hold-Throughput,2701,0.25,0.2,0.2,0.35,0,"Ứng viên số 1 từ Round 07; kiểm tra fairness tăng lặp lại mà vẫn giữ goodput, zero-starvation và tail delay."
+urgency_hold_throughput_seed3701,urgency_hold_throughput,Ứng viên cân bằng: Urgency hold-Throughput,3701,0.25,0.2,0.2,0.35,0,"Ứng viên số 1 từ Round 07; kiểm tra fairness tăng lặp lại mà vẫn giữ goodput, zero-starvation và tail delay."
+deficit_group_ts_seed1701,deficit_group_ts,Ứng viên delay: Deficit giữ nhóm T+S,1701,0.3,0.1,0.3,0,0.3,Ứng viên số 2 từ Round 07; kiểm tra tail delay giảm lặp lại và định lượng mức đánh đổi goodput.
+deficit_group_ts_seed2701,deficit_group_ts,Ứng viên delay: Deficit giữ nhóm T+S,2701,0.3,0.1,0.3,0,0.3,Ứng viên số 2 từ Round 07; kiểm tra tail delay giảm lặp lại và định lượng mức đánh đổi goodput.
+deficit_group_ts_seed3701,deficit_group_ts,Ứng viên delay: Deficit giữ nhóm T+S,3701,0.3,0.1,0.3,0,0.3,Ứng viên số 2 từ Round 07; kiểm tra tail delay giảm lặp lại và định lượng mức đánh đổi goodput.

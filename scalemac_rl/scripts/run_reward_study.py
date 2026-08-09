@@ -10,6 +10,7 @@ from time import time
 from typing import Any
 
 from scalemac_rl.reward_analysis import build_incremental_reward_analysis
+from scalemac_rl.multiseed_analysis import build_multiseed_confirmation_analysis
 from scalemac_rl.reward_study import RewardStudyPlan, write_json
 
 
@@ -199,7 +200,7 @@ def _completed(run_dir: Path) -> bool:
         run_dir / "validation_summary.csv",
         run_dir / "latest.pt",
     )
-    return all(path.is_file() for path in required)
+    return all(path.is_file() and path.stat().st_size > 0 for path in required)
 
 
 def main() -> None:
@@ -283,8 +284,10 @@ def main() -> None:
             print(f"[{index}/{len(cases)}] skip completed: {case.case_id}")
             continue
 
+        effective_common = dict(plan.common)
+        effective_common.update(case.common_overrides)
         command = _common_command(
-            common=plan.common,
+            common=effective_common,
             run_dir=run_dir,
             steps_override=args.steps,
             validation_slots_override=args.validation_slots,
@@ -301,16 +304,18 @@ def main() -> None:
                 "round_id": plan.round_id,
                 "case": case.to_dict(),
                 "common": plan.common,
+                "common_overrides": case.common_overrides,
+                "effective_common": effective_common,
                 "effective_environment_steps": int(
-                    args.steps or plan.common.get("environment_steps", 65_536)
+                    args.steps or effective_common.get("environment_steps", 65_536)
                 ),
                 "effective_validation_slots": int(
-                    args.validation_slots or plan.common.get("validation_slots", 5_000)
+                    args.validation_slots or effective_common.get("validation_slots", 5_000)
                 ),
                 "architecture": {
                     "observation_features_per_ue": 16,
                     "encoder": "shared_set_encoder",
-                    "embedding_dim": int(plan.common.get("hidden_dim", 64)),
+                    "embedding_dim": int(effective_common.get("hidden_dim", 64)),
                     "candidate_mode": "all",
                     "scheduler_mode": "ppo_only",
                     "num_ues": 1200,
@@ -350,11 +355,18 @@ def main() -> None:
 
     if not args.dry_run and args.analysis and plan.analysis.get("output"):
         try:
-            analysis_path = build_incremental_reward_analysis(
-                plan=plan,
-                round_dir=round_dir,
-                output_path=Path(str(plan.analysis["output"])),
-            )
+            if plan.analysis.get("design") == "multiseed_confirmation":
+                analysis_path = build_multiseed_confirmation_analysis(
+                    plan=plan,
+                    round_dir=round_dir,
+                    output_path=Path(str(plan.analysis["output"])),
+                )
+            else:
+                analysis_path = build_incremental_reward_analysis(
+                    plan=plan,
+                    round_dir=round_dir,
+                    output_path=Path(str(plan.analysis["output"])),
+                )
             print(f"analysis output: {analysis_path}")
         except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
             print(f"warning: could not build reward analysis: {exc}")

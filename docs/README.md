@@ -16,22 +16,26 @@ ScaleMAC-RL is a fast DRL training surrogate for **single-cell 5G NR downlink MA
 
 
 
-## What v0.9.5 adds
+## What v0.9.8 adds
 
-v0.9.5 completes Round 07 as one comprehensive 32-case fourth-component experiment. For each of deficit service, PF utility, low-throughput and urgency service, the plan runs:
+v0.9.8 adds Round 08 as a nine-case common-seed confirmation. It runs:
 
-- equal-quarter addition;
-- new-component-heavy direction;
-- hold Throughput, hold Jain, and hold Service;
-- preserve Throughput + Jain, Throughput + Service, and Jain + Service.
+- equal-third Throughput–Jain–Service;
+- Urgency hold-Throughput (`0.25 T + 0.20 J + 0.20 S + 0.35 U`);
+- Deficit group Throughput+Service (`0.30 T + 0.10 J + 0.30 S + 0.30 D`);
 
-The existing 12 v0.9.4 case IDs and output folder are retained. A rerun therefore skips completed cases and trains only the missing additions. The automatic analysis compares all eight regimes per component, all four components per regime, and exports final KPI, trajectory, stability-matrix and regime-summary CSV files under `docs/analysis/reward_study/round_07/`.
+on seeds `1701`, `2701`, and `3701`. The runner supports per-case seed overrides
+inside one plan and exports per-seed metrics, paired deltas, stability, validation
+trajectories, and profile mean/std to HTML, Markdown, and CSV.
 
-Primary next experiment:
+Primary experiment:
 
 ```powershell
-python -m scalemac_rl.scripts.run_reward_study --plan .\configs\reward_study\round_07_fourth_component_screen.json
+python -m scalemac_rl.scripts.run_reward_study --plan .\configs\reward_study\round_08_multiseed_confirmation.json --device cpu
 ```
+
+The round remains full-control PPO and does not tune reward coefficients, PPO, Beta,
+or architecture.
 
 ## What v0.8.0 adds
 

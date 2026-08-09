@@ -70,6 +70,7 @@ class RewardCase:
     positive_weights: dict[str, float]
     delta_weights: dict[str, float]
     penalty_weights: dict[str, float]
+    common_overrides: dict[str, Any]
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "RewardCase":
@@ -109,6 +110,7 @@ class RewardCase:
                 PENALTY_COMPONENTS,
                 field_name="penalty reward components",
             ),
+            common_overrides=dict(payload.get("common_overrides", {})),
         )
 
     def actual_coefficients(self) -> dict[str, float]:
@@ -143,6 +145,7 @@ class RewardCase:
             "positive_weights": self.positive_weights,
             "delta_weights": self.delta_weights,
             "penalty_weights": self.penalty_weights,
+            "common_overrides": self.common_overrides,
             "actual_coefficients": self.actual_coefficients(),
         }
 

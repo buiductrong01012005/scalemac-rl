@@ -267,3 +267,24 @@ candidate, stable but low-marginal-value cases, and components to park/redesign.
 The previous technical report is retained as an appendix. The next experimental
 step remains a common-seed confirmation of equal-third, urgency hold-Throughput,
 and deficit group Throughput+Service.
+
+## v0.9.8 — Round 08 common-seed confirmation
+
+Round 08 freezes the reward search to three profiles and tests repeatability rather
+than adding another component. The equal-third Throughput–Jain–Service baseline,
+`urgency_service_hold_throughput`, and `deficit_service_anchor_preserving` are each
+run with seeds 1701, 2701 and 3701. Within a case, the training seed, static-profile
+seed and validation seed are identical; all other environment, PPO, architecture,
+step-budget and deterministic validation settings remain fixed.
+
+The runner now supports case-level common overrides so a single auditable plan can
+express common-seed comparisons without duplicating plan files. Round 08 exports
+per-seed final metrics, validation trajectories, stability labels, paired deltas,
+and profile-level mean/std in CSV plus a reader-facing HTML and Markdown summary.
+
+Decision rules are fixed before execution: retain Urgency only if it is stable at
+all three seeds, repeatedly improves deterministic fairness, and keeps at least 98%
+of baseline mean goodput; retain Deficit only as a delay-sensitive profile if tail
+improvements repeat and the goodput trade-off is acceptable. Otherwise return to
+equal-third T–J–S. PPO, Beta, architecture, reward definitions and coefficient
+micro-sweeps remain deferred.

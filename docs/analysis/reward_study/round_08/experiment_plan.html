@@ -1,0 +1,13 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Round 08 — Kế hoạch xác nhận đa seed</title><style>:root{color-scheme:light dark}body{font:16px/1.58 system-ui,sans-serif;max-width:1050px;margin:auto;padding:32px 20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #9996;padding:9px;text-align:left;vertical-align:top}code{white-space:nowrap}.note{border-left:5px solid #2b6cb0;padding:12px 16px;background:#8881}</style></head><body>
+<h1>Round 08 — Xác nhận đa seed cho Urgency và Deficit</h1>
+<div class="note"><strong>Câu hỏi duy nhất:</strong> hai ứng viên tốt nhất của Round 07 có lặp lại lợi ích trên seed mới hay chỉ tốt ở seed 1701?</div>
+<h2>Ba reward profile</h2>
+<table><thead><tr><th>Profile</th><th>Hàm reward dương</th><th>Vai trò</th></tr></thead><tbody>
+<tr><td>Baseline T–J–S</td><td><code>R⁺ = 0.3333T + 0.3333J + 0.3333S</code></td><td>Mốc chuẩn ổn định để mọi ứng viên được so sánh theo cùng seed.</td></tr>
+<tr><td>Urgency hold-Throughput</td><td><code>R⁺ = 0.25T + 0.20J + 0.20S + 0.35U</code></td><td>Ứng viên cân bằng: kiểm tra fairness tăng mà goodput và delay không xấu đi.</td></tr>
+<tr><td>Deficit giữ T+S</td><td><code>R⁺ = 0.30T + 0.10J + 0.30S + 0.30D</code></td><td>Ứng viên delay-sensitive: kiểm tra P99/max-wait giảm lặp lại và đo chi phí goodput.</td></tr>
+</tbody></table>
+<h2>Thiết kế 9 case</h2><p>Mỗi profile chạy ba seed <code>1701</code>, <code>2701</code>, <code>3701</code>. Trong từng case: training seed = profile seed = validation seed. Tổng cộng <strong>3 profile × 3 seed = 9 case</strong>.</p>
+<h2>Biến được giữ cố định</h2><ul><li>1.200 UE, 273 PRB, Top-K 64, full-buffer, static heterogeneous CQI.</li><li>Shared Set Encoder hidden 64, PPO Beta action, deterministic mean-action validation.</li><li>100.096 environment steps, rollout 256, validation 5.000 slots.</li><li>Không rule, candidate filter, forced HARQ, Lagrangian penalty, architecture tuning hay PPO tuning.</li></ul>
+<h2>Quy tắc quyết định</h2><ol><li>Urgency chỉ được giữ nếu stable ở 3/3 seed, Jain tăng lặp lại và mean goodput không thấp hơn 98% baseline.</li><li>Deficit chỉ được giữ như profile delay-sensitive nếu stable 3/3 seed và P99/max-wait giảm lặp lại với mức mất goodput chấp nhận được.</li><li>Nếu không ứng viên nào lặp lại lợi ích, quay lại equal-third T–J–S.</li></ol>
+</body></html>

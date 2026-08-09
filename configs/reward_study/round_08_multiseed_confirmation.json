@@ -1,0 +1,246 @@
+{
+  "study_id": "full_control_reward_exploration",
+  "round_id": "round_08_multiseed_confirmation",
+  "description": "Nine-case common-seed confirmation of the equal-third T–J–S baseline, the Round 07 urgency hold-Throughput balanced candidate, and the deficit group Throughput+Service delay candidate. This round tests repeatability only; it does not add new reward components or tune PPO.",
+  "common": {
+    "environment_steps": 100096,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_seeds": [
+      1701
+    ],
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "seed": 1701,
+    "profile_seed": 1701,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 2.5e-05,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64,
+    "reward_normalization": "All three profiles use positive_scale=1.0, normalized positive weights, no delta reward, no explicit penalty, no Lagrangian training, no rule, no candidate filter and no forced HARQ selection. Each profile is trained and validated on the same three common seeds: 1701, 2701 and 3701."
+  },
+  "analysis": {
+    "design": "multiseed_confirmation",
+    "title": "Round 08 — Xác nhận đa seed cho Urgency và Deficit",
+    "baseline_profile": "tjs_equal",
+    "profile_order": [
+      "tjs_equal",
+      "urgency_hold_throughput",
+      "deficit_group_ts"
+    ],
+    "profile_labels": {
+      "tjs_equal": "Baseline T–J–S equal-third",
+      "urgency_hold_throughput": "Ứng viên cân bằng: Urgency hold-Throughput",
+      "deficit_group_ts": "Ứng viên delay: Deficit giữ nhóm T+S"
+    },
+    "profile_roles": {
+      "tjs_equal": "Mốc chuẩn đã ổn định từ Round 04–07; dùng để kiểm tra reward thứ tư có tạo lợi ích lặp lại hay không.",
+      "urgency_hold_throughput": "Ứng viên số 1 từ Round 07; kiểm tra fairness tăng lặp lại mà vẫn giữ goodput, zero-starvation và tail delay.",
+      "deficit_group_ts": "Ứng viên số 2 từ Round 07; kiểm tra tail delay giảm lặp lại và định lượng mức đánh đổi goodput."
+    },
+    "case_profile": {
+      "tjs_equal_seed1701": "tjs_equal",
+      "tjs_equal_seed2701": "tjs_equal",
+      "tjs_equal_seed3701": "tjs_equal",
+      "urgency_hold_throughput_seed1701": "urgency_hold_throughput",
+      "urgency_hold_throughput_seed2701": "urgency_hold_throughput",
+      "urgency_hold_throughput_seed3701": "urgency_hold_throughput",
+      "deficit_group_ts_seed1701": "deficit_group_ts",
+      "deficit_group_ts_seed2701": "deficit_group_ts",
+      "deficit_group_ts_seed3701": "deficit_group_ts"
+    },
+    "output": "docs/analysis/reward_study/round_08/multiseed_confirmation_analysis.html",
+    "markdown_output": "docs/analysis/reward_study/round_08/multiseed_confirmation_summary.md",
+    "seed_metrics_output": "docs/analysis/reward_study/round_08/round_08_seed_metrics.csv",
+    "profile_summary_output": "docs/analysis/reward_study/round_08/round_08_profile_summary.csv",
+    "trajectory_output": "docs/analysis/reward_study/round_08/round_08_validation_trajectory.csv",
+    "stability_output": "docs/analysis/reward_study/round_08/round_08_stability_matrix.csv",
+    "comparison_output": "docs/analysis/reward_study/round_08/round_08_paired_comparison.csv",
+    "decision_rules": {
+      "urgency_keep": "Stable at all three seeds, repeated Jain improvement versus paired T–J–S seeds, zero starvation, and mean goodput no lower than 98% of baseline.",
+      "deficit_keep": "Stable at all three seeds with repeated P99/max-wait improvement; retain as delay-sensitive profile only if the observed goodput trade-off is acceptable.",
+      "reject_candidates": "If neither candidate is stable at all three seeds or improvements do not repeat, return to equal-third T–J–S."
+    }
+  },
+  "cases": [
+    {
+      "id": "tjs_equal_seed1701",
+      "label": "Baseline T–J–S equal-third — seed 1701",
+      "hypothesis": "Baseline T–J–S phải duy trì vùng ổn định trên nhiều seed; mọi ứng viên mới phải được so sánh theo cùng seed với baseline này.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "tjs_equal_seed2701",
+      "label": "Baseline T–J–S equal-third — seed 2701",
+      "hypothesis": "Baseline T–J–S phải duy trì vùng ổn định trên nhiều seed; mọi ứng viên mới phải được so sánh theo cùng seed với baseline này.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "tjs_equal_seed3701",
+      "label": "Baseline T–J–S equal-third — seed 3701",
+      "hypothesis": "Baseline T–J–S phải duy trì vùng ổn định trên nhiều seed; mọi ứng viên mới phải được so sánh theo cùng seed với baseline này.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    },
+    {
+      "id": "urgency_hold_throughput_seed1701",
+      "label": "Ứng viên cân bằng: Urgency hold-Throughput — seed 1701",
+      "hypothesis": "Urgency tạo tín hiệu per-UE kết hợp thiếu throughput và thời gian chờ; nếu lợi ích là thật, deterministic Jain phải tăng lặp lại mà goodput không giảm mạnh.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.2,
+        "service": 0.2,
+        "urgency_service": 0.35
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "urgency_hold_throughput_seed2701",
+      "label": "Ứng viên cân bằng: Urgency hold-Throughput — seed 2701",
+      "hypothesis": "Urgency tạo tín hiệu per-UE kết hợp thiếu throughput và thời gian chờ; nếu lợi ích là thật, deterministic Jain phải tăng lặp lại mà goodput không giảm mạnh.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.2,
+        "service": 0.2,
+        "urgency_service": 0.35
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "urgency_hold_throughput_seed3701",
+      "label": "Ứng viên cân bằng: Urgency hold-Throughput — seed 3701",
+      "hypothesis": "Urgency tạo tín hiệu per-UE kết hợp thiếu throughput và thời gian chờ; nếu lợi ích là thật, deterministic Jain phải tăng lặp lại mà goodput không giảm mạnh.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.2,
+        "service": 0.2,
+        "urgency_service": 0.35
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    },
+    {
+      "id": "deficit_group_ts_seed1701",
+      "label": "Ứng viên delay: Deficit giữ nhóm T+S — seed 1701",
+      "hypothesis": "Deficit cung cấp credit cho UE dưới mức throughput tham chiếu; nếu hiệu quả là thật, P99/max-wait phải giảm lặp lại khi Throughput và Service vẫn làm anchor.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.1,
+        "service": 0.3,
+        "deficit_service": 0.3
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "deficit_group_ts_seed2701",
+      "label": "Ứng viên delay: Deficit giữ nhóm T+S — seed 2701",
+      "hypothesis": "Deficit cung cấp credit cho UE dưới mức throughput tham chiếu; nếu hiệu quả là thật, P99/max-wait phải giảm lặp lại khi Throughput và Service vẫn làm anchor.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.1,
+        "service": 0.3,
+        "deficit_service": 0.3
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "deficit_group_ts_seed3701",
+      "label": "Ứng viên delay: Deficit giữ nhóm T+S — seed 3701",
+      "hypothesis": "Deficit cung cấp credit cho UE dưới mức throughput tham chiếu; nếu hiệu quả là thật, P99/max-wait phải giảm lặp lại khi Throughput và Service vẫn làm anchor.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.1,
+        "service": 0.3,
+        "deficit_service": 0.3
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    }
+  ]
+}
