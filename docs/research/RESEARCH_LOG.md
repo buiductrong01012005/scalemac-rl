@@ -222,3 +222,48 @@ diluted. All 12 cases use the same one-seed environment, PPO architecture and
 ## v0.9.5 — Comprehensive fourth-component geometry
 
 Round 07 now covers 32 controlled cases: equal and heavy introductions, three single-anchor holds, and three pair/group-preserving substitutions for each remaining positive reward. The analysis is intentionally kept in one round so anchor dependence, group dependence and component comparison can be interpreted together.
+
+
+## v0.9.6 — Round 07 completed and interpreted
+
+Round 07 completed all 32 fourth-component cases under the same 100,096-step,
+one-seed protocol. Ten cases are stable by deterministic coverage/tail criteria,
+three are borderline, four late-collapse after an intermediate safe checkpoint,
+and fifteen fully collapse.
+
+The strongest balanced case is `urgency_service_hold_throughput`
+(T/J/S/U = 0.25/0.20/0.20/0.35): 97,877 bit/slot, Jain 0.3248, zero
+starvation, P99 46 and max wait 48. `deficit_service_anchor_preserving` is the
+strongest fairness/tail-delay alternative: Jain 0.2921, P99 43 and max wait 44,
+with a 4.90% goodput reduction versus equal-third.
+
+Mechanism findings:
+
+- deficit service provides useful per-UE credit when two baseline anchors remain
+  strong, but collapses as a dominant or weakly anchored objective;
+- PF utility is stable only under a Jain anchor and still yields low deterministic
+  fairness;
+- low-throughput percentile has a P10=0 dead-zone, so coefficient tuning cannot
+  recover a zero raw signal;
+- urgency service is promising but non-monotonic: equal-quarter and group T+S
+  late-collapse while the 0.35 hold-Throughput geometry remains stable;
+- stochastic training Jain remains much higher than deterministic validation
+  Jain across successful and failed cases.
+
+Decision: run a small common-seed confirmation of equal-third, urgency hold-T,
+and deficit group T+S. Do not start another broad sweep, architecture change or
+PPO tuning before this confirmation.
+
+
+## v0.9.7 — Round 07 documentation made reusable
+
+The Round 07 numerical evidence and research decision are unchanged. The main
+report was rewritten so a future reader can reconstruct the experiment without
+remembering the case-name convention. It now states the reward formulas, explains
+all eight regimes, describes what each of the 32 cases changed, highlights top-three
+Stable KPI values, and separates four decision classes: winner, secondary
+candidate, stable but low-marginal-value cases, and components to park/redesign.
+
+The previous technical report is retained as an appendix. The next experimental
+step remains a common-seed confirmation of equal-third, urgency hold-Throughput,
+and deficit group Throughput+Service.

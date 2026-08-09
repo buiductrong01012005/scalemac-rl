@@ -51,3 +51,36 @@
 **Current case:** throughput + Jain fairness + service, each with coefficient `1/3`.
 
 **Deferred:** dense weight grids, optimization of the failed 25/75 case, dataset generation, Pareto analysis, and architecture changes.
+
+
+## Decision 13 — Retain two Round 07 candidates for multi-seed confirmation
+
+**Status:** active after v0.9.6.
+
+**Decision:** retain `urgency_service_hold_throughput` as the balanced candidate
+and `deficit_service_anchor_preserving` as the fairness/tail-delay candidate.
+Compare both against the equal-third T–J–S reference using at least three common
+seeds.
+
+**Reason:** urgency hold-T is the only Round 07 case that improves deterministic
+Jain and P99 without reducing goodput or coverage at the final checkpoint. Deficit
+group T+S provides the best tail delay and improved Jain but trades about 4.9%
+goodput. These represent two distinct trade-off directions worth confirming.
+
+**Deferred:** coefficient micro-sweeps, PPO hyperparameter tuning, Beta schedule
+changes and architecture changes. PF utility and low-throughput percentile are
+removed from the active objective until their score definitions are revised.
+
+
+## Decision 14 — Separate reader-facing conclusions from the technical audit
+
+**Status:** active after v0.9.7.
+
+**Decision:** use the reader-friendly Round 07 HTML as the main entry point, while
+preserving the original technical report as an appendix. Every future reward
+round should state the reward formula, decode each case geometry, report KPI and
+stability, distinguish meaningful marginal gain from merely non-collapsing
+behaviour, and record whether a component is retained, parked or redesigned.
+
+**Reason:** a technically complete report is not reusable if a future reader
+cannot reconstruct what each case added or why a reward was kept or removed.

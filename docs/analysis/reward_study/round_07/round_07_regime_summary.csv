@@ -1,0 +1,9 @@
+regime,regime_label,completed_cases,stable_cases,borderline_cases,late_collapse_cases,full_collapse_cases,best_stable_case,best_stable_goodput,best_stable_jain,lowest_stable_p99
+equal_quarter,Equal-quarter: 0.25/0.25/0.25/0.25,4,0,1,1,2,,,,
+new_component_heavy,New-component-heavy: 0.20/0.20/0.20/0.40,4,1,0,0,3,urgency_service_heavy,94366.12544967192,0.2764585366138908,46.0
+hold_throughput,Giữ Throughput: 0.25/0.20/0.20/0.35,4,1,1,1,1,urgency_service_hold_throughput,97877.39808705598,0.3248265379778111,46.0
+hold_fairness,Giữ Jain: 0.20/0.25/0.20/0.35,4,2,1,0,1,deficit_service_hold_jain,98210.31940348052,0.2672728477708437,48.0
+hold_service,Giữ Service: 0.20/0.20/0.25/0.35,4,1,0,0,3,urgency_service_hold_service,105663.33376492768,0.1112189277469221,57.0
+group_throughput_fairness,Giữ nhóm Throughput + Jain: 0.30/0.30/0.10/0.30,4,2,0,0,2,deficit_service_group_tj,97958.21619544984,0.2694051203400575,49.0
+group_throughput_service,Giữ nhóm Throughput + Service: 0.30/0.10/0.30/0.30,4,1,0,1,2,deficit_service_anchor_preserving,92634.11824542387,0.2921135641111174,43.0
+group_fairness_service,Giữ nhóm Jain + Service: 0.10/0.30/0.30/0.30,4,2,0,1,1,deficit_service_group_js,97528.1773361496,0.2666419818473835,48.0
