@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ScaleMAC-RL Round 08 — Báo cáo dễ đọc</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--text:#18202a;--muted:#5e6875;--line:#dfe4ea;--accent:#274c77;--good:#16794b;--bad:#b42318;--warn:#a15c00;--gold:#fff2a8}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.6}
+main{max-width:1180px;margin:auto;padding:32px 20px 64px} h1{font-size:2rem;margin-bottom:8px} h2{margin-top:38px;border-bottom:2px solid var(--line);padding-bottom:8px}
+h3{margin-top:26px} .lead{font-size:1.08rem;color:var(--muted)} .hero,.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;margin:18px 0}
+.callout{border-left:5px solid var(--accent);background:#eef5ff;padding:16px 18px;border-radius:8px;margin:16px 0}
+.danger{border-left-color:var(--bad);background:#fff1f0} .goodbox{border-left-color:var(--good);background:#eefbf5}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px} .metric{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px}
+.metric b{font-size:1.45rem;display:block} table{width:100%;border-collapse:collapse;background:#fff;font-size:.92rem}
+th,td{border:1px solid var(--line);padding:9px 8px;text-align:left;vertical-align:top} th{background:#edf2f7;position:sticky;top:0}
+.tablewrap{overflow:auto;border-radius:10px;border:1px solid var(--line)} .tablewrap table{border:none} code{background:#f0f3f6;padding:2px 5px;border-radius:5px}
+.badge{display:inline-block;padding:3px 8px;border-radius:999px;font-size:.82rem;font-weight:700;white-space:nowrap} .stable{background:#dcfce7;color:#166534}
+.collapse{background:#fee2e2;color:#991b1b} .border{background:#fef3c7;color:#92400e} .late{background:#ffedd5;color:#9a3412}
+.top3{background:var(--gold);padding:2px 5px;border-radius:5px} details{background:#fff;border:1px solid var(--line);border-radius:10px;margin:8px 0;padding:10px 14px}
+summary{cursor:pointer;font-weight:650} .detail{padding:6px 6px 4px} .small{font-size:.9rem;color:var(--muted)} ul li{margin:6px 0}
+.decision-keep{color:var(--good);font-weight:700} .decision-drop{color:var(--bad);font-weight:700} .decision-hold{color:var(--warn);font-weight:700}
+@media(max-width:700px){main{padding:18px 10px 40px} h1{font-size:1.55rem} th,td{font-size:.82rem}}
+</style>
+</head>
+<body><main>
+<h1>ScaleMAC-RL Round 08 — Xác nhận đa seed cho reward thứ tư</h1>
+<p class="lead">Bản này viết để vài tháng sau đọc lại vẫn hiểu: ta chạy gì, vì sao chạy, từng case có reward nào, kết quả ra sao, reward nào giữ và reward nào nên hạ ưu tiên.</p>
+
+<section class="hero">
+<h2 style="margin-top:0">Kết luận trong 30 giây</h2>
+<div class="grid">
+  <div class="metric"><span>Baseline T–J–S</span><b>2/3 Stable</b><small>Ổn định nhất trong Round 08</small></div>
+  <div class="metric"><span>Urgency candidate</span><b>1/3 Stable</b><small>Có một seed rất đẹp nhưng không lặp lại</small></div>
+  <div class="metric"><span>Deficit candidate</span><b>1/3 Stable</b><small>Không tái hiện lợi ích delay của Round 07</small></div>
+  <div class="metric"><span>Case hoàn thành</span><b>9/9</b><small>100,096 steps/case, CPU</small></div>
+</div>
+<div class="callout danger"><b>Quyết định:</b> Round 08 không xác nhận Urgency hoặc Deficit là reward thứ tư đủ robust. T–J–S nên quay lại làm active anchor. Trước khi mở một reward sweep mới, cần xử lý/đo reproducibility vì cùng công thức + seed 1701 đã cho kết quả khác mạnh giữa Round 07 và Round 08.</div>
+</section>
+
+<h2>1. Round 08 đã làm gì?</h2>
+<p>Round 07 tìm được hai ứng viên có vẻ tốt ở seed 1701. Round 08 không tiếp tục thêm reward mới mà hỏi một câu đơn giản hơn: <b>“Hai ứng viên đó có còn tốt khi đổi seed hay chỉ là một nghiệm may mắn?”</b></p>
+<div class="card">
+<ul>
+<li><b>Baseline:</b> <code>R = 0.3333T + 0.3333J + 0.3333S</code>.</li>
+<li><b>Urgency:</b> <code>R = 0.25T + 0.20J + 0.20S + 0.35U</code>, trong đó U ưu tiên UE vừa chờ lâu vừa thiếu throughput.</li>
+<li><b>Deficit:</b> <code>R = 0.30T + 0.10J + 0.30S + 0.30D</code>, trong đó D ưu tiên UE có throughput thấp hơn mức tham chiếu/trung bình.</li>
+<li>Mỗi profile chạy seed <code>1701</code>, <code>2701</code>, <code>3701</code> → tổng cộng <b>9 case</b>.</li>
+<li>Mỗi case chạy <b>100,096 environment steps</b>, deterministic validation 5,000 slots, device CPU.</li>
+</ul>
+</div>
+
+<h2>2. Cách đọc kết quả</h2>
+<p><b>Stable</b> nghĩa là checkpoint cuối không starvation collapse và tail wait không chạm trần 5000. Một case có goodput rất cao nhưng starvation lớn vẫn là failure. Mean ± std của một profile cũng có thể gây hiểu nhầm khi một seed collapse, vì số 5000 kéo trung bình lên rất mạnh; vì thế ở Round 08 <b>tỷ lệ Stable quan trọng hơn mean KPI thô</b>.</p>
+<p><span class="top3"><b>Nền vàng / chữ đậm</b></span> = top 3 của KPI đó <b>chỉ trong các case Stable</b>.</p>
+
+<h2>3. Toàn bộ 9 case</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>Case</th><th>Profile</th><th>Seed</th><th>Reward</th><th>Status</th><th>Goodput</th><th>Jain</th><th>Starvation</th><th>P99</th><th>Max wait</th><th>Training → deterministic Jain</th></tr></thead>
+<tbody>
+    <tr>
+      <td><code>deficit_group_ts_seed1701</code></td>
+      <td>Deficit group T+S</td>
+      <td>1701</td>
+      <td><code>0.3T + 0.1J + 0.3S + 0.3D</code></td>
+      <td><span class="badge stable">Stable</span></td>
+      <td><strong class='top3'>97,543</strong></td>
+      <td>0.1380</td>
+      <td>0.00%</td>
+      <td>47</td>
+      <td>47</td>
+      <td>0.578 → 0.138</td>
+    </tr>
+
+    <tr>
+      <td><code>deficit_group_ts_seed2701</code></td>
+      <td>Deficit group T+S</td>
+      <td>2701</td>
+      <td><code>0.3T + 0.1J + 0.3S + 0.3D</code></td>
+      <td><span class="badge collapse">Full collapse</span></td>
+      <td>12,490</td>
+      <td>0.0400</td>
+      <td>94.67%</td>
+      <td>5,000</td>
+      <td>5,000</td>
+      <td>0.616 → 0.040</td>
+    </tr>
+
+    <tr>
+      <td><code>deficit_group_ts_seed3701</code></td>
+      <td>Deficit group T+S</td>
+      <td>3701</td>
+      <td><code>0.3T + 0.1J + 0.3S + 0.3D</code></td>
+      <td><span class="badge collapse">Full collapse</span></td>
+      <td>162,851</td>
+      <td>0.0929</td>
+      <td>55.83%</td>
+      <td>5,000</td>
+      <td>5,000</td>
+      <td>0.595 → 0.093</td>
+    </tr>
+
+    <tr>
+      <td><code>tjs_equal_seed1701</code></td>
+      <td>Baseline T–J–S</td>
+      <td>1701</td>
+      <td><code>0.3333T + 0.3333J + 0.3333S</code></td>
+      <td><span class="badge stable">Stable</span></td>
+      <td><strong class='top3'>96,199</strong></td>
+      <td><strong class='top3'>0.2934</strong></td>
+      <td>0.00%</td>
+      <td><strong class='top3'>44</strong></td>
+      <td><strong class='top3'>46</strong></td>
+      <td>0.588 → 0.293</td>
+    </tr>
+
+    <tr>
+      <td><code>tjs_equal_seed2701</code></td>
+      <td>Baseline T–J–S</td>
+      <td>2701</td>
+      <td><code>0.3333T + 0.3333J + 0.3333S</code></td>
+      <td><span class="badge collapse">Full collapse</span></td>
+      <td>9,429</td>
+      <td>0.0455</td>
+      <td>94.67%</td>
+      <td>5,000</td>
+      <td>5,000</td>
+      <td>0.608 → 0.046</td>
+    </tr>
+
+    <tr>
+      <td><code>tjs_equal_seed3701</code></td>
+      <td>Baseline T–J–S</td>
+      <td>3701</td>
+      <td><code>0.3333T + 0.3333J + 0.3333S</code></td>
+      <td><span class="badge stable">Stable</span></td>
+      <td>95,692</td>
+      <td><strong class='top3'>0.3173</strong></td>
+      <td>0.00%</td>
+      <td><strong class='top3'>42</strong></td>
+      <td><strong class='top3'>42</strong></td>
+      <td>0.583 → 0.317</td>
+    </tr>
+
+    <tr>
+      <td><code>urgency_hold_throughput_seed1701</code></td>
+      <td>Urgency hold-Throughput</td>
+      <td>1701</td>
+      <td><code>0.25T + 0.2J + 0.2S + 0.35U</code></td>
+      <td><span class="badge collapse">Full collapse</span></td>
+      <td>8,579</td>
+      <td>0.0471</td>
+      <td>94.67%</td>
+      <td>5,000</td>
+      <td>5,000</td>
+      <td>0.633 → 0.047</td>
+    </tr>
+
+    <tr>
+      <td><code>urgency_hold_throughput_seed2701</code></td>
+      <td>Urgency hold-Throughput</td>
+      <td>2701</td>
+      <td><code>0.25T + 0.2J + 0.2S + 0.35U</code></td>
+      <td><span class="badge collapse">Full collapse</span></td>
+      <td>9,593</td>
+      <td>0.0488</td>
+      <td>94.67%</td>
+      <td>5,000</td>
+      <td>5,000</td>
+      <td>0.622 → 0.049</td>
+    </tr>
+
+    <tr>
+      <td><code>urgency_hold_throughput_seed3701</code></td>
+      <td>Urgency hold-Throughput</td>
+      <td>3701</td>
+      <td><code>0.25T + 0.2J + 0.2S + 0.35U</code></td>
+      <td><span class="badge stable">Stable</span></td>
+      <td><strong class='top3'>96,279</strong></td>
+      <td><strong class='top3'>0.3689</strong></td>
+      <td>0.00%</td>
+      <td><strong class='top3'>40</strong></td>
+      <td><strong class='top3'>41</strong></td>
+      <td>0.593 → 0.369</td>
+    </tr></tbody>
+</table></div>
+
+<h2>4. Profile nào thực sự tốt?</h2>
+<h3>4.1 T–J–S equal-third: vẫn là anchor tốt nhất, nhưng chưa robust</h3>
+<p>Baseline Stable ở seed 1701 và 3701, collapse ở 2701. Vì vậy nó thắng về <b>độ ổn định tương đối (2/3)</b>, không phải vì mọi KPI đều cao nhất. Điều quan trọng là chính baseline cũng chưa đạt robustness đủ mạnh để coi reward đã “chốt”.</p>
+
+<h3>4.2 Urgency: có tiềm năng nhưng không được xác nhận đa seed</h3>
+<p>Seed 3701 của Urgency là case đẹp nhất Round 08: <b>Jain 0.3689, P99 40, max-wait 41, zero-starvation</b>. So với baseline cùng seed, goodput +588 bit/slot, Jain +0.0516, P99 giảm 2 slot. Nhưng Urgency collapse ở cả seed 1701 và 2701. Vì vậy <b>không được chọn làm active reward</b>; chỉ nên giữ như một research candidate để quay lại nếu sau này credit assignment/reproducibility được cải thiện.</p>
+
+<h3>4.3 Deficit: không tái hiện vai trò “delay candidate”</h3>
+<p>Deficit chỉ Stable ở seed 1701. Ngay trong seed đó, nó tăng goodput khoảng 1,345 bit/slot so với baseline nhưng Jain giảm từ 0.2934 xuống 0.1380, P99 tăng 44→47 và max-wait 46→47. Hai seed còn lại collapse. Vì vậy evidence Round 08 <b>không ủng hộ giữ Deficit làm ứng viên final</b>.</p>
+
+<h2>5. So sánh paired với baseline theo cùng seed</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>Candidate</th><th>Seed</th><th>Δ Goodput</th><th>Δ Jain</th><th>Δ Starvation</th><th>Δ P99</th><th>Δ Max wait</th></tr></thead>
+<tbody>
+    <tr><td>Urgency hold-Throughput</td><td>1701</td>
+    <td>-87,620</td>
+    <td>-0.2463</td>
+    <td>+94.67 pp</td>
+    <td>+4956</td>
+    <td>+4954</td></tr>
+
+    <tr><td>Urgency hold-Throughput</td><td>2701</td>
+    <td>+163</td>
+    <td>+0.0032</td>
+    <td>+0.00 pp</td>
+    <td>+0</td>
+    <td>+0</td></tr>
+
+    <tr><td>Urgency hold-Throughput</td><td>3701</td>
+    <td>+588</td>
+    <td>+0.0516</td>
+    <td>+0.00 pp</td>
+    <td>-2</td>
+    <td>-1</td></tr>
+
+    <tr><td>Deficit group T+S</td><td>1701</td>
+    <td>+1,345</td>
+    <td>-0.1553</td>
+    <td>+0.00 pp</td>
+    <td>+3</td>
+    <td>+1</td></tr>
+
+    <tr><td>Deficit group T+S</td><td>2701</td>
+    <td>+3,061</td>
+    <td>-0.0056</td>
+    <td>+0.00 pp</td>
+    <td>+0</td>
+    <td>+0</td></tr>
+
+    <tr><td>Deficit group T+S</td><td>3701</td>
+    <td>+67,160</td>
+    <td>-0.2244</td>
+    <td>+55.83 pp</td>
+    <td>+4958</td>
+    <td>+4958</td></tr></tbody></table></div>
+<p class="small">Dấu “+” không tự động là tốt: starvation/P99/max-wait tăng là xấu; goodput/Jain tăng là tốt.</p>
+
+<h2>6. Phát hiện quan trọng: same-seed chưa reproducible giữa Round 07 và 08</h2>
+<p>Hai candidate Round 08 dùng lại <b>cùng công thức và cùng seed 1701</b> của Round 07, nhưng kết quả thay đổi mạnh:</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Profile</th><th>Goodput R07→R08</th><th>Jain R07→R08</th><th>Starvation R07→R08</th><th>P99 R07→R08</th><th>Max wait R07→R08</th></tr></thead>
+<tbody>
+    <tr><td>Urgency hold-Throughput</td>
+    <td>97,877 → 8,579</td>
+    <td>0.3248 → 0.0471</td>
+    <td>0.00% → 94.67%</td>
+    <td>46 → 5000</td>
+    <td>48 → 5000</td>
+    </tr>
+
+    <tr><td>Deficit group T+S</td>
+    <td>92,634 → 97,543</td>
+    <td>0.2921 → 0.1380</td>
+    <td>0.00% → 0.00%</td>
+    <td>43 → 47</td>
+    <td>44 → 47</td>
+    </tr></tbody></table></div>
+<div class="callout">
+<b>Điểm cần hiểu đúng:</b> đây chưa chứng minh “seed không có tác dụng”. Command huấn luyện của hai vòng giống nhau ở các hyperparameter chính và <code>train_ppo.py</code> không thay đổi về thuật toán. Với Urgency, rollout ở update đầu gần như trùng nhưng các giá trị PPO update đã lệch rất nhỏ rồi quỹ đạo tách dần. Điều này cho thấy pipeline hiện tại <b>không bitwise reproducible giữa các phiên chạy</b>; một giả thuyết hợp lý là sai khác số học/runtime/CPU threading bị khuếch đại bởi dynamics của PPO. Cần kiểm tra trực tiếp trước khi claim nguyên nhân.
+</div>
+
+<h2>7. Khoảng cách stochastic training và deterministic validation vẫn rất lớn</h2>
+<p>Ví dụ các case collapse vẫn có Jain trung bình ở 32 update cuối khoảng 0.60–0.63 trong training stochastic, nhưng deterministic Jain cuối chỉ khoảng 0.04–0.05. Vì vậy kết luận từ Round 03 vẫn còn nguyên: <b>Beta sampling có thể tạo coverage trong training mà mean policy không học được rotation đủ tốt.</b></p>
+
+<h2>8. Chi tiết từng case</h2>
+
+    <details>
+      <summary><code>deficit_group_ts_seed1701</code> — <span class="badge stable">Stable</span></summary>
+      <div class="detail">
+        <p><b>Reward:</b> <code>0.3T + 0.1J + 0.3S + 0.3D</code></p>
+        <p><b>KPI cuối:</b> goodput 97,543, Jain 0.1380, 
+        starvation 0.00%, P99 47, max-wait 47.</p>
+        <p><b>Training → deterministic Jain:</b> 0.578 → 0.138
+        (gap 0.440).</p>
+        <p><b>Ý nghĩa:</b> Zero-starvation và goodput cao, nhưng Jain chỉ 0.1380 và P99 47; không tái hiện ưu thế delay/fairness của Round 07.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><code>deficit_group_ts_seed2701</code> — <span class="badge collapse">Full collapse</span></summary>
+      <div class="detail">
+        <p><b>Reward:</b> <code>0.3T + 0.1J + 0.3S + 0.3D</code></p>
+        <p><b>KPI cuối:</b> goodput 12,490, Jain 0.0400, 
+        starvation 94.67%, P99 5,000, max-wait 5,000.</p>
+        <p><b>Training → deterministic Jain:</b> 0.616 → 0.040
+        (gap 0.576).</p>
+        <p><b>Ý nghĩa:</b> Full collapse. Deficit không cứu được seed 2701.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><code>deficit_group_ts_seed3701</code> — <span class="badge collapse">Full collapse</span></summary>
+      <div class="detail">
+        <p><b>Reward:</b> <code>0.3T + 0.1J + 0.3S + 0.3D</code></p>
+        <p><b>KPI cuối:</b> goodput 162,851, Jain 0.0929, 
+        starvation 55.83%, P99 5,000, max-wait 5,000.</p>
+        <p><b>Training → deterministic Jain:</b> 0.595 → 0.093
+        (gap 0.502).</p>
+        <p><b>Ý nghĩa:</b> Goodput rất cao nhưng starvation 55.83% và tail wait chạm 5000. Đây là greedy/collapse, không phải nghiệm tốt.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><code>tjs_equal_seed1701</code> — <span class="badge stable">Stable</span></summary>
+      <div class="detail">
+        <p><b>Reward:</b> <code>0.3333T + 0.3333J + 0.3333S</code></p>
+        <p><b>KPI cuối:</b> goodput 96,199, Jain 0.2934, 
+        starvation 0.00%, P99 44, max-wait 46.</p>
+        <p><b>Training → deterministic Jain:</b> 0.588 → 0.293
+        (gap 0.294).</p>
+        <p><b>Ý nghĩa:</b> Baseline học được coverage; cuối run zero-starvation, Jain 0.2934. Đây là một nghiệm ổn định nhưng chưa phải fairness cao.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><code>tjs_equal_seed2701</code> — <span class="badge collapse">Full collapse</span></summary>
+      <div class="detail">
+        <p><b>Reward:</b> <code>0.3333T + 0.3333J + 0.3333S</code></p>
+        <p><b>KPI cuối:</b> goodput 9,429, Jain 0.0455, 
+        starvation 94.67%, P99 5,000, max-wait 5,000.</p>
+        <p><b>Training → deterministic Jain:</b> 0.608 → 0.046
+        (gap 0.562).</p>
+        <p><b>Ý nghĩa:</b> Collapse ngay từ sớm và không phục hồi. Điều này cho thấy ngay cả T–J–S equal-third cũng chưa robust với seed.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><code>tjs_equal_seed3701</code> — <span class="badge stable">Stable</span></summary>
+      <div class="detail">
+        <p><b>Reward:</b> <code>0.3333T + 0.3333J + 0.3333S</code></p>
+        <p><b>KPI cuối:</b> goodput 95,692, Jain 0.3173, 
+        starvation 0.00%, P99 42, max-wait 42.</p>
+        <p><b>Training → deterministic Jain:</b> 0.583 → 0.317
+        (gap 0.266).</p>
+        <p><b>Ý nghĩa:</b> Baseline ổn định tốt nhất: zero-starvation, Jain 0.3173 và tail delay thấp. Đây là bằng chứng T–J–S có thể hoạt động tốt khi training đi vào đúng basin.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><code>urgency_hold_throughput_seed1701</code> — <span class="badge collapse">Full collapse</span></summary>
+      <div class="detail">
+        <p><b>Reward:</b> <code>0.25T + 0.2J + 0.2S + 0.35U</code></p>
+        <p><b>KPI cuối:</b> goodput 8,579, Jain 0.0471, 
+        starvation 94.67%, P99 5,000, max-wait 5,000.</p>
+        <p><b>Training → deterministic Jain:</b> 0.633 → 0.047
+        (gap 0.586).</p>
+        <p><b>Ý nghĩa:</b> Trái hẳn Round 07: cùng công thức và seed 1701 nhưng lần này collapse. Vì vậy lợi ích Urgency ở Round 07 không tái lập được.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><code>urgency_hold_throughput_seed2701</code> — <span class="badge collapse">Full collapse</span></summary>
+      <div class="detail">
+        <p><b>Reward:</b> <code>0.25T + 0.2J + 0.2S + 0.35U</code></p>
+        <p><b>KPI cuối:</b> goodput 9,593, Jain 0.0488, 
+        starvation 94.67%, P99 5,000, max-wait 5,000.</p>
+        <p><b>Training → deterministic Jain:</b> 0.622 → 0.049
+        (gap 0.574).</p>
+        <p><b>Ý nghĩa:</b> Collapse giống baseline seed 2701. Urgency không cứu được seed khó này.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><code>urgency_hold_throughput_seed3701</code> — <span class="badge stable">Stable</span></summary>
+      <div class="detail">
+        <p><b>Reward:</b> <code>0.25T + 0.2J + 0.2S + 0.35U</code></p>
+        <p><b>KPI cuối:</b> goodput 96,279, Jain 0.3689, 
+        starvation 0.00%, P99 40, max-wait 41.</p>
+        <p><b>Training → deterministic Jain:</b> 0.593 → 0.369
+        (gap 0.224).</p>
+        <p><b>Ý nghĩa:</b> Case đẹp nhất về fairness/delay: Jain 0.3689, P99 40, max-wait 41 và zero-starvation. Nhưng chỉ 1/3 seed thành công nên chưa đủ để chọn làm reward final.</p>
+      </div>
+    </details>
+
+<h2>9. Quyết định reward sau Round 08</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>Reward/Profile</th><th>Evidence</th><th>Quyết định</th><th>Lý do</th></tr></thead>
+<tbody>
+<tr><td>T–J–S equal-third</td><td>2/3 Stable</td><td class="decision-keep">GIỮ active anchor</td><td>Ổn định nhất hiện tại, nhưng cần robustify vì vẫn collapse 1 seed.</td></tr>
+<tr><td>Urgency</td><td>1/3 Stable</td><td class="decision-hold">HẠ xuống research candidate</td><td>Có một nghiệm rất đẹp nhưng không lặp lại.</td></tr>
+<tr><td>Deficit</td><td>1/3 Stable</td><td class="decision-drop">TẠM LOẠI khỏi candidate final</td><td>Không tái hiện lợi ích delay và giảm fairness mạnh ở seed ổn định.</td></tr>
+<tr><td>PF utility</td><td>Round 07</td><td class="decision-drop">Ngoài active objective</td><td>Phụ thuộc anchor mạnh, không thay Jain đáng tin cậy.</td></tr>
+<tr><td>Low-throughput</td><td>Round 07</td><td class="decision-hold">Cần redesign trước khi dùng lại</td><td>Dead-zone khi P10 throughput = 0.</td></tr>
+</tbody></table></div>
+
+<h2>10. Ta nên làm gì tiếp?</h2>
+<div class="callout goodbox">
+<b>Không mở Round 09 reward sweep ngay.</b> Bước tiếp theo nên là một <b>reproducibility diagnostic nhỏ</b>:
+<ol>
+<li>Log Python, NumPy, PyTorch, BLAS/runtime, CPU model, thread count và deterministic flags vào mỗi run.</li>
+<li>Chạy lặp lại cùng một baseline <code>T–J–S seed1701</code> 2–3 lần trong cùng một Kaggle runtime, giữ nguyên mọi config.</li>
+<li>Nếu các repeat vẫn tách mạnh: khóa CPU thread/deterministic execution và kiểm tra RNG path.</li>
+<li>Nếu repeat trong cùng runtime trùng nhưng khác giữa session: chuẩn hóa runtime/version trước khi chạy các round so sánh.</li>
+<li>Sau khi reproducibility đủ kiểm soát, mới test vùng T–J–S lân cận để tìm anchor robust hơn; chưa thêm reward thứ năm.</li>
+</ol>
+</div>
+
+<h2>11. Claim có thể dùng trong khóa luận ở thời điểm này</h2>
+<p><b>Claim an toàn:</b> “Trong ba seed xác nhận của cấu hình hiện tại, việc thêm Urgency hoặc Deficit không tạo cải thiện ổn định so với baseline Throughput–Jain–Service. Baseline đạt trạng thái ổn định ở 2/3 seed, trong khi mỗi candidate chỉ đạt 1/3. Kết quả đồng thời cho thấy độ nhạy đáng kể của PPO đối với stochastic training dynamics và yêu cầu kiểm soát reproducibility trước khi tiếp tục lựa chọn reward cuối.”</p>
+<p class="small">Giới hạn: chỉ 3 seed, các seed đồng thời thay đổi training RNG/profile seed/validation seed; chưa tách riêng ảnh hưởng của initialization và static UE profile. Same-seed giữa các phiên chạy cũng chưa bitwise reproducible.</p>
+</main></body></html>

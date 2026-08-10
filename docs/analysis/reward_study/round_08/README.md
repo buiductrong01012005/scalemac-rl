@@ -1,19 +1,18 @@
 # Round 08 — Multi-seed confirmation
 
-Round 08 does not add another reward component. It confirms whether the two retained
-Round 07 candidates repeat their advantages across three common seeds.
+Round 08 compares three reward profiles across seeds 1701, 2701 and 3701:
 
-## Profiles
+1. T–J–S equal-third baseline.
+2. Urgency hold-Throughput.
+3. Deficit group T+S.
 
-1. `tjs_equal`: baseline `1/3 Throughput + 1/3 Jain + 1/3 Service`.
-2. `urgency_hold_throughput`: balanced candidate `0.25 T + 0.20 J + 0.20 S + 0.35 U`.
-3. `deficit_group_ts`: delay candidate `0.30 T + 0.10 J + 0.30 S + 0.30 D`.
+## Main result
 
-Each profile is run with seeds `1701`, `2701`, and `3701`, giving nine cases. For
-each case the training seed, static-profile seed, and validation seed are the same.
-The environment, PPO architecture, hyperparameters, step budget and deterministic
-validation protocol are otherwise unchanged.
+- Baseline T–J–S: 2/3 Stable.
+- Urgency: 1/3 Stable.
+- Deficit: 1/3 Stable.
+- No fourth reward is confirmed as robust.
+- Same-seed results between Round 07 and Round 08 are not bitwise reproducible; reproducibility diagnostics should precede another reward sweep.
 
-After training, open `multiseed_confirmation_analysis.html` first. The report also
-exports per-seed metrics, mean/std by profile, paired deltas, trajectory data, and a
-stability matrix.
+Open `multiseed_confirmation_analysis.html` for the reader-friendly report.
+`multiseed_confirmation_technical_appendix.html` preserves the generated technical analysis.

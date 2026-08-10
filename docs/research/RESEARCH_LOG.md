@@ -288,3 +288,14 @@ of baseline mean goodput; retain Deficit only as a delay-sensitive profile if ta
 improvements repeat and the goodput trade-off is acceptable. Otherwise return to
 equal-third T–J–S. PPO, Beta, architecture, reward definitions and coefficient
 micro-sweeps remain deferred.
+
+## Round 08 — multi-seed confirmation
+
+Round 08 completed 9/9 cases (3 profiles × 3 seeds). T–J–S equal-third was Stable in 2/3 seeds; Urgency and Deficit were each Stable in 1/3. The fourth-component candidates are therefore not confirmed as robust.
+
+A new reproducibility concern was identified: the Round-07 candidate formulas rerun with seed 1701 produced materially different outcomes in Round 08 despite matching core commands. This must be diagnosed before another reward sweep. The next experiment should first repeat an identical T–J–S configuration within a controlled runtime and record software/CPU/thread/determinism metadata.
+
+
+## Round 09 — reproducibility diagnostic
+
+Round 08 did not confirm a fourth reward component across seeds, so T–J–S equal-third is retained as the active reward anchor. Before Dynamic CQI, Round 09 runs three identical T–J–S seed-1701 repeats and records runtime/RNG/model fingerprints plus pairwise trajectory divergence. This separates reward selection from reproducibility diagnosis.

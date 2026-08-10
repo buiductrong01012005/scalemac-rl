@@ -27,6 +27,13 @@ from scalemac_rl.constraints import LagrangeController, ServiceConstraints, vali
 from scalemac_rl.models import SharedSetActorCritic
 from scalemac_rl.reporting import markdown_report_path, write_csv, write_markdown
 from scalemac_rl.rl_evaluation import evaluate_actor_critic
+from scalemac_rl.reproducibility import (
+    collect_runtime_fingerprint,
+    numpy_global_rng_sha256,
+    tensor_mapping_sha256,
+    torch_cpu_rng_sha256,
+    write_runtime_metadata,
+)
 from scalemac_rl.tradeoff import validation_tradeoff_metrics
 
 
@@ -721,6 +728,12 @@ def main() -> None:
     parser.add_argument("--log-output", type=Path, default=Path("artifacts/ppo_training.csv"))
     parser.add_argument("--validation-output", type=Path, default=Path("artifacts/ppo_validation.csv"))
     parser.add_argument(
+        "--runtime-metadata-output",
+        type=Path,
+        default=None,
+        help="optional JSON runtime/RNG/model fingerprint for reproducibility diagnostics",
+    )
+    parser.add_argument(
         "--checkpoint-manifest-output",
         type=Path,
         default=Path("artifacts/checkpoint_manifest.csv"),
@@ -838,6 +851,24 @@ def main() -> None:
         hidden_dim=args.hidden_dim,
         initial_concentration=args.beta_concentration_start,
     ).to(device)
+    if args.runtime_metadata_output is not None:
+        write_runtime_metadata(
+            args.runtime_metadata_output,
+            {
+                "runtime": collect_runtime_fingerprint(),
+                "run": {
+                    "seed": args.seed,
+                    "fixed_profile_seed": args.fixed_profile_seed,
+                    "validation_seeds": args.validation_seeds,
+                    "device": str(device),
+                },
+                "rng_after_seed": {
+                    "numpy": numpy_global_rng_sha256(),
+                    "torch_cpu": torch_cpu_rng_sha256(),
+                },
+                "initial_model_parameter_sha256": tensor_mapping_sha256(model.state_dict()),
+            },
+        )
     schedule_managed_concentration = (
         args.freeze_beta_concentration
         or abs(args.beta_concentration_end - args.beta_concentration_start) > 1e-12

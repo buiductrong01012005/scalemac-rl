@@ -1,0 +1,6 @@
+component_or_profile,round08_result,decision,why
+T–J–S equal-third,2/3 Stable,GIỮ làm active anchor,"Ổn định nhất trong ba profile, nhưng vẫn collapse ở seed 2701 nên chưa thể gọi là robust."
+Urgency hold-Throughput,1/3 Stable,HẠ xuống research candidate,"Seed 3701 rất tốt về Jain và delay, nhưng collapse ở 1701 và 2701; lợi ích không lặp lại."
+Deficit group T+S,1/3 Stable,TẠM LOẠI khỏi ứng viên final,"Không tái hiện lợi ích delay của Round 07; seed 1701 giảm Jain mạnh, hai seed còn lại collapse."
+PF utility,Không chạy lại Round 08,GIỮ ngoài active objective,Round 07 đã cho thấy phụ thuộc anchor mạnh và không thay Jain đáng tin cậy.
+Low-throughput,Không chạy lại Round 08,GIỮ ngoài active objective / cần redesign,Round 07 cho thấy dead-zone khi P10 throughput bằng 0.

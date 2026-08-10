@@ -11,6 +11,7 @@ from typing import Any
 
 from scalemac_rl.reward_analysis import build_incremental_reward_analysis
 from scalemac_rl.multiseed_analysis import build_multiseed_confirmation_analysis
+from scalemac_rl.reproducibility_analysis import build_reproducibility_analysis
 from scalemac_rl.reward_study import RewardStudyPlan, write_json
 
 
@@ -152,6 +153,8 @@ def _common_command(
         str(run_dir / "training.csv"),
         "--validation-output",
         str(run_dir / "validation.csv"),
+        "--runtime-metadata-output",
+        str(run_dir / "runtime_fingerprint.json"),
         "--checkpoint-manifest-output",
         str(run_dir / "checkpoint_manifest.csv"),
         "--report-dir",
@@ -357,6 +360,12 @@ def main() -> None:
         try:
             if plan.analysis.get("design") == "multiseed_confirmation":
                 analysis_path = build_multiseed_confirmation_analysis(
+                    plan=plan,
+                    round_dir=round_dir,
+                    output_path=Path(str(plan.analysis["output"])),
+                )
+            elif plan.analysis.get("design") == "reproducibility_repeat":
+                analysis_path = build_reproducibility_analysis(
                     plan=plan,
                     round_dir=round_dir,
                     output_path=Path(str(plan.analysis["output"])),

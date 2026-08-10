@@ -105,3 +105,20 @@ acceptable. If neither condition is met, equal-third T–J–S remains the activ
 
 **Deferred:** new reward components, coefficient micro-sweeps, PPO tuning, Beta
 concentration tuning, architecture changes, and dataset/Pareto work.
+
+## Decision after Round 08
+
+- Keep T–J–S equal-third as the active reward anchor.
+- Do not promote Urgency to the active objective; retain it only as a research candidate.
+- Remove Deficit from the current final-candidate set.
+- Do not reopen PF utility or Low-throughput coefficient tuning yet.
+- Do not start a new reward sweep until reproducibility is measured under a controlled runtime.
+
+
+## Decision after Round 08 / before Dynamic CQI
+
+- Freeze the active reward to Throughput + Jain + Service.
+- Do not add a fourth reward component in the next phase.
+- Run Round 09 reproducibility diagnostic before changing the system model.
+- If within-session repeatability passes, proceed to Dynamic CQI.
+- If it fails, run deterministic-lock diagnostics before Dynamic CQI.

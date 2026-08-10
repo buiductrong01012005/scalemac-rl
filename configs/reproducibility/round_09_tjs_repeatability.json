@@ -1,0 +1,67 @@
+{
+  "study_id": "tjs_reproducibility_diagnostic",
+  "round_id": "round_09_reproducibility_diagnostic",
+  "description": "Three identical repeats of the selected equal-third Throughput-Jain-Service reward under seed 1701. This round changes no reward, PPO, architecture, environment or network model. It measures within-runtime repeatability before Dynamic CQI is introduced.",
+  "common": {
+    "environment_steps": 100096,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_seeds": [1701],
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "seed": 1701,
+    "profile_seed": 1701,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 0.000025,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64
+  },
+  "analysis": {
+    "design": "reproducibility_repeat",
+    "title": "Round 09 — T–J–S reproducibility diagnostic",
+    "output": "docs/analysis/reproducibility/round_09/reproducibility_analysis.html",
+    "markdown_output": "docs/analysis/reproducibility/round_09/reproducibility_summary.md",
+    "repeat_metrics_output": "docs/analysis/reproducibility/round_09/repeat_metrics.csv",
+    "pairwise_output": "docs/analysis/reproducibility/round_09/pairwise_repeatability.csv",
+    "summary_output": "docs/analysis/reproducibility/round_09/repeatability_summary.csv",
+    "runtime_output": "docs/analysis/reproducibility/round_09/runtime_fingerprints.csv",
+    "decision_rule": "If all three repeats have identical seeded RNG/model initialization and the non-timing training trajectory plus final model parameters are identical, within-session reproducibility passes. Otherwise run a deterministic-lock diagnostic before changing the network model."
+  },
+  "cases": [
+    {
+      "id": "tjs_seed1701_repeat01",
+      "label": "T–J–S seed 1701 — repeat 01",
+      "hypothesis": "An identical rerun in the same runtime should reproduce the same initialized model, training trajectory and deterministic validation if the current CPU pipeline is repeatable.",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.3333333333333333, "fairness": 0.3333333333333333, "service": 0.3333333333333333},
+      "common_overrides": {"seed": 1701, "profile_seed": 1701, "validation_seeds": [1701], "repeat_index": 1}
+    },
+    {
+      "id": "tjs_seed1701_repeat02",
+      "label": "T–J–S seed 1701 — repeat 02",
+      "hypothesis": "An identical rerun in the same runtime should reproduce the same initialized model, training trajectory and deterministic validation if the current CPU pipeline is repeatable.",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.3333333333333333, "fairness": 0.3333333333333333, "service": 0.3333333333333333},
+      "common_overrides": {"seed": 1701, "profile_seed": 1701, "validation_seeds": [1701], "repeat_index": 2}
+    },
+    {
+      "id": "tjs_seed1701_repeat03",
+      "label": "T–J–S seed 1701 — repeat 03",
+      "hypothesis": "An identical rerun in the same runtime should reproduce the same initialized model, training trajectory and deterministic validation if the current CPU pipeline is repeatable.",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.3333333333333333, "fairness": 0.3333333333333333, "service": 0.3333333333333333},
+      "common_overrides": {"seed": 1701, "profile_seed": 1701, "validation_seeds": [1701], "repeat_index": 3}
+    }
+  ]
+}

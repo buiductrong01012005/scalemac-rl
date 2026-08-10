@@ -1,0 +1,13 @@
+metric,rank,case_id,profile,seed,value
+Goodput cao nhất,1,deficit_group_ts_seed1701,deficit_group_ts,1701,97543.47235818177
+Goodput cao nhất,2,urgency_hold_throughput_seed3701,urgency_hold_throughput,3701,96279.49055576172
+Goodput cao nhất,3,tjs_equal_seed1701,tjs_equal,1701,96198.62787722932
+Jain cao nhất,1,urgency_hold_throughput_seed3701,urgency_hold_throughput,3701,0.3689416764217927
+Jain cao nhất,2,tjs_equal_seed3701,tjs_equal,3701,0.3173037918153832
+Jain cao nhất,3,tjs_equal_seed1701,tjs_equal,1701,0.2933800285544802
+P99 thấp nhất,1,urgency_hold_throughput_seed3701,urgency_hold_throughput,3701,40.0
+P99 thấp nhất,2,tjs_equal_seed3701,tjs_equal,3701,42.0
+P99 thấp nhất,3,tjs_equal_seed1701,tjs_equal,1701,44.0
+Max-wait thấp nhất,1,urgency_hold_throughput_seed3701,urgency_hold_throughput,3701,41.0
+Max-wait thấp nhất,2,tjs_equal_seed3701,tjs_equal,3701,42.0
+Max-wait thấp nhất,3,tjs_equal_seed1701,tjs_equal,1701,46.0
