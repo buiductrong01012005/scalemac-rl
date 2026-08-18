@@ -12,6 +12,7 @@ from typing import Any
 from scalemac_rl.reward_analysis import build_incremental_reward_analysis
 from scalemac_rl.multiseed_analysis import build_multiseed_confirmation_analysis
 from scalemac_rl.reproducibility_analysis import build_reproducibility_analysis
+from scalemac_rl.channel_analysis import build_dynamic_cqi_analysis
 from scalemac_rl.reward_study import RewardStudyPlan, write_json
 
 
@@ -88,6 +89,16 @@ def _common_command(
         str(seed),
         "--fixed-profile-seed",
         str(profile_seed),
+        "--cqi-mode",
+        str(common.get("cqi_mode", "static")),
+        "--cqi-temporal-correlation",
+        str(float(common.get("cqi_temporal_correlation", 0.97))),
+        "--cqi-innovation-std",
+        str(float(common.get("cqi_innovation_std", 0.35))),
+        "--cqi-update-interval-slots",
+        str(int(common.get("cqi_update_interval_slots", 1))),
+        "--cqi-max-delta-per-update",
+        str(int(common.get("cqi_max_delta_per_update", 1))),
         "--hidden-dim",
         str(int(common.get("hidden_dim", 64))),
         "--lr",
@@ -325,6 +336,13 @@ def main() -> None:
                     "top_k": 64,
                     "num_prbs": 273,
                 },
+                "channel": {
+                    "cqi_mode": str(effective_common.get("cqi_mode", "static")),
+                    "cqi_temporal_correlation": float(effective_common.get("cqi_temporal_correlation", 0.97)),
+                    "cqi_innovation_std": float(effective_common.get("cqi_innovation_std", 0.35)),
+                    "cqi_update_interval_slots": int(effective_common.get("cqi_update_interval_slots", 1)),
+                    "cqi_max_delta_per_update": int(effective_common.get("cqi_max_delta_per_update", 1)),
+                },
                 "command": command,
             },
         )
@@ -366,6 +384,12 @@ def main() -> None:
                 )
             elif plan.analysis.get("design") == "reproducibility_repeat":
                 analysis_path = build_reproducibility_analysis(
+                    plan=plan,
+                    round_dir=round_dir,
+                    output_path=Path(str(plan.analysis["output"])),
+                )
+            elif plan.analysis.get("design") == "dynamic_cqi_screen":
+                analysis_path = build_dynamic_cqi_analysis(
                     plan=plan,
                     round_dir=round_dir,
                     output_path=Path(str(plan.analysis["output"])),

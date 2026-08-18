@@ -9,3 +9,6 @@ artifacts/
 *.zip
 *.*zip
 docs/reports/*.md
+
+# Local diagnostic/runtime logs
+*.log

@@ -27,10 +27,20 @@ class ScaleMacConfig:
     safety_reserve_ues: int = 0
     safety_wait_threshold_ratio: float = 0.80
 
-    # Optional upper-bound experiment mode: keep one static CQI/demand profile
-    # across episode resets while HARQ randomness continues to evolve.
+    # Optional controlled-profile mode: keep the same heterogeneous CQI anchor,
+    # demand profile, and speed metadata across episode resets. Dynamic-CQI modes
+    # may still evolve around the frozen anchor after reset.
     freeze_static_profiles: bool = False
     static_profile_seed: int | None = None
+
+    # CQI dynamics. ``static`` preserves the pre-v0.11 behavior exactly.
+    # ``correlated`` evolves a latent CQI state around each UE's heterogeneous
+    # anchor using a mean-reverting AR(1)-style update, then quantizes to 1..15.
+    cqi_mode: str = "static"
+    cqi_temporal_correlation: float = 0.97
+    cqi_innovation_std: float = 0.35
+    cqi_update_interval_slots: int = 1
+    cqi_max_delta_per_update: int = 1
 
     # Dense tail-delay shaping starts before the hard P99 constraint is crossed.
     deadline_target_slots: float = 50.0
@@ -119,6 +129,16 @@ class ScaleMacConfig:
             raise ValueError("safety_wait_threshold_ratio must be non-negative")
         if self.static_profile_seed is not None and self.static_profile_seed < 0:
             raise ValueError("static_profile_seed must be non-negative when provided")
+        if self.cqi_mode not in {"static", "correlated"}:
+            raise ValueError("cqi_mode must be static or correlated")
+        if not 0.0 <= self.cqi_temporal_correlation < 1.0:
+            raise ValueError("cqi_temporal_correlation must be in [0, 1)")
+        if self.cqi_innovation_std < 0.0:
+            raise ValueError("cqi_innovation_std must be non-negative")
+        if self.cqi_update_interval_slots <= 0:
+            raise ValueError("cqi_update_interval_slots must be positive")
+        if self.cqi_max_delta_per_update <= 0:
+            raise ValueError("cqi_max_delta_per_update must be positive")
         if self.deadline_target_slots <= 0.0:
             raise ValueError("deadline_target_slots must be positive")
         if self.reference_deadline_target_slots <= 0.0:

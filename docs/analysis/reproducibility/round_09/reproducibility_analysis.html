@@ -1,10 +1,63 @@
-<!doctype html><html lang='vi'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>Round 09 — T–J–S reproducibility diagnostic</title><style>body{font:16px/1.6 system-ui;max-width:1100px;margin:auto;padding:28px;color:#172033}h1,h2{line-height:1.2}.box{padding:16px 20px;border:1px solid #d8dee9;border-radius:12px;margin:16px 0}.good{border-left:6px solid #16833a}.bad{border-left:6px solid #c43a3a}table{width:100%;border-collapse:collapse}th,td{border:1px solid #d8dee9;padding:8px;text-align:left}th{background:#f3f6fa}code{background:#f2f4f7;padding:2px 5px;border-radius:4px}</style></head><body>
-<h1>Round 09 — T–J–S reproducibility diagnostic</h1>
-<div class='box good'><h2>Kết luận</h2><p><b>Ba lần chạy cùng seed/config cho trajectory và model cuối giống hệt nhau trong cùng runtime: within-session reproducibility đạt yêu cầu.</b></p><p>Có thể chuyển sang Dynamic CQI; vẫn nên lưu runtime fingerprint cho các round tiếp theo.</p></div>
-<h2>Ta đang kiểm tra cái gì?</h2><p>Ba case dùng đúng cùng reward <code>R = 1/3 T + 1/3 J + 1/3 S</code>, seed/profile seed/validation seed = 1701 và cùng PPO config. Khác biệt duy nhất là thư mục output/repeat id. Mục tiêu là đo xem cùng một thí nghiệm có cho cùng trajectory hay không.</p>
-<h2>Kết quả từng repeat</h2><table><thead><tr><th>Repeat</th><th>Status</th><th>Goodput</th><th>Jain</th><th>Starvation</th><th>P99</th><th>Max wait</th><th>Model hash</th></tr></thead><tbody><tr><td><code>tjs_seed1701_repeat01</code></td><td>Stable</td><td>97,411</td><td>0.2676</td><td>0.00%</td><td>47</td><td>48</td><td><code>5afb70bea60c…</code></td></tr><tr><td><code>tjs_seed1701_repeat02</code></td><td>Stable</td><td>97,411</td><td>0.2676</td><td>0.00%</td><td>47</td><td>48</td><td><code>5afb70bea60c…</code></td></tr><tr><td><code>tjs_seed1701_repeat03</code></td><td>Stable</td><td>97,411</td><td>0.2676</td><td>0.00%</td><td>47</td><td>48</td><td><code>5afb70bea60c…</code></td></tr></tbody></table>
-<h2>Trajectory bắt đầu lệch ở đâu?</h2><p>So với repeat đầu. Các cột timing bị loại khỏi phép so sánh vì tốc độ chạy không phải tín hiệu học.</p><table><thead><tr><th>Repeat</th><th>Lệch exact ở row</th><th>Lệch &gt;1e-12</th><th>Lệch &gt;1e-9</th><th>Initial model giống?</th><th>Final model giống?</th></tr></thead><tbody><tr><td><code>tjs_seed1701_repeat02</code></td><td>none</td><td>none</td><td>none</td><td>Có</td><td>Có</td></tr><tr><td><code>tjs_seed1701_repeat03</code></td><td>none</td><td>none</td><td>none</td><td>Có</td><td>Có</td></tr></tbody></table>
-<h2>Cách ra quyết định</h2><ul><li>Nếu cả ba repeat giống trajectory/model cuối: within-session reproducibility đạt, chuyển sang Dynamic CQI.</li><li>Nếu initial model/RNG giống nhưng trajectory tách: nghi ngờ numerical/thread nondeterminism; chạy deterministic-lock.</li><li>Nếu initial model/RNG đã khác: sửa seeding/RNG path trước.</li><li>Không tune reward thêm trong diagnostic này.</li></ul>
-<p><b>All stable:</b> True. <b>Initial hash giống:</b> True. <b>Final hash giống:</b> True. <b>Within-session reproducible:</b> True.</p>
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ScaleMAC-RL Round 09 — Reproducibility Diagnostic</title>
+<style>
+body{font-family:Segoe UI,Arial,sans-serif;max-width:1100px;margin:auto;padding:28px;color:#1f2937;line-height:1.6}
+h1,h2{color:#12355b} .box{border:1px solid #d8dee8;border-radius:12px;padding:18px;margin:16px 0;background:#fafcff}
+.good{border-left:5px solid #1b8a5a} .warn{border-left:5px solid #d97706} .key{font-weight:700;background:#fff2a8;padding:2px 5px;border-radius:4px}
+table{border-collapse:collapse;width:100%;margin:14px 0} th,td{border:1px solid #d8dee8;padding:8px} th{background:#eef3f8;text-align:left}
+code{background:#f1f5f9;padding:2px 5px;border-radius:4px} .muted{color:#64748b}
+</style></head><body>
+<h1>Round 09 — Reproducibility Diagnostic</h1>
+<p>Mục tiêu của round này rất đơn giản: chạy <b>cùng một T–J–S, cùng seed 1701, cùng máy và cùng runtime</b> ba lần để xem PPO có tự lệch quỹ đạo hay không.</p>
+
+<div class="box good">
+<h2 style="margin-top:0">Kết luận chính</h2>
+<p><span class="key">3/3 repeat trùng tuyệt đối.</span> Cả ba có cùng 391 dòng training, cùng 7 validation point, cùng RNG hash, initial model hash, final model hash và mọi KPI cuối.</p>
+<p>Vì vậy, trong runtime local hiện tại, pipeline CPU là <b>reproducible</b>. Vấn đề khác biệt Round 07/08 không phải do “chạy lại cùng điều kiện trên cùng runtime thì PPO tự random khác”.</p>
+</div>
+
+<h2>1. Cấu hình đã khóa</h2>
+<ul>
+<li>Reward: <code>R = 1/3 Throughput + 1/3 Jain + 1/3 Service</code>.</li>
+<li>Seed / profile seed / validation seed: <code>1701</code>.</li>
+<li>100,096 environment steps; PPO/config/environment/architecture không đổi.</li>
+<li>Local runtime: Windows, Python 3.11.15, NumPy 2.4.6, PyTorch 2.13.0+cpu, 12 Torch threads.</li>
+</ul>
+
+<h2>2. Kết quả cuối của cả ba repeat</h2>
+<table><thead><tr><th>Repeat</th><th>Goodput</th><th>Jain</th><th>Starvation</th><th>P99</th><th>Max wait</th></tr></thead>
+<tbody>
+<tr><td>01</td><td><b>97,411</b></td><td><b>0.26764</b></td><td><b>0%</b></td><td><b>47</b></td><td><b>48</b></td></tr>
+<tr><td>02</td><td><b>97,411</b></td><td><b>0.26764</b></td><td><b>0%</b></td><td><b>47</b></td><td><b>48</b></td></tr>
+<tr><td>03</td><td><b>97,411</b></td><td><b>0.26764</b></td><td><b>0%</b></td><td><b>47</b></td><td><b>48</b></td></tr>
+</tbody></table>
+
+<h2>3. Vì sao lúc chạy m thấy max-wait lên ~150?</h2>
+<div class="box warn">
+<p>Đó là <b>transient trong giai đoạn đầu training</b>, không phải KPI cuối. Training từng có <code>mean_max_wait_slots ≈ 177.5</code> ở step 19,712 và một batch có <code>max_wait_slots = 266</code>. Nhưng deterministic validation sau 32,768 steps đã xuống max-wait 55 và cuối run là 48.</p>
+<p>Điều này nghĩa là policy ban đầu phục vụ UE rất chưa đều, rồi T–J–S học được rotation/coverage và kéo tail wait xuống.</p>
+</div>
+
+<h2>4. Validation trajectory của repeat 01</h2>
+<table><thead><tr><th>Steps</th><th>Goodput</th><th>Jain</th><th>Starvation</th><th>P99</th><th>Max wait</th></tr></thead><tbody>
+<tr><td>16,384</td><td>120,468</td><td>0.1791</td><td>82.42%</td><td>5000</td><td>5000</td></tr><tr><td>32,768</td><td>101,360</td><td>0.2343</td><td>0.00%</td><td>51</td><td>55</td></tr><tr><td>49,152</td><td>98,834</td><td>0.2731</td><td>0.00%</td><td>48</td><td>50</td></tr><tr><td>65,536</td><td>97,014</td><td>0.2823</td><td>0.00%</td><td>46</td><td>47</td></tr><tr><td>81,920</td><td>98,421</td><td>0.2212</td><td>0.00%</td><td>48</td><td>50</td></tr><tr><td>98,304</td><td>96,788</td><td>0.2775</td><td>0.00%</td><td>47</td><td>48</td></tr><tr><td>100,096</td><td>97,411</td><td>0.2676</td><td>0.00%</td><td>47</td><td>48</td></tr>
+</tbody></table>
+<p class="muted">Repeat 02 và 03 trùng chính xác bảng này.</p>
+
+<h2>5. Vậy Round 08 khác vì đâu?</h2>
+<p>Command T–J–S seed 1701 của Round 08 và Round 09 giống nhau ở toàn bộ option huấn luyện sau khi bỏ đường dẫn output. Tuy nhiên Round 08 chạy trên Kaggle, còn Round 09 chạy local với runtime đã fingerprint ở trên.</p>
+<p>Ở ngay PPO update đầu, các environment/rollout metric chính giống nhau nhưng <code>policy_loss</code>, <code>value_loss</code>, <code>entropy</code> và <code>approx_kl</code> đã lệch rất nhỏ. Sau đó PPO khuếch đại sai khác và đi sang quỹ đạo khác. Vì Round 08 chưa log runtime fingerprint đầy đủ, <b>chưa thể chỉ tên chính xác backend/library nào gây sai khác</b>.</p>
+
+<h2>6. Quyết định nghiên cứu</h2>
+<ul>
+<li><b>Chốt T–J–S</b> làm reward nền; không mở lại reward thứ tư.</li>
+<li>Không cần deterministic-lock thêm cho máy local hiện tại: ba repeat đã bitwise/numeric identical.</li>
+<li>Từ giờ mọi round nên log runtime fingerprint và so sánh trong <b>cùng runtime</b> khi cần paired evidence.</li>
+<li>Seed sensitivity ở Round 08 vẫn là vấn đề robustness/generalization, nhưng đó là vấn đề khác với reproducibility.</li>
+<li><b>Bước tiếp theo: Dynamic CQI</b>, giữ nguyên reward/PPO và chỉ làm channel thay đổi theo thời gian.</li>
+</ul>
+
+<h2>7. Claim có thể dùng trong khóa luận</h2>
+<p>“Trong một runtime CPU cố định, ba lần huấn luyện PPO với cùng cấu hình T–J–S và seed 1701 tạo ra trajectory, model hash và KPI cuối giống hệt nhau. Do đó, sai khác quan sát giữa các round trước không được quy cho stochastic rerun trong cùng runtime; thay vào đó, evidence chỉ ra sự nhạy cảm với môi trường thực thi và/hoặc backend số học giữa các phiên chạy khác nhau.”</p>
 </body></html>

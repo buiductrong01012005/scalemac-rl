@@ -5,7 +5,10 @@ Thư mục này ghi lại **quá trình khám phá môi trường**, các giả 
 ## Tài liệu chính
 
 - [`RESEARCH_LOG.md`](RESEARCH_LOG.md): nhật ký theo phiên bản và các phát hiện đã xác nhận.
-- [`ENVIRONMENT_AND_MDP.md`](ENVIRONMENT_AND_MDP.md): state, observation, action, projector, reward và KPI.
+- [`ENVIRONMENT_AND_MDP.md`](ENVIRONMENT_AND_MDP.md): snapshot baseline trước Dynamic CQI.
+- [`DYNAMIC_CQI_DESIGN.md`](DYNAMIC_CQI_DESIGN.md): thiết kế Dynamic CQI v0.11.0, tham số FLEX, metric và phạm vi Round 10.
+- [`DYNAMIC_CQI_VARIABLE_REFERENCE.csv`](DYNAMIC_CQI_VARIABLE_REFERENCE.csv): bảng tra nhanh các biến Dynamic CQI và scope Link Adaptation tương lai.
+- [`NETWORK_VARIABLE_REFERENCE.csv`](NETWORK_VARIABLE_REFERENCE.csv): bảng tra cứu nhanh các biến mạng và khả năng cấu hình.
 - [`FULL_CONTROL_PPO_PLAN.md`](FULL_CONTROL_PPO_PLAN.md): kế hoạch PPO điều khiển toàn bộ scheduler, không rule và không candidate filter.
 - [`EXPERIMENT_PROTOCOL.md`](EXPERIMENT_PROTOCOL.md): cách train, chọn checkpoint và đánh giá tái lập.
 - [`REPORT_TEMPLATE.md`](REPORT_TEMPLATE.md): khung báo cáo nghiên cứu sau mỗi vòng chạy.

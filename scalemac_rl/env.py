@@ -101,12 +101,19 @@ class ScaleMacDownlinkEnv:
         self.config = config or ScaleMacConfig()
         self.config.validate()
         self.rng = np.random.default_rng(self.config.seed)
+        # Keep channel innovations on a separate RNG stream so enabling Dynamic
+        # CQI does not change the HARQ success/failure random sequence.
+        self.channel_rng = np.random.default_rng(self.config.seed + 1_000_003)
 
         n = self.config.num_ues
         self.slot = 0
         self.cqi = np.zeros(n, dtype=np.int16)
+        self.cqi_anchor = np.zeros(n, dtype=np.float64)
+        self._cqi_latent = np.zeros(n, dtype=np.float64)
         self.demand_factor = np.ones(n, dtype=np.float32)
-        self.speed_mps = np.zeros(n, dtype=np.float32)  # metadata only in static-CQI MVP
+        # Still metadata only in v0.11. Dynamic CQI is intentionally controlled
+        # by explicit channel parameters rather than mobility at this stage.
+        self.speed_mps = np.zeros(n, dtype=np.float32)
         self.queue_bytes = np.zeros(n, dtype=np.float64)
         self.queue_target_bytes = np.zeros(n, dtype=np.float64)
         self.ewma_throughput_bits = np.zeros(n, dtype=np.float64)
@@ -125,6 +132,8 @@ class ScaleMacDownlinkEnv:
         self._frozen_speed_mps: np.ndarray | None = None
         self._previous_cumulative_fairness = 0.0
         self._previous_pf_utility = 0.0
+        self._last_cqi_mean_abs_change = 0.0
+        self._last_cqi_changed_fraction = 0.0
 
         self.reset(seed=self.config.seed)
 
@@ -139,6 +148,7 @@ class ScaleMacDownlinkEnv:
     def reset(self, *, seed: int | None = None) -> tuple[np.ndarray, dict[str, Any]]:
         if seed is not None:
             self.rng = np.random.default_rng(seed)
+            self.channel_rng = np.random.default_rng(seed + 1_000_003)
 
         self.slot = 0
         if self.config.freeze_static_profiles:
@@ -168,6 +178,13 @@ class ScaleMacDownlinkEnv:
                 replace=True,
             )
 
+        # Preserve each UE's heterogeneous channel class as a long-term anchor.
+        # Dynamic CQI starts exactly at that anchor on every reset.
+        self.cqi_anchor = self.cqi.astype(np.float64).copy()
+        self._cqi_latent = self.cqi_anchor.copy()
+        self._last_cqi_mean_abs_change = 0.0
+        self._last_cqi_changed_fraction = 0.0
+
         self.queue_target_bytes = (
             self.config.full_buffer_base_bytes * self.demand_factor
         ).astype(np.float64)
@@ -190,6 +207,9 @@ class ScaleMacDownlinkEnv:
             "num_active_ues": self.config.num_ues,
             "num_prbs": self.config.num_prbs,
             "max_selected_ues": self.config.max_selected_ues,
+            "cqi_mode": self.config.cqi_mode,
+            "mean_cqi": float(np.mean(self.cqi)),
+            "std_cqi": float(np.std(self.cqi)),
         }
         return observation, info
 
@@ -213,11 +233,55 @@ class ScaleMacDownlinkEnv:
         metrics.update(reward_breakdown)
 
         self.slot += 1
+        cqi_diagnostics = self._advance_cqi()
+        metrics.update(cqi_diagnostics)
         terminated = self.slot >= self.config.episode_slots
         truncated = False
         observation = self._observation()
         info = {"slot": self.slot, **metrics}
         return observation, reward, terminated, truncated, info
+
+    def _advance_cqi(self) -> dict[str, float | str]:
+        """Advance the per-UE CQI process for the next scheduling slot.
+
+        ``static`` is an exact no-op. ``correlated`` uses a mean-reverting
+        latent process around the reset-time heterogeneous CQI anchor. The
+        latent state is clipped to the valid CQI range and the quantized CQI
+        is additionally rate-limited, preventing independent slot-to-slot jumps.
+        """
+        previous = self.cqi.copy()
+        if (
+            self.config.cqi_mode == "correlated"
+            and self.slot % self.config.cqi_update_interval_slots == 0
+        ):
+            rho = self.config.cqi_temporal_correlation
+            innovation = self.channel_rng.normal(
+                loc=0.0,
+                scale=self.config.cqi_innovation_std,
+                size=self.config.num_ues,
+            )
+            self._cqi_latent = (
+                self.cqi_anchor
+                + rho * (self._cqi_latent - self.cqi_anchor)
+                + innovation
+            )
+            self._cqi_latent = np.clip(self._cqi_latent, 1.0, 15.0)
+            proposed = np.rint(self._cqi_latent).astype(np.int16)
+            max_delta = int(self.config.cqi_max_delta_per_update)
+            lower = np.maximum(previous.astype(np.int32) - max_delta, 1)
+            upper = np.minimum(previous.astype(np.int32) + max_delta, 15)
+            self.cqi = np.clip(proposed.astype(np.int32), lower, upper).astype(np.int16)
+
+        absolute_change = np.abs(self.cqi.astype(np.int32) - previous.astype(np.int32))
+        self._last_cqi_mean_abs_change = float(np.mean(absolute_change))
+        self._last_cqi_changed_fraction = float(np.mean(absolute_change > 0))
+        return {
+            "cqi_mode": self.config.cqi_mode,
+            "mean_cqi": float(np.mean(self.cqi)),
+            "std_cqi": float(np.std(self.cqi)),
+            "cqi_mean_abs_change": self._last_cqi_mean_abs_change,
+            "cqi_changed_fraction": self._last_cqi_changed_fraction,
+        }
 
     def _sample_cqi_profiles(self, rng: np.random.Generator) -> np.ndarray:
         n = self.config.num_ues

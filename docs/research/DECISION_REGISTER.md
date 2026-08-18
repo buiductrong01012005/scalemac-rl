@@ -122,3 +122,18 @@ concentration tuning, architecture changes, and dataset/Pareto work.
 - Run Round 09 reproducibility diagnostic before changing the system model.
 - If within-session repeatability passes, proceed to Dynamic CQI.
 - If it fails, run deterministic-lock diagnostics before Dynamic CQI.
+
+## Decision after Round 09
+
+- Active reward is frozen to Throughput + Jain + Service.
+- Fourth-component reward exploration is closed for the current system model.
+- Local CPU repeatability is accepted: 3/3 identical repeats.
+- Future comparative rounds must record runtime fingerprints.
+- Next environment-development phase: Dynamic CQI.
+
+## Decision — first post-reward realism step
+
+- Lock the active reward to equal-third Throughput + Jain + Service.
+- Introduce Dynamic CQI before CQI-dependent BLER, traffic arrivals, QoS, or mobility.
+- Preserve a static CQI case as the direct baseline in every first channel-realism comparison.
+- Do not add MCS or transmission-layer actions in the same round; those belong to later Joint Link Adaptation + Scheduler work.

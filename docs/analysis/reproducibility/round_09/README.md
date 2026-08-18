@@ -1,24 +1,14 @@
-# Round 09 — T–J–S reproducibility diagnostic
+# Round 09 — Reproducibility Diagnostic
 
-This experiment deliberately does **not** change the reward or system model.
+Mục tiêu: kiểm tra ba lần chạy hoàn toàn giống nhau của T–J–S seed 1701 trong cùng local runtime.
 
-It runs the selected reward three times with the same configuration:
+Kết quả: 3/3 repeat trùng tuyệt đối về training trajectory, RNG/model hashes và final deterministic KPI.
 
-`R = (1/3) Throughput + (1/3) Jain + (1/3) Service`
+Kết luận:
+- local CPU pipeline hiện tại reproducible;
+- không cần tiếp tục deterministic-lock diagnostic;
+- khác biệt giữa các round trước cần được xem như cross-runtime/session sensitivity;
+- T–J–S được giữ làm reward nền;
+- bước tiếp theo là Dynamic CQI.
 
-All repeats use training seed, static-profile seed and validation seed `1701`.
-
-The goal is to answer one question before Dynamic CQI is introduced:
-
-> If ScaleMAC-RL is launched repeatedly inside the same runtime with identical inputs, does it learn the same trajectory and final deterministic policy?
-
-Generated after the run:
-
-- `reproducibility_analysis.html`
-- `reproducibility_summary.md`
-- `repeat_metrics.csv`
-- `pairwise_repeatability.csv`
-- `repeatability_summary.csv`
-- `runtime_fingerprints.csv`
-
-If repeatability passes, the next development phase is Dynamic CQI. If it fails, the next diagnostic locks CPU threading and deterministic algorithms before any system-model change.
+Mở `reproducibility_analysis.html` để đọc bản dễ hiểu.

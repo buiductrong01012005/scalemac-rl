@@ -299,3 +299,23 @@ A new reproducibility concern was identified: the Round-07 candidate formulas re
 ## Round 09 — reproducibility diagnostic
 
 Round 08 did not confirm a fourth reward component across seeds, so T–J–S equal-third is retained as the active reward anchor. Before Dynamic CQI, Round 09 runs three identical T–J–S seed-1701 repeats and records runtime/RNG/model fingerprints plus pairwise trajectory divergence. This separates reward selection from reproducibility diagnosis.
+
+## v0.10.1 — local execution handoff
+
+Round 09 remains unchanged scientifically. A local PowerShell runner was added so the controlled reproducibility diagnostic can be executed/resumed on the user's machine without creating a Kaggle notebook. Kaggle notebooks should only be prepared when explicitly requested.
+
+## Round 09 — reproducibility diagnostic
+
+Three identical local CPU runs of T–J–S seed 1701 reproduced exactly. Training CSV numeric columns, RNG hashes, initial/final model hashes and deterministic validation KPI were identical across all repeats. The local runtime was Windows / Python 3.11.15 / NumPy 2.4.6 / PyTorch 2.13.0+cpu.
+
+This separates two issues that were previously conflated:
+1. repeatability within an identical runtime: confirmed;
+2. robustness across seeds/profiles and sensitivity across runtimes: still open.
+
+Decision: freeze T–J–S as the active reward and move to Dynamic CQI rather than further reward-component exploration.
+
+## v0.11.0 — Dynamic CQI begins
+
+Reward exploration is closed with T–J–S as the active objective. The first realism increase is a controlled temporally correlated CQI process around each UE's heterogeneous anchor. Static mode remains available as an exact baseline. Round 10 compares static, slow-correlated, and faster-correlated CQI without changing PPO, architecture, traffic, BLER, or HARQ control.
+
+Future Joint Link Adaptation + Scheduler work is expected to extend the action space from UE/PRB decisions toward UE + PRB + MCS + transmission-layer selection after MIMO/CSI support is introduced.

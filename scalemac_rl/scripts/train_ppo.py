@@ -413,6 +413,11 @@ def _validate(
     constraints: ServiceConstraints,
     freeze_static_profiles: bool,
     fixed_profile_seed: int | None,
+    cqi_mode: str,
+    cqi_temporal_correlation: float,
+    cqi_innovation_std: float,
+    cqi_update_interval_slots: int,
+    cqi_max_delta_per_update: int,
     deadline_risk_start_ratio: float,
     deadline_risk_penalty_weight: float,
     reference_deadline_target_slots: float,
@@ -447,6 +452,11 @@ def _validate(
         safety_wait_threshold_ratio=long_wait_threshold,
         freeze_static_profiles=freeze_static_profiles,
         static_profile_seed=fixed_profile_seed,
+        cqi_mode=cqi_mode,
+        cqi_temporal_correlation=cqi_temporal_correlation,
+        cqi_innovation_std=cqi_innovation_std,
+        cqi_update_interval_slots=cqi_update_interval_slots,
+        cqi_max_delta_per_update=cqi_max_delta_per_update,
         deadline_target_slots=constraints.max_p99_wait_slots,
         reference_deadline_target_slots=reference_deadline_target_slots,
         deadline_risk_start_ratio=deadline_risk_start_ratio,
@@ -514,6 +524,14 @@ def _validate(
         ),
         "mean_goodput_bits_per_slot": mean(
             float(row["mean_goodput_bits_per_slot"]) for row in rows
+        ),
+        "mean_cqi": mean(float(row["mean_cqi"]) for row in rows),
+        "mean_cqi_std": mean(float(row["mean_cqi_std"]) for row in rows),
+        "mean_cqi_abs_change_per_slot": mean(
+            float(row["mean_cqi_abs_change_per_slot"]) for row in rows
+        ),
+        "mean_cqi_changed_fraction": mean(
+            float(row["mean_cqi_changed_fraction"]) for row in rows
         ),
         "mean_throughput_score": mean(
             float(row["mean_throughput_score"]) for row in rows
@@ -605,6 +623,11 @@ def main() -> None:
     parser.add_argument("--long-wait-threshold", type=float, default=0.8)
     parser.add_argument("--freeze-static-profiles", action="store_true")
     parser.add_argument("--fixed-profile-seed", type=int, default=None)
+    parser.add_argument("--cqi-mode", choices=["static", "correlated"], default="static")
+    parser.add_argument("--cqi-temporal-correlation", type=float, default=0.97)
+    parser.add_argument("--cqi-innovation-std", type=float, default=0.35)
+    parser.add_argument("--cqi-update-interval-slots", type=int, default=1)
+    parser.add_argument("--cqi-max-delta-per-update", type=int, default=1)
     parser.add_argument("--single-seed-upper-bound", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--deadline-risk-start-ratio", type=float, default=0.60)
     parser.add_argument("--deadline-risk-penalty-weight", type=float, default=0.15)
@@ -762,6 +785,14 @@ def main() -> None:
         parser.error("validation slots and repeats must be positive")
     if args.fixed_profile_seed is not None and args.fixed_profile_seed < 0:
         parser.error("fixed-profile-seed must be non-negative")
+    if not 0.0 <= args.cqi_temporal_correlation < 1.0:
+        parser.error("cqi-temporal-correlation must be in [0, 1)")
+    if args.cqi_innovation_std < 0.0:
+        parser.error("cqi-innovation-std must be non-negative")
+    if args.cqi_update_interval_slots <= 0:
+        parser.error("cqi-update-interval-slots must be positive")
+    if args.cqi_max_delta_per_update <= 0:
+        parser.error("cqi-max-delta-per-update must be positive")
     if not 0.0 <= args.deadline_risk_start_ratio < 1.0:
         parser.error("deadline-risk-start-ratio must be in [0, 1)")
     if args.deadline_risk_penalty_weight < 0.0:
@@ -861,6 +892,11 @@ def main() -> None:
                     "fixed_profile_seed": args.fixed_profile_seed,
                     "validation_seeds": args.validation_seeds,
                     "device": str(device),
+                    "cqi_mode": args.cqi_mode,
+                    "cqi_temporal_correlation": args.cqi_temporal_correlation,
+                    "cqi_innovation_std": args.cqi_innovation_std,
+                    "cqi_update_interval_slots": args.cqi_update_interval_slots,
+                    "cqi_max_delta_per_update": args.cqi_max_delta_per_update,
                 },
                 "rng_after_seed": {
                     "numpy": numpy_global_rng_sha256(),
@@ -972,6 +1008,11 @@ def main() -> None:
             safety_wait_threshold_ratio=args.long_wait_threshold,
             freeze_static_profiles=args.freeze_static_profiles or args.single_seed_upper_bound,
             static_profile_seed=profile_seed,
+            cqi_mode=args.cqi_mode,
+            cqi_temporal_correlation=args.cqi_temporal_correlation,
+            cqi_innovation_std=args.cqi_innovation_std,
+            cqi_update_interval_slots=args.cqi_update_interval_slots,
+            cqi_max_delta_per_update=args.cqi_max_delta_per_update,
             deadline_target_slots=initial_p99_limit,
             reference_deadline_target_slots=args.max_p99_wait_slots,
             deadline_risk_start_ratio=args.deadline_risk_start_ratio,
@@ -1084,7 +1125,8 @@ def main() -> None:
                     "service", "starvation", "scheduling_starvation",
                     "p99_wait", "max_wait", "near_deadline_rate",
                     "starvation_excess", "wait_excess", "fairness_excess",
-                    "max_wait_excess", "goodput", "candidate_coverage",
+                    "max_wait_excess", "goodput", "mean_cqi", "std_cqi",
+                    "cqi_mean_abs_change", "cqi_changed_fraction", "candidate_coverage",
                     "harq_retention", "long_wait_retention", "long_wait_missed",
                     "safety_selected", "oldest_selected", "scheduler_selected",
                     "scheduler_fraction", "ppo_selected", "rule_selected",
@@ -1184,6 +1226,10 @@ def main() -> None:
                         "fairness_excess": fairness_excess,
                         "max_wait_excess": max_wait_excess,
                         "goodput": float(info["cell_goodput_bits"]),
+                        "mean_cqi": float(info["mean_cqi"]),
+                        "std_cqi": float(info["std_cqi"]),
+                        "cqi_mean_abs_change": float(info["cqi_mean_abs_change"]),
+                        "cqi_changed_fraction": float(info["cqi_changed_fraction"]),
                         "candidate_coverage": diagnostics.candidate_coverage,
                         "harq_retention": diagnostics.harq_retention_rate,
                         "long_wait_retention": diagnostics.long_wait_retention_rate,
@@ -1307,6 +1353,10 @@ def main() -> None:
                 "mean_population_wait_risk": mean(metric_window["population_wait_risk"]),
                 "mean_tail_mean_wait_slots": mean(metric_window["tail_mean_wait"]),
                 "mean_goodput_bits_per_slot": mean(metric_window["goodput"]),
+                "mean_cqi": mean(metric_window["mean_cqi"]),
+                "mean_cqi_std": mean(metric_window["std_cqi"]),
+                "mean_cqi_abs_change_per_slot": mean(metric_window["cqi_mean_abs_change"]),
+                "mean_cqi_changed_fraction": mean(metric_window["cqi_changed_fraction"]),
                 "mean_throughput_score": mean(metric_window["throughput"]),
                 "mean_fairness_score": mean(metric_window["fairness"]),
                 "mean_jain_fairness": mean(metric_window["jain_fairness"]),
@@ -1413,6 +1463,11 @@ def main() -> None:
                     constraints=active_constraints,
                     freeze_static_profiles=config.freeze_static_profiles,
                     fixed_profile_seed=config.static_profile_seed,
+                    cqi_mode=config.cqi_mode,
+                    cqi_temporal_correlation=config.cqi_temporal_correlation,
+                    cqi_innovation_std=config.cqi_innovation_std,
+                    cqi_update_interval_slots=config.cqi_update_interval_slots,
+                    cqi_max_delta_per_update=config.cqi_max_delta_per_update,
                     deadline_risk_start_ratio=args.deadline_risk_start_ratio,
                     deadline_risk_penalty_weight=args.deadline_risk_penalty_weight,
                     reference_deadline_target_slots=args.max_p99_wait_slots,

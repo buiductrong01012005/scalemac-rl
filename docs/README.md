@@ -6,7 +6,7 @@ ScaleMAC-RL is a fast DRL training surrogate for **single-cell 5G NR downlink MA
 
 - 1 gNB / 1 cell;
 - 1,200 active, full-buffer UEs;
-- heterogeneous static CQI and demand profiles;
+- heterogeneous CQI anchors with static or temporally correlated CQI modes;
 - 273 schedulable PRBs per slot;
 - at most 64 selected UEs per slot;
 - one downlink queue per UE and no QoS flow;
@@ -14,6 +14,11 @@ ScaleMAC-RL is a fast DRL training surrogate for **single-cell 5G NR downlink MA
 - required output: selected Top-K UEs and PRBs per selected UE;
 - KPIs: throughput, fairness/service, delay/starvation, candidate coverage, and inference latency.
 
+
+
+## What v0.11.0 adds
+
+v0.11.0 starts the post-reward channel-realism phase. It keeps the selected equal-third Throughput–Jain–Service reward and adds a controlled temporally correlated Dynamic CQI process. Round 10 compares static, slow-correlated, and faster-correlated CQI while PPO, architecture, traffic, BLER and HARQ control remain fixed. Dynamic CQI metrics are exported to training/validation CSV and a dedicated HTML/Markdown comparison. Link Adaptation is intentionally deferred: BLER is still CQI-independent and the agent does not yet choose MCS or transmission layers.
 
 
 ## What v0.9.8 adds

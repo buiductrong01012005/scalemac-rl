@@ -23,3 +23,16 @@ def test_deadline_shaping_configuration_is_validated() -> None:
     cfg = ScaleMacConfig(deadline_risk_start_ratio=1.0)
     with pytest.raises(ValueError):
         cfg.validate()
+
+
+def test_dynamic_cqi_configuration_is_validated() -> None:
+    with pytest.raises(ValueError):
+        ScaleMacConfig(cqi_mode="random_walk").validate()
+    with pytest.raises(ValueError):
+        ScaleMacConfig(cqi_temporal_correlation=1.0).validate()
+    with pytest.raises(ValueError):
+        ScaleMacConfig(cqi_innovation_std=-0.1).validate()
+    with pytest.raises(ValueError):
+        ScaleMacConfig(cqi_update_interval_slots=0).validate()
+    with pytest.raises(ValueError):
+        ScaleMacConfig(cqi_max_delta_per_update=0).validate()
