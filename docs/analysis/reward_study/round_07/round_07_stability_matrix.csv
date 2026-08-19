@@ -1,5 +1,0 @@
-focus_component,component_label,equal_quarter,new_component_heavy,hold_throughput,hold_fairness,hold_service,group_throughput_fairness,group_throughput_service,group_fairness_service
-deficit_service,Throughput-deficit service,Borderline,Full collapse,Full collapse,Stable,Full collapse,Stable,Stable,Stable
-pf_utility,PF utility,Full collapse,Full collapse,Late collapse,Stable,Full collapse,Full collapse,Full collapse,Late collapse
-low_throughput,Low-throughput percentile,Full collapse,Full collapse,Borderline,Full collapse,Full collapse,Stable,Full collapse,Full collapse
-urgency_service,Urgency service,Late collapse,Stable,Stable,Borderline,Stable,Full collapse,Late collapse,Stable

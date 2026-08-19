@@ -1,3 +1,0 @@
-case,throughput_weight,jain_weight,service_weight,goodput_bits_per_slot,jain_fairness,max_starvation_rate,worst_p99_wait_slots,max_wait_slots,mean_service_score,first_zero_starvation_step
-reference_t0375_j0625,0.375,0.625,0.0,98600.29456302032,0.2692223689637986,0.0,49.0,50.0,0.9245001936197916,65536
-equal_thirds,0.3333333333333333,0.3333333333333333,0.3333333333333333,97411.018965477,0.2676396421121176,0.0,47.0,48.0,0.92623543828125,32768

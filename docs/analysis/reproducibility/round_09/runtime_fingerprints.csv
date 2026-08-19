@@ -1,4 +1,0 @@
-case_id,python,numpy,torch,cpu_model,torch_num_threads,torch_num_interop_threads,deterministic_algorithms,OMP_NUM_THREADS,MKL_NUM_THREADS,OPENBLAS_NUM_THREADS
-tjs_seed1701_repeat01,3.11.15,2.4.6,2.13.0+cpu,"Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",12,12,False,,,
-tjs_seed1701_repeat02,3.11.15,2.4.6,2.13.0+cpu,"Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",12,12,False,,,
-tjs_seed1701_repeat03,3.11.15,2.4.6,2.13.0+cpu,"Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",12,12,False,,,

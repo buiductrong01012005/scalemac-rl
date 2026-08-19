@@ -1,4 +1,0 @@
-case_id,label,cqi_mode,cqi_temporal_correlation,cqi_innovation_std,cqi_max_delta_per_update,goodput_bits_per_slot,jain_fairness,starvation_rate,p99_wait_slots,max_wait_slots,mean_cqi,mean_cqi_std,mean_cqi_abs_change_per_slot,mean_cqi_changed_fraction
-static_cqi_baseline,Static CQI baseline,static,0.97,0.0,1,97411.018965477,0.26763964211211766,0.0,47.0,48.0,7.9775,4.1437093386642525,0.0,0.0
-slow_dynamic_cqi,Slow correlated Dynamic CQI,correlated,0.97,0.35,1,110637.28815153046,0.1813288031142535,0.0375,101.0,113.0,7.986287833333333,4.053123587258909,0.2754916666666667,0.2754916666666667
-fast_dynamic_cqi,Faster correlated Dynamic CQI,correlated,0.8,0.9,3,15112.756430462647,0.04370454180765599,0.9466666666666667,5000.0,5000.0,7.983201,4.113872863634392,0.716706,0.588525

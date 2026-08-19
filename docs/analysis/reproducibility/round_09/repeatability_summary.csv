@@ -1,6 +1,0 @@
-metric,label,mean,std,min,max,range
-mean_goodput_bits_per_slot,Goodput,97411.018965477,0.0,97411.018965477,97411.018965477,0.0
-final_jain_fairness,Jain,0.26763964211211766,0.0,0.26763964211211766,0.26763964211211766,0.0
-max_starvation_rate,Starvation,0.0,0.0,0.0,0.0,0.0
-max_p99_wait_slots,P99 wait,47.0,0.0,47.0,47.0,0.0
-max_wait_slots,Max wait,48.0,0.0,48.0,48.0,0.0

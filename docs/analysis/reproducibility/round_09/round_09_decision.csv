@@ -1,7 +1,0 @@
-item,decision,evidence
-T–J–S,GIỮ active reward,3/3 identical local repeats; stable final KPI
-Urgency,Không active,Round 08 không robust đa seed
-Deficit,Tạm loại final candidate,Round 08 không tái hiện lợi ích
-Reproducibility local,ĐẠT,3/3 trajectories and hashes identical
-Cross-runtime reproducibility,Chưa khóa,Round 08 Kaggle runtime fingerprint chưa đầy đủ
-Next phase,Dynamic CQI,Giữ reward/PPO; chỉ thay channel dynamics
