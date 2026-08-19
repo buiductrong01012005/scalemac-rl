@@ -1,6 +1,6 @@
 # ScaleMAC-RL — Môi trường, MDP và biến mạng hiện tại
 
-> **Snapshot hành vi:** v0.10.2, trước khi triển khai Dynamic CQI.  
+> **Snapshot hành vi:** v0.12.0, sau Dynamic CQI và CSI reporting.  
 > **Mục đích:** mô tả đúng môi trường đang dùng để train/evaluate nhánh PPO full-control, phân biệt rõ biến nào đang cố định, biến nào có thể cấu hình, biến nào thay đổi theo slot và phần nào của 5G NR vẫn chưa được mô phỏng.
 
 ## 0. Cách đọc tài liệu này
@@ -77,7 +77,8 @@ Trong protocol hiện tại:
 - không candidate filtering;
 - không forced HARQ;
 - traffic full-buffer;
-- CQI heterogeneous nhưng **static**;
+- true CQI heterogeneous và có thể **temporally correlated**;
+- scheduler có thể nhìn `reported_cqi` bị periodic/delay/noise thay vì true CQI;
 - reward active đã chốt là Throughput + Jain + Service.
 
 ---
@@ -97,7 +98,7 @@ Trong protocol hiện tại:
 | Traffic | Full-buffer | **LOCKED** | Queue được refill ngay sau mỗi slot. |
 | `full_buffer_base_bytes` | 1,000,000 B | **FLEX-CONFIG** | Queue target cơ sở trước khi nhân demand factor. |
 | `packet_size_bytes` | 1500 B | **FLEX-CONFIG nhưng hiện chưa operational** | Có trong config nhưng hiện không dùng trong công thức delivery/queue transition. |
-| CQI | 1–15 | **STATIC PROFILE** | Sample khi reset/profile creation, không đổi theo slot. |
+| True CQI | 1–15 | **DYNAMIC / FLEX-PLAN** | Static hoặc correlated; Slow Dynamic CQI là realism profile chính. |
 | CQI mix | 30% low / 40% medium / 30% high | **FLEX-CONFIG** | 360 / 480 / 360 UE khi `num_ues=1200`. |
 | Demand mix | 40% low / 40% medium / 20% high | **FLEX-CONFIG** | 480 / 480 / 240 UE. |
 | Demand factors | 0.5 / 1.0 / 2.0 | **LOCKED trong code** | Scale queue target và throughput normalization. |
@@ -108,7 +109,8 @@ Trong protocol hiện tại:
 | P99 target | 50 slot | **LOCKED protocol** | KPI/constraint reference hiện tại. |
 | Max-wait target | 60 slot | **LOCKED protocol** | KPI/constraint reference hiện tại. |
 | `ewma_alpha` | 0.02 | **FLEX-CONFIG** | Memory của short-term throughput. |
-| `speed_mps` | {0, 1.5, 5, 15, 25} | **META-ONLY** | Hiện không làm CQI thay đổi. |
+| CSI report | perfect / periodic | **FLEX-PLAN** | Scheduler có thể nhận CQI theo period/delay/error. |
+| `speed_mps` | {0, 1.5, 5, 15, 25} | **META-ONLY** | Hiện chưa điều khiển CQI. |
 | Reward active | 1/3 T + 1/3 Jain + 1/3 Service | **LOCKED** | Không có reward thứ tư trong protocol hiện tại. |
 
 ---
@@ -129,19 +131,9 @@ Trong từng nhóm, CQI được sample đều bằng integer RNG rồi shuffle 
 
 ### 3.2 CQI có thay đổi theo thời gian không?
 
-**Không.** Đây là điểm quan trọng nhất của environment hiện tại.
+**Có thể.** Từ v0.11, `cqi_mode=correlated` dùng một quá trình mean-reverting quanh heterogeneous CQI anchor. Slow Dynamic CQI (`rho=0.97`, `sigma=0.35`, max ΔCQI=1) là realism profile chính; static vẫn giữ làm regression baseline và faster Dynamic CQI là stress test.
 
-- Trong một episode: CQI giữ nguyên tuyệt đối.
-- Với Round 09: `freeze_static_profiles=True` và `fixed_profile_seed=1701`, vì vậy cùng profile CQI/demand còn được tái sử dụng qua các reset.
-- `speed_mps` tồn tại nhưng chỉ là metadata; mobility hiện chưa đi vào channel transition.
-
-Vì vậy state transition hiện tại **không có**:
-
-```text
-position/speed → path loss → SINR → CQI(t)
-```
-
-Dynamic CQI chính là lớp realism tiếp theo mà ta chưa implement.
+`speed_mps` vẫn chỉ là metadata; mobility chưa trực tiếp sinh path loss/SINR/CQI.
 
 ### 3.3 CQI ảnh hưởng tới transmission hiện tại ra sao?
 
@@ -200,9 +192,9 @@ SINR → CQI → MCS → TBS → BLER
 | Tỷ lệ low/medium/high | **FLEX-CONFIG** | Sửa `ScaleMacConfig` hoặc expose qua runner. |
 | CQI range 1–5 / 6–10 / 11–15 | Hard-coded | Sửa code sampling. |
 | Efficiency table 15 mức | Hard-coded | Sửa code `_CQI_EFFICIENCY`. |
-| CQI của từng UE trong episode | Static | Cần code change để Dynamic CQI. |
-| CQI correlation theo thời gian | Chưa có | Cần channel transition model. |
-| CQI reporting delay/error | Chưa có | Cần model mới. |
+| True CQI của từng UE | Static hoặc correlated | Đã FLEX bằng `cqi_mode` và các tham số rho/sigma/update/max-delta. |
+| CQI correlation theo thời gian | Đã có | `cqi_temporal_correlation` + innovation std. |
+| CQI reporting period/delay/error | Đã có | `csi_report_*`; scheduler thấy `reported_cqi`. |
 | Mobility → CQI | Chưa có | Cần position/channel model. |
 
 ---
@@ -329,7 +321,7 @@ PPO không nhận raw state nguyên xi. Mỗi UE được chuyển thành vector
 
 | # | Feature | Công thức / range hiện tại | Ý nghĩa |
 |---:|---|---|---|
-| 0 | `cqi` | `CQI / 15` | Channel quality normalized. |
+| 0 | `cqi` | `reported_CQI / 15` | Scheduler-visible channel quality; có thể stale/noisy. |
 | 1 | `queue` | `queue_bytes / max_queue`, clip [0,1] | Backlog relative; trong full-buffer gần như static. |
 | 2 | `demand` | `demand_factor / 2` | Demand class normalized. |
 | 3 | `ewma_throughput` | EWMA / max EWMA trong cell | Relative recent throughput. |
@@ -339,7 +331,7 @@ PPO không nhận raw state nguyên xi. Mỗi UE được chuyển thành vector
 | 7 | `eligible` | 0/1 | Hiện luôn 1 cho mọi UE. |
 | 8 | `throughput_deficit` | deficit so với cell mean sau demand normalization | UE đang thiếu throughput tương đối. |
 | 9 | `service_deficit` | wait / expected service cycle, clip [0,2] | UE chờ lâu so với cycle hợp lý. |
-| 10 | `cqi_rank` | tie-aware percentile [0,1] | Vị trí CQI của UE trong population. |
+| 10 | `cqi_rank` | tie-aware percentile [0,1] | Rank của **reported CQI**, không nhất thiết true CQI. |
 | 11 | `throughput_deficit_rank` | `1 - percentile(normalized throughput)` | Cao = thuộc nhóm underserved. |
 | 12 | `wait_rank` | percentile wait | Cao = chờ lâu hơn nhiều UE khác. |
 | 13 | `throughput_to_mean` | normalized throughput / cell mean / 2 | Throughput relative-to-cell. |
@@ -687,3 +679,15 @@ static CQI + fixed efficiency + constant BLER
 ```
 
 Do đó bước hợp lý tiếp theo không phải thêm reward nữa, mà là tăng realism có kiểm soát bắt đầu từ **Dynamic CQI**, sau đó mới tới CQI→MCS→BLER, traffic arrivals, HARQ timing, QoS và mobility.
+
+
+## 12. True CQI và Reported CSI từ v0.12.0
+
+Environment tách hai khái niệm:
+
+- `cqi`: true instantaneous CQI, dùng cho capacity/attempted bits và oracle;
+- `reported_cqi`: CQI mà scheduler nhìn thấy trong observation.
+
+Ở `csi_report_mode=perfect`, hai giá trị trùng nhau mỗi slot. Ở `periodic`, measurement được tạo theo `csi_report_period_slots`, tới scheduler sau `csi_report_delay_slots`, và có thể thêm `csi_report_error_std` trước khi quantize/clip về 1..15.
+
+Điều này làm environment có partial observability theo thời gian mà **không tăng observation width**: feature CQI và CQI-rank cũ chỉ chuyển sang dùng reported CSI. Đây là nền để sau này đánh giá PPO feed-forward so với RPPO.

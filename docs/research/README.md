@@ -5,8 +5,9 @@ Thư mục này ghi lại **quá trình khám phá môi trường**, các giả 
 ## Tài liệu chính
 
 - [`RESEARCH_LOG.md`](RESEARCH_LOG.md): nhật ký theo phiên bản và các phát hiện đã xác nhận.
-- [`ENVIRONMENT_AND_MDP.md`](ENVIRONMENT_AND_MDP.md): snapshot baseline trước Dynamic CQI.
+- [`ENVIRONMENT_AND_MDP.md`](ENVIRONMENT_AND_MDP.md): snapshot environment/MDP hiện tại, gồm Dynamic CQI và CSI reporting.
 - [`DYNAMIC_CQI_DESIGN.md`](DYNAMIC_CQI_DESIGN.md): thiết kế Dynamic CQI v0.11.0, tham số FLEX, metric và phạm vi Round 10.
+- [`CSI_REPORTING_DESIGN.md`](CSI_REPORTING_DESIGN.md): thiết kế true CQI → reported CSI, period/delay/error và phạm vi Round 11.
 - [`DYNAMIC_CQI_VARIABLE_REFERENCE.csv`](DYNAMIC_CQI_VARIABLE_REFERENCE.csv): bảng tra nhanh các biến Dynamic CQI và scope Link Adaptation tương lai.
 - [`NETWORK_VARIABLE_REFERENCE.csv`](NETWORK_VARIABLE_REFERENCE.csv): bảng tra cứu nhanh các biến mạng và khả năng cấu hình.
 - [`FULL_CONTROL_PPO_PLAN.md`](FULL_CONTROL_PPO_PLAN.md): kế hoạch PPO điều khiển toàn bộ scheduler, không rule và không candidate filter.

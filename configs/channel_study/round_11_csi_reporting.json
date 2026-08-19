@@ -1,0 +1,96 @@
+{
+  "study_id": "csi_reporting_screen",
+  "round_id": "round_11_csi_reporting",
+  "description": "Controlled CSI-reporting realism screen on the selected Slow Dynamic CQI profile. True CQI dynamics, TJS reward, PPO, traffic, HARQ abstraction and scheduler control remain fixed; only the scheduler-visible CQI reporting path changes.",
+  "common": {
+    "environment_steps": 100096,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_seeds": [1701],
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "seed": 1701,
+    "profile_seed": 1701,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 0.000025,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64,
+    "cqi_mode": "correlated",
+    "cqi_temporal_correlation": 0.97,
+    "cqi_innovation_std": 0.35,
+    "cqi_update_interval_slots": 1,
+    "cqi_max_delta_per_update": 1
+  },
+  "analysis": {
+    "design": "csi_reporting_screen",
+    "title": "Round 11 — CSI reporting screen",
+    "output": "docs/analysis/channel_study/round_11/csi_reporting_analysis.html",
+    "markdown_output": "docs/analysis/channel_study/round_11/csi_reporting_summary.md",
+    "metrics_output": "docs/analysis/channel_study/round_11/csi_reporting_metrics.csv"
+  },
+  "cases": [
+    {
+      "id": "perfect_csi_baseline",
+      "label": "Perfect instantaneous CSI baseline",
+      "hypothesis": "The Slow Dynamic CQI result should be reproduced when the scheduler observes the current true CQI every slot.",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.3333333333333333, "fairness": 0.3333333333333333, "service": 0.3333333333333333},
+      "common_overrides": {
+        "csi_report_mode": "perfect",
+        "csi_report_period_slots": 1,
+        "csi_report_delay_slots": 0,
+        "csi_report_error_std": 0.0
+      }
+    },
+    {
+      "id": "periodic_csi_only",
+      "label": "Periodic CSI only",
+      "hypothesis": "Reporting every four slots should introduce observation staleness while isolating reporting periodicity from transport delay and measurement noise.",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.3333333333333333, "fairness": 0.3333333333333333, "service": 0.3333333333333333},
+      "common_overrides": {
+        "csi_report_mode": "periodic",
+        "csi_report_period_slots": 4,
+        "csi_report_delay_slots": 0,
+        "csi_report_error_std": 0.0
+      }
+    },
+    {
+      "id": "periodic_delayed_csi",
+      "label": "Periodic + delayed CSI",
+      "hypothesis": "Adding two slots of report delay should increase CSI age beyond periodicity alone and expose the cost of acting on stale channel information.",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.3333333333333333, "fairness": 0.3333333333333333, "service": 0.3333333333333333},
+      "common_overrides": {
+        "csi_report_mode": "periodic",
+        "csi_report_period_slots": 4,
+        "csi_report_delay_slots": 2,
+        "csi_report_error_std": 0.0
+      }
+    },
+    {
+      "id": "periodic_delayed_noisy_csi",
+      "label": "Periodic + delayed + noisy CSI",
+      "hypothesis": "Measurement noise on top of periodicity and delay should create the strongest partial-observation stress while leaving the physical channel trajectory unchanged.",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.3333333333333333, "fairness": 0.3333333333333333, "service": 0.3333333333333333},
+      "common_overrides": {
+        "csi_report_mode": "periodic",
+        "csi_report_period_slots": 4,
+        "csi_report_delay_slots": 2,
+        "csi_report_error_std": 0.75
+      }
+    }
+  ]
+}

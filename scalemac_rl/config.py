@@ -42,6 +42,23 @@ class ScaleMacConfig:
     cqi_update_interval_slots: int = 1
     cqi_max_delta_per_update: int = 1
 
+    # CSI reporting abstraction. ``perfect`` exposes the current true CQI to the
+    # scheduler and exactly preserves the v0.11 observation path. ``periodic``
+    # samples the true CQI on a configurable period, optionally delays delivery
+    # and adds measurement error in CQI-index units. The PHY still uses true CQI.
+    csi_report_mode: str = "perfect"
+    csi_report_period_slots: int = 1
+    csi_report_delay_slots: int = 0
+    csi_report_error_std: float = 0.0
+
+    # Link-adaptation abstraction. ``legacy_fixed_bler`` preserves the pre-v0.13
+    # PHY path: true-CQI efficiency with a fixed BLER. ``cqi_mcs_bler`` maps the
+    # scheduler-visible reported CQI to 3GPP-inspired PDSCH MCS Table 1 and makes
+    # BLER depend on the mismatch between selected MCS and true CQI.
+    link_adaptation_mode: str = "legacy_fixed_bler"
+    link_adaptation_cqi_backoff: int = 0
+    bler_mismatch_slope: float = 1.5
+
     # Dense tail-delay shaping starts before the hard P99 constraint is crossed.
     deadline_target_slots: float = 50.0
     # Fixed reference target used for comparable logging/checkpoint ranking even
@@ -139,6 +156,20 @@ class ScaleMacConfig:
             raise ValueError("cqi_update_interval_slots must be positive")
         if self.cqi_max_delta_per_update <= 0:
             raise ValueError("cqi_max_delta_per_update must be positive")
+        if self.csi_report_mode not in {"perfect", "periodic"}:
+            raise ValueError("csi_report_mode must be perfect or periodic")
+        if self.csi_report_period_slots <= 0:
+            raise ValueError("csi_report_period_slots must be positive")
+        if self.csi_report_delay_slots < 0:
+            raise ValueError("csi_report_delay_slots must be non-negative")
+        if self.csi_report_error_std < 0.0:
+            raise ValueError("csi_report_error_std must be non-negative")
+        if self.link_adaptation_mode not in {"legacy_fixed_bler", "cqi_mcs_bler"}:
+            raise ValueError("link_adaptation_mode must be legacy_fixed_bler or cqi_mcs_bler")
+        if self.link_adaptation_cqi_backoff < 0:
+            raise ValueError("link_adaptation_cqi_backoff must be non-negative")
+        if self.bler_mismatch_slope <= 0.0:
+            raise ValueError("bler_mismatch_slope must be positive")
         if self.deadline_target_slots <= 0.0:
             raise ValueError("deadline_target_slots must be positive")
         if self.reference_deadline_target_slots <= 0.0:
@@ -161,6 +192,8 @@ class ScaleMacConfig:
             raise ValueError("ewma_alpha must be in (0, 1]")
         if not 0.0 <= self.target_bler < 1.0:
             raise ValueError("target_bler must be in [0, 1)")
+        if self.link_adaptation_mode == "cqi_mcs_bler" and self.target_bler <= 0.0:
+            raise ValueError("target_bler must be positive in cqi_mcs_bler mode")
         if self.max_harq_retransmissions < 0:
             raise ValueError("max_harq_retransmissions must be non-negative")
 

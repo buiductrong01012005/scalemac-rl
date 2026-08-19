@@ -7,30 +7,20 @@ import numpy as np
 
 from .config import ScaleMacConfig
 from .metrics import clip01, jain_fairness, safe_percentile
+from .link_adaptation import (
+    CQI_TABLE1_EFFICIENCY,
+    bler_probability_from_cqi_mismatch,
+    mcs_efficiency,
+    mcs_modulation_order,
+    required_cqi_for_mcs,
+    select_mcs_from_reported_cqi,
+)
 from .projector import ProjectedGrant, project_action
 
 
-# Standard 15-level CQI spectral-efficiency abstraction.
-_CQI_EFFICIENCY = np.asarray(
-    [
-        0.1523,
-        0.2344,
-        0.3770,
-        0.6016,
-        0.8770,
-        1.1758,
-        1.4766,
-        1.9141,
-        2.4063,
-        2.7305,
-        3.3223,
-        3.9023,
-        4.5234,
-        5.1152,
-        5.5547,
-    ],
-    dtype=np.float32,
-)
+# Standard 15-level CQI spectral-efficiency abstraction (3GPP CQI Table 1).
+_CQI_EFFICIENCY = CQI_TABLE1_EFFICIENCY.astype(np.float32)
+
 
 # Per-UE observation columns.
 CQI = 0
@@ -104,10 +94,16 @@ class ScaleMacDownlinkEnv:
         # Keep channel innovations on a separate RNG stream so enabling Dynamic
         # CQI does not change the HARQ success/failure random sequence.
         self.channel_rng = np.random.default_rng(self.config.seed + 1_000_003)
+        # CSI measurement noise has its own RNG stream so reporting realism does
+        # not perturb either the channel process or HARQ success/failure draws.
+        self.csi_rng = np.random.default_rng(self.config.seed + 2_000_003)
 
         n = self.config.num_ues
         self.slot = 0
+        # ``cqi`` is the true instantaneous channel state used by the PHY.
+        # ``reported_cqi`` is what the scheduler observes through CSI reporting.
         self.cqi = np.zeros(n, dtype=np.int16)
+        self.reported_cqi = np.zeros(n, dtype=np.int16)
         self.cqi_anchor = np.zeros(n, dtype=np.float64)
         self._cqi_latent = np.zeros(n, dtype=np.float64)
         self.demand_factor = np.ones(n, dtype=np.float32)
@@ -134,6 +130,8 @@ class ScaleMacDownlinkEnv:
         self._previous_pf_utility = 0.0
         self._last_cqi_mean_abs_change = 0.0
         self._last_cqi_changed_fraction = 0.0
+        self._reported_cqi_generation_slot = 0
+        self._pending_csi_reports: list[tuple[int, int, np.ndarray]] = []
 
         self.reset(seed=self.config.seed)
 
@@ -149,6 +147,7 @@ class ScaleMacDownlinkEnv:
         if seed is not None:
             self.rng = np.random.default_rng(seed)
             self.channel_rng = np.random.default_rng(seed + 1_000_003)
+            self.csi_rng = np.random.default_rng(seed + 2_000_003)
 
         self.slot = 0
         if self.config.freeze_static_profiles:
@@ -184,6 +183,11 @@ class ScaleMacDownlinkEnv:
         self._cqi_latent = self.cqi_anchor.copy()
         self._last_cqi_mean_abs_change = 0.0
         self._last_cqi_changed_fraction = 0.0
+        # Start every episode with an exact initial report. Staleness/error only
+        # appears after the true channel begins evolving.
+        self.reported_cqi = self.cqi.copy()
+        self._reported_cqi_generation_slot = 0
+        self._pending_csi_reports.clear()
 
         self.queue_target_bytes = (
             self.config.full_buffer_base_bytes * self.demand_factor
@@ -210,6 +214,23 @@ class ScaleMacDownlinkEnv:
             "cqi_mode": self.config.cqi_mode,
             "mean_cqi": float(np.mean(self.cqi)),
             "std_cqi": float(np.std(self.cqi)),
+            "csi_report_mode": self.config.csi_report_mode,
+            "mean_reported_cqi": float(np.mean(self.reported_cqi)),
+            "mean_csi_abs_error": 0.0,
+            "p95_csi_abs_error": 0.0,
+            "csi_stale_fraction": 0.0,
+            "csi_report_age_slots": 0.0,
+            "csi_report_generated": 0.0,
+            "csi_report_delivered": 0.0,
+            "link_adaptation_mode": self.config.link_adaptation_mode,
+            "mean_mcs_index": 0.0,
+            "mean_modulation_order": 0.0,
+            "mean_predicted_bler": float(self.config.target_bler),
+            "observed_bler": 0.0,
+            "spectral_efficiency_bps_hz": 0.0,
+            "attempted_spectral_efficiency_bps_hz": 0.0,
+            "harq_retransmission_attempts": 0.0,
+            "harq_retransmission_fraction": 0.0,
         }
         return observation, info
 
@@ -235,6 +256,8 @@ class ScaleMacDownlinkEnv:
         self.slot += 1
         cqi_diagnostics = self._advance_cqi()
         metrics.update(cqi_diagnostics)
+        csi_diagnostics = self._advance_csi_reporting()
+        metrics.update(csi_diagnostics)
         terminated = self.slot >= self.config.episode_slots
         truncated = False
         observation = self._observation()
@@ -283,6 +306,71 @@ class ScaleMacDownlinkEnv:
             "cqi_changed_fraction": self._last_cqi_changed_fraction,
         }
 
+
+    def _advance_csi_reporting(self) -> dict[str, float | str]:
+        """Advance the abstract CSI measurement/reporting pipeline.
+
+        The scheduler observes ``reported_cqi`` while transmission physics and
+        the throughput oracle continue to use the true ``cqi``. ``perfect`` is
+        an exact observation of the current true CQI. ``periodic`` creates one
+        cell-wide report snapshot every configured period and delivers it after
+        a configurable delay. Measurement noise is expressed in CQI-index units.
+        """
+        generated = 0.0
+        delivered = 0.0
+        if self.config.csi_report_mode == "perfect":
+            self.reported_cqi = self.cqi.copy()
+            self._reported_cqi_generation_slot = self.slot
+            self._pending_csi_reports.clear()
+            generated = 1.0
+            delivered = 1.0
+        else:
+            if self.slot % self.config.csi_report_period_slots == 0:
+                measurement = self.cqi.astype(np.float64)
+                if self.config.csi_report_error_std > 0.0:
+                    measurement = measurement + self.csi_rng.normal(
+                        loc=0.0,
+                        scale=self.config.csi_report_error_std,
+                        size=self.config.num_ues,
+                    )
+                measurement = np.clip(np.rint(measurement), 1, 15).astype(np.int16)
+                self._pending_csi_reports.append(
+                    (
+                        self.slot + self.config.csi_report_delay_slots,
+                        self.slot,
+                        measurement,
+                    )
+                )
+                generated = 1.0
+
+            ready = [item for item in self._pending_csi_reports if item[0] <= self.slot]
+            if ready:
+                # If several reports become deliverable together, the newest
+                # measurement supersedes older snapshots.
+                _, generation_slot, measurement = max(ready, key=lambda item: item[1])
+                self.reported_cqi = measurement.copy()
+                self._reported_cqi_generation_slot = generation_slot
+                self._pending_csi_reports = [
+                    item for item in self._pending_csi_reports if item[0] > self.slot
+                ]
+                delivered = 1.0
+
+        abs_error = np.abs(
+            self.reported_cqi.astype(np.int32) - self.cqi.astype(np.int32)
+        )
+        return {
+            "csi_report_mode": self.config.csi_report_mode,
+            "mean_reported_cqi": float(np.mean(self.reported_cqi)),
+            "mean_csi_abs_error": float(np.mean(abs_error)),
+            "p95_csi_abs_error": float(np.percentile(abs_error, 95)),
+            "csi_stale_fraction": float(np.mean(abs_error > 0)),
+            "csi_report_age_slots": float(
+                max(self.slot - self._reported_cqi_generation_slot, 0)
+            ),
+            "csi_report_generated": generated,
+            "csi_report_delivered": delivered,
+        }
+
     def _sample_cqi_profiles(self, rng: np.random.Generator) -> np.ndarray:
         n = self.config.num_ues
         low = int(round(n * self.config.low_cqi_fraction))
@@ -320,7 +408,7 @@ class ScaleMacDownlinkEnv:
         retx_denominator = max(self.config.max_harq_retransmissions, 1)
 
         observation = np.empty(self.observation_shape, dtype=np.float32)
-        observation[:, CQI] = self.cqi / 15.0
+        observation[:, CQI] = self.reported_cqi / 15.0
         observation[:, QUEUE] = np.clip(self.queue_bytes / max_queue, 0.0, 1.0)
         observation[:, DEMAND] = self.demand_factor / 2.0
         observation[:, EWMA_THROUGHPUT] = np.clip(
@@ -346,7 +434,9 @@ class ScaleMacDownlinkEnv:
         demand_normalized_throughput = self.ewma_throughput_bits / np.maximum(
             self.demand_factor, 1e-6
         )
-        observation[:, CQI_RANK] = self._percentile_rank(self.cqi.astype(np.float64))
+        observation[:, CQI_RANK] = self._percentile_rank(
+            self.reported_cqi.astype(np.float64)
+        )
         # High value means that the UE is relatively underserved.
         observation[:, THROUGHPUT_DEFICIT_RANK] = 1.0 - self._percentile_rank(
             demand_normalized_throughput
@@ -432,26 +522,55 @@ class ScaleMacDownlinkEnv:
         return 12.0 * 14.0 * efficiency * 0.86
 
     def _slot_oracle_expected_goodput_bits(self) -> float:
-        """Upper-bound expected goodput for the current static CQI population.
+        """Expected-goodput upper bound under the active PHY abstraction.
 
-        The oracle obeys the current Top-K and one-PRB-per-selected-UE contract,
-        then gives all remaining PRBs to the strongest selected UE. It is used
-        only to normalize throughput, not as a training baseline.
+        Legacy mode preserves the pre-v0.13 oracle. Link-adaptation mode gives
+        the oracle perfect current CQI, selects MCS from true CQI, and applies
+        the same mismatch-BLER model. The scheduler never receives this oracle.
         """
-        eligible_efficiency = _CQI_EFFICIENCY[self.cqi[self.eligible] - 1]
-        if eligible_efficiency.size == 0:
+        eligible_cqi = self.cqi[self.eligible]
+        if eligible_cqi.size == 0:
             return 0.0
+
+        if self.config.link_adaptation_mode == "legacy_fixed_bler":
+            eligible_efficiency = _CQI_EFFICIENCY[eligible_cqi - 1]
+            k = min(
+                self.config.max_selected_ues,
+                eligible_efficiency.size,
+                self.config.num_prbs,
+            )
+            strongest = np.sort(eligible_efficiency)[-k:][::-1]
+            grants = np.ones(k, dtype=np.float64)
+            grants[0] += self.config.num_prbs - k
+            attempted = float(np.sum(grants * self._bits_per_prb(strongest)))
+            success_probability = (
+                1.0 - self.config.target_bler if self.config.harq_enabled else 1.0
+            )
+            return attempted * success_probability
+
+        ideal_mcs = select_mcs_from_reported_cqi(
+            eligible_cqi, cqi_backoff=self.config.link_adaptation_cqi_backoff
+        )
+        efficiency = mcs_efficiency(ideal_mcs)
+        if self.config.harq_enabled:
+            bler = bler_probability_from_cqi_mismatch(
+                true_cqi=eligible_cqi,
+                mcs_index=ideal_mcs,
+                target_bler=self.config.target_bler,
+                mismatch_slope=self.config.bler_mismatch_slope,
+            )
+        else:
+            bler = np.zeros_like(efficiency, dtype=np.float64)
+        expected_per_prb = self._bits_per_prb(efficiency) * (1.0 - bler)
         k = min(
             self.config.max_selected_ues,
-            eligible_efficiency.size,
+            expected_per_prb.size,
             self.config.num_prbs,
         )
-        strongest = np.sort(eligible_efficiency)[-k:][::-1]
+        strongest = np.sort(expected_per_prb)[-k:][::-1]
         grants = np.ones(k, dtype=np.float64)
         grants[0] += self.config.num_prbs - k
-        attempted = float(np.sum(grants * self._bits_per_prb(strongest)))
-        success_probability = 1.0 - self.config.target_bler if self.config.harq_enabled else 1.0
-        return attempted * success_probability
+        return float(np.sum(grants * strongest))
 
     def _execute_grant(self, grant: ProjectedGrant) -> dict[str, Any]:
         n = self.config.num_ues
@@ -470,14 +589,38 @@ class ScaleMacDownlinkEnv:
         attempted_bits = np.zeros(n, dtype=np.float64)
         failed_transmissions = 0
         dropped_harq = 0
+        selected_mcs = np.zeros(selected.size, dtype=np.int16)
+        selected_mod_order = np.zeros(selected.size, dtype=np.int16)
+        predicted_bler = np.zeros(selected.size, dtype=np.float64)
+        pre_harq_pending = self.harq_pending.copy()
+        harq_retransmission_attempts = int(np.sum(pre_harq_pending[selected])) if selected.size else 0
 
         if selected.size:
-            efficiency = _CQI_EFFICIENCY[self.cqi[selected] - 1]
+            if self.config.link_adaptation_mode == "legacy_fixed_bler":
+                efficiency = _CQI_EFFICIENCY[self.cqi[selected] - 1].astype(np.float64)
+                predicted_bler.fill(self.config.target_bler if self.config.harq_enabled else 0.0)
+                selected_mcs.fill(-1)
+                selected_mod_order.fill(0)
+            else:
+                selected_mcs = select_mcs_from_reported_cqi(
+                    self.reported_cqi[selected],
+                    cqi_backoff=self.config.link_adaptation_cqi_backoff,
+                ).astype(np.int16)
+                selected_mod_order = mcs_modulation_order(selected_mcs).astype(np.int16)
+                efficiency = mcs_efficiency(selected_mcs).astype(np.float64)
+                if self.config.harq_enabled:
+                    predicted_bler = bler_probability_from_cqi_mismatch(
+                        true_cqi=self.cqi[selected],
+                        mcs_index=selected_mcs,
+                        target_bler=self.config.target_bler,
+                        mismatch_slope=self.config.bler_mismatch_slope,
+                    ).astype(np.float64)
+
             attempted = grant.prbs.astype(np.float64) * self._bits_per_prb(efficiency)
             attempted_bits[selected] = attempted
 
             if self.config.harq_enabled:
-                success = self.rng.random(selected.size) >= self.config.target_bler
+                success = self.rng.random(selected.size) >= predicted_bler
             else:
                 success = np.ones(selected.size, dtype=bool)
 
@@ -615,6 +758,22 @@ class ScaleMacDownlinkEnv:
             start_ratio=self.config.deadline_risk_start_ratio,
         )
 
+        total_re = float(self.config.num_prbs * 12 * 14)
+        attempted_spectral_efficiency = float(attempted_bits.sum() / max(total_re, 1.0))
+        spectral_efficiency = float(cell_goodput_bits / max(total_re, 1.0))
+        observed_bler = float(failed_transmissions / max(int(selected.size), 1))
+        mean_predicted_bler = float(np.mean(predicted_bler)) if predicted_bler.size else 0.0
+        mean_mcs_index = (
+            float(np.mean(selected_mcs[selected_mcs >= 0]))
+            if np.any(selected_mcs >= 0)
+            else -1.0
+        )
+        mean_modulation_order = (
+            float(np.mean(selected_mod_order[selected_mod_order > 0]))
+            if np.any(selected_mod_order > 0)
+            else 0.0
+        )
+
         return {
             "selected_ues": selected.copy(),
             "prbs_per_selected_ue": grant.prbs.copy(),
@@ -622,6 +781,17 @@ class ScaleMacDownlinkEnv:
             "cell_goodput_bits": cell_goodput_bits,
             "cell_attempted_bits": float(attempted_bits.sum()),
             "oracle_expected_goodput_bits": float(oracle_goodput),
+            "link_adaptation_mode": self.config.link_adaptation_mode,
+            "mean_mcs_index": mean_mcs_index,
+            "mean_modulation_order": mean_modulation_order,
+            "mean_predicted_bler": mean_predicted_bler,
+            "observed_bler": observed_bler,
+            "spectral_efficiency_bps_hz": spectral_efficiency,
+            "attempted_spectral_efficiency_bps_hz": attempted_spectral_efficiency,
+            "harq_retransmission_attempts": float(harq_retransmission_attempts),
+            "harq_retransmission_fraction": float(
+                harq_retransmission_attempts / max(int(selected.size), 1)
+            ),
             "throughput_score": throughput_score,
             "throughput_normalized": throughput_score,  # backward-compatible alias
             "jain_fairness": cumulative_fairness,

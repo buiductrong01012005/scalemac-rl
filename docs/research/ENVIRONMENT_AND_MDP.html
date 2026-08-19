@@ -4,8 +4,153 @@
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <title>ScaleMAC-RL Environment Reference</title>
+  <title>ScaleMAC-RL Environment and MDP v0.12.0</title>
   <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
     code{white-space: pre-wrap;}
     span.smallcaps{font-variant: small-caps;}
     div.columns{display: flex; gap: min(4vw, 1.5em);}
@@ -23,19 +168,18 @@
     .display.math{display: block; text-align: center; margin: 0.5rem auto;}
   </style>
   <style>
-body{font-family:Inter,Segoe UI,Arial,sans-serif;max-width:1180px;margin:36px auto;padding:0 24px 70px;line-height:1.62;color:#1f2937;background:#f8fafc}h1,h2,h3{color:#0f172a}h1{font-size:2.1rem}h2{margin-top:2.2rem;border-bottom:2px solid #e2e8f0;padding-bottom:.4rem}h3{margin-top:1.5rem}table{border-collapse:collapse;width:100%;background:white;margin:1rem 0 1.5rem;font-size:.92rem}th,td{border:1px solid #dbe3ec;padding:8px 10px;vertical-align:top}th{background:#eaf1f8;text-align:left}code{background:#e9eef5;padding:2px 5px;border-radius:5px}pre{background:#0f172a;color:#e2e8f0;padding:15px 18px;border-radius:10px;overflow:auto}blockquote{background:#eef6ff;border-left:5px solid #3b82f6;margin:1rem 0;padding:.7rem 1rem}strong{color:#111827}a{color:#1d4ed8}.title{margin-bottom:0}.subtitle{color:#64748b}hr{border:0;border-top:1px solid #dbe3ec;margin:2rem 0}
-
-</style>
+  body{font-family:Segoe UI,Arial,sans-serif;max-width:1100px;margin:32px auto;padding:0 18px;line-height:1.6;color:#1f2937}h1,h2,h3{color:#17365d}table{border-collapse:collapse;width:100%;margin:16px 0;font-size:.94rem}th,td{border:1px solid #d6dce3;padding:8px;vertical-align:top}th{background:#eef3f8}pre{background:#f5f7fa;padding:14px;border-radius:8px;overflow:auto}code{background:#f2f4f7;padding:2px 4px;border-radius:4px}pre code{background:none;padding:0}blockquote{background:#eef5ff;border-left:4px solid #3568a8;margin:16px 0;padding:10px 14px;color:#334155}
+  </style>
 </head>
 <body>
 <header id="title-block-header">
-<h1 class="title">ScaleMAC-RL Environment Reference</h1>
+<h1 class="title">ScaleMAC-RL Environment and MDP v0.12.0</h1>
 </header>
 <h1 id="scalemac-rl-môi-trường-mdp-và-biến-mạng-hiện-tại">ScaleMAC-RL —
 Môi trường, MDP và biến mạng hiện tại</h1>
 <blockquote>
-<p><strong>Snapshot hành vi:</strong> v0.10.2, trước khi triển khai
-Dynamic CQI.<br />
+<p><strong>Snapshot hành vi:</strong> v0.12.0, sau Dynamic CQI và CSI
+reporting.<br />
 <strong>Mục đích:</strong> mô tả đúng môi trường đang dùng để
 train/evaluate nhánh PPO full-control, phân biệt rõ biến nào đang cố
 định, biến nào có thể cấu hình, biến nào thay đổi theo slot và phần nào
@@ -148,7 +292,10 @@ Per-UE state ──► observation 1200 × 16
 <li>không candidate filtering;</li>
 <li>không forced HARQ;</li>
 <li>traffic full-buffer;</li>
-<li>CQI heterogeneous nhưng <strong>static</strong>;</li>
+<li>true CQI heterogeneous và có thể <strong>temporally
+correlated</strong>;</li>
+<li>scheduler có thể nhìn <code>reported_cqi</code> bị
+periodic/delay/noise thay vì true CQI;</li>
 <li>reward active đã chốt là Throughput + Jain + Service.</li>
 </ul>
 <hr />
@@ -238,10 +385,11 @@ số quan trọng nhất</h2>
 transition.</td>
 </tr>
 <tr class="even">
-<td>CQI</td>
+<td>True CQI</td>
 <td style="text-align: right;">1–15</td>
-<td><strong>STATIC PROFILE</strong></td>
-<td>Sample khi reset/profile creation, không đổi theo slot.</td>
+<td><strong>DYNAMIC / FLEX-PLAN</strong></td>
+<td>Static hoặc correlated; Slow Dynamic CQI là realism profile
+chính.</td>
 </tr>
 <tr class="odd">
 <td>CQI mix</td>
@@ -304,12 +452,18 @@ transition.</td>
 <td>Memory của short-term throughput.</td>
 </tr>
 <tr class="odd">
+<td>CSI report</td>
+<td style="text-align: right;">perfect / periodic</td>
+<td><strong>FLEX-PLAN</strong></td>
+<td>Scheduler có thể nhận CQI theo period/delay/error.</td>
+</tr>
+<tr class="even">
 <td><code>speed_mps</code></td>
 <td style="text-align: right;">{0, 1.5, 5, 15, 25}</td>
 <td><strong>META-ONLY</strong></td>
-<td>Hiện không làm CQI thay đổi.</td>
+<td>Hiện chưa điều khiển CQI.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>Reward active</td>
 <td style="text-align: right;">1/3 T + 1/3 Jain + 1/3 Service</td>
 <td><strong>LOCKED</strong></td>
@@ -358,19 +512,13 @@ nào?</h3>
 toàn population.</p>
 <h3 id="cqi-có-thay-đổi-theo-thời-gian-không">3.2 CQI có thay đổi theo
 thời gian không?</h3>
-<p><strong>Không.</strong> Đây là điểm quan trọng nhất của environment
-hiện tại.</p>
-<ul>
-<li>Trong một episode: CQI giữ nguyên tuyệt đối.</li>
-<li>Với Round 09: <code>freeze_static_profiles=True</code> và
-<code>fixed_profile_seed=1701</code>, vì vậy cùng profile CQI/demand còn
-được tái sử dụng qua các reset.</li>
-<li><code>speed_mps</code> tồn tại nhưng chỉ là metadata; mobility hiện
-chưa đi vào channel transition.</li>
-</ul>
-<p>Vì vậy state transition hiện tại <strong>không có</strong>:</p>
-<pre class="text"><code>position/speed → path loss → SINR → CQI(t)</code></pre>
-<p>Dynamic CQI chính là lớp realism tiếp theo mà ta chưa implement.</p>
+<p><strong>Có thể.</strong> Từ v0.11, <code>cqi_mode=correlated</code>
+dùng một quá trình mean-reverting quanh heterogeneous CQI anchor. Slow
+Dynamic CQI (<code>rho=0.97</code>, <code>sigma=0.35</code>, max ΔCQI=1)
+là realism profile chính; static vẫn giữ làm regression baseline và
+faster Dynamic CQI là stress test.</p>
+<p><code>speed_mps</code> vẫn chỉ là metadata; mobility chưa trực tiếp
+sinh path loss/SINR/CQI.</p>
 <h3 id="cqi-ảnh-hưởng-tới-transmission-hiện-tại-ra-sao">3.3 CQI ảnh
 hưởng tới transmission hiện tại ra sao?</h3>
 <p>CQI index chọn một spectral-efficiency abstraction hard-coded. Sau đó
@@ -531,19 +679,21 @@ probability</strong>.</p>
 <td>Sửa code <code>_CQI_EFFICIENCY</code>.</td>
 </tr>
 <tr class="even">
-<td>CQI của từng UE trong episode</td>
-<td>Static</td>
-<td>Cần code change để Dynamic CQI.</td>
+<td>True CQI của từng UE</td>
+<td>Static hoặc correlated</td>
+<td>Đã FLEX bằng <code>cqi_mode</code> và các tham số
+rho/sigma/update/max-delta.</td>
 </tr>
 <tr class="odd">
 <td>CQI correlation theo thời gian</td>
-<td>Chưa có</td>
-<td>Cần channel transition model.</td>
+<td>Đã có</td>
+<td><code>cqi_temporal_correlation</code> + innovation std.</td>
 </tr>
 <tr class="even">
-<td>CQI reporting delay/error</td>
-<td>Chưa có</td>
-<td>Cần model mới.</td>
+<td>CQI reporting period/delay/error</td>
+<td>Đã có</td>
+<td><code>csi_report_*</code>; scheduler thấy
+<code>reported_cqi</code>.</td>
 </tr>
 <tr class="odd">
 <td>Mobility → CQI</td>
@@ -774,8 +924,8 @@ thấy — 1200 × 16</h2>
 <tr class="odd">
 <td style="text-align: right;">0</td>
 <td><code>cqi</code></td>
-<td><code>CQI / 15</code></td>
-<td>Channel quality normalized.</td>
+<td><code>reported_CQI / 15</code></td>
+<td>Scheduler-visible channel quality; có thể stale/noisy.</td>
 </tr>
 <tr class="even">
 <td style="text-align: right;">1</td>
@@ -835,7 +985,8 @@ thấy — 1200 × 16</h2>
 <td style="text-align: right;">10</td>
 <td><code>cqi_rank</code></td>
 <td>tie-aware percentile [0,1]</td>
-<td>Vị trí CQI của UE trong population.</td>
+<td>Rank của <strong>reported CQI</strong>, không nhất thiết true
+CQI.</td>
 </tr>
 <tr class="even">
 <td style="text-align: right;">11</td>
@@ -1187,5 +1338,23 @@ allocation và không được heuristic cứu.</p>
 <p>Do đó bước hợp lý tiếp theo không phải thêm reward nữa, mà là tăng
 realism có kiểm soát bắt đầu từ <strong>Dynamic CQI</strong>, sau đó mới
 tới CQI→MCS→BLER, traffic arrivals, HARQ timing, QoS và mobility.</p>
+<h2 id="true-cqi-và-reported-csi-từ-v0.12.0">12. True CQI và Reported
+CSI từ v0.12.0</h2>
+<p>Environment tách hai khái niệm:</p>
+<ul>
+<li><code>cqi</code>: true instantaneous CQI, dùng cho
+capacity/attempted bits và oracle;</li>
+<li><code>reported_cqi</code>: CQI mà scheduler nhìn thấy trong
+observation.</li>
+</ul>
+<p>Ở <code>csi_report_mode=perfect</code>, hai giá trị trùng nhau mỗi
+slot. Ở <code>periodic</code>, measurement được tạo theo
+<code>csi_report_period_slots</code>, tới scheduler sau
+<code>csi_report_delay_slots</code>, và có thể thêm
+<code>csi_report_error_std</code> trước khi quantize/clip về 1..15.</p>
+<p>Điều này làm environment có partial observability theo thời gian mà
+<strong>không tăng observation width</strong>: feature CQI và CQI-rank
+cũ chỉ chuyển sang dùng reported CSI. Đây là nền để sau này đánh giá PPO
+feed-forward so với RPPO.</p>
 </body>
 </html>

@@ -11,10 +11,10 @@ Traffic,full_buffer_base_bytes,1000000,FLEX-CONFIG,ScaleMacConfig,Target queue b
 Traffic,packet_size_bytes,1500,CONFIGURED/NOT OPERATIONAL,ScaleMacConfig only,Not used in delivery transition
 Demand,demand_factors,0.5 / 1.0 / 2.0,LOCKED in code,env.py sampler,Scale queue target and throughput normalization
 Demand,demand_mix,40% / 40% / 20%,FLEX-CONFIG,ScaleMacConfig,480/480/240 UEs at N=1200
-Channel,cqi_range,1..15,LOCKED in current model,env.py,Static per UE
+Channel,cqi_range,1..15,DYNAMIC true channel / reported CSI,env.py,True CQI is 1..15; scheduler-visible CQI may be stale/noisy through CSI reporting.
 Channel,cqi_mix,30% / 40% / 30%,FLEX-CONFIG,ScaleMacConfig,360/480/360 UEs at N=1200
 Channel,cqi_group_ranges,1-5 / 6-10 / 11-15,HARD-CODED,env.py sampler,Requires code change
-Channel,cqi_time_evolution,none,NOT-MODELED,env.py,CQI does not change within episode
+Channel,cqi_time_evolution,"Slow correlated (rho=0.97, sigma=0.35, max delta=1)",FLEX-PLAN,env.py,Primary realism profile; static remains regression and faster CQI remains stress test.
 Channel,freeze_static_profiles,true,LOCKED in reward-study runner,run_reward_study.py,Same profile reused across resets in current protocol
 Channel,profile_seed,1701,FLEX-PLAN,Round-09 plan,Controls frozen CQI/demand/speed profile
 Channel,speed_mps,"0,1.5,5,15,25",META-ONLY,env.py,No effect on CQI or transition
@@ -33,3 +33,9 @@ Reward,throughput_weight,1/3,LOCKED,Round-09 case,Active
 Reward,fairness_weight,1/3,LOCKED,Round-09 case,Active
 Reward,service_weight,1/3,LOCKED,Round-09 case,Active
 Reward,all_other_reward_terms,0,LOCKED,Round-09 case,Computed metrics may remain but no gradient contribution
+CSI,csi_report_mode,perfect / periodic,FLEX-PLAN,ScaleMacConfig,Controls whether scheduler sees instantaneous true CQI or periodic reports.
+CSI,csi_report_period_slots,1 baseline; 4 in Round 11 impaired cases,FLEX-PLAN,ScaleMacConfig,Slots between generated CSI measurements.
+CSI,csi_report_delay_slots,0 baseline; 2 in delayed cases,FLEX-PLAN,ScaleMacConfig,Transport/processing delay before a CSI snapshot reaches the scheduler.
+CSI,csi_report_error_std,0 baseline; 0.75 stress,FLEX-PLAN,ScaleMacConfig,Gaussian measurement error in CQI-index units before quantization and clipping.
+CSI,reported_cqi,1..15,DYNAMIC / DERIVED,env.py,Scheduler-visible CQI used in observation feature 0 and CQI rank; true CQI remains hidden in impaired modes.
+CSI,csi_report_age_slots,runtime metric,DERIVED,env.py,Age of the latest delivered report relative to the current slot.

@@ -1,0 +1,102 @@
+{
+  "study_id": "link_adaptation_foundation",
+  "round_id": "round_12_link_adaptation",
+  "description": "Controlled CQI/MCS/BLER Link Adaptation foundation on Slow Dynamic CQI. PPO, TJS reward, traffic and scheduler action remain fixed. The screen first reproduces the delayed-CSI legacy PHY, then enables an NR-inspired reported-CQI-to-MCS mapping with true-CQI-dependent BLER under perfect, delayed and delayed+noisy CSI.",
+  "common": {
+    "environment_steps": 100096,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_seeds": [1701],
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "seed": 1701,
+    "profile_seed": 1701,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 0.000025,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64,
+    "cqi_mode": "correlated",
+    "cqi_temporal_correlation": 0.97,
+    "cqi_innovation_std": 0.35,
+    "cqi_update_interval_slots": 1,
+    "cqi_max_delta_per_update": 1,
+    "link_adaptation_cqi_backoff": 0,
+    "bler_mismatch_slope": 1.5
+  },
+  "analysis": {
+    "design": "link_adaptation_screen",
+    "title": "Round 12 — CQI/MCS/BLER Link Adaptation foundation",
+    "output": "docs/analysis/channel_study/round_12/link_adaptation_analysis.html",
+    "markdown_output": "docs/analysis/channel_study/round_12/link_adaptation_summary.md",
+    "metrics_output": "docs/analysis/channel_study/round_12/link_adaptation_metrics.csv"
+  },
+  "cases": [
+    {
+      "id": "legacy_delayed_csi_reference",
+      "label": "Legacy PHY + delayed CSI reference",
+      "hypothesis": "Reproduce the selected Round-11 realism profile while preserving the pre-v0.13 fixed-BLER PHY path.",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.3333333333333333, "fairness": 0.3333333333333333, "service": 0.3333333333333333},
+      "common_overrides": {
+        "csi_report_mode": "periodic",
+        "csi_report_period_slots": 4,
+        "csi_report_delay_slots": 2,
+        "csi_report_error_std": 0.0,
+        "link_adaptation_mode": "legacy_fixed_bler"
+      }
+    },
+    {
+      "id": "mcs_bler_perfect_csi",
+      "label": "MCS/BLER + perfect CSI",
+      "hypothesis": "With current CSI, CQI-to-MCS selection should operate near the target-BLER region and define the information-rich Link Adaptation reference.",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.3333333333333333, "fairness": 0.3333333333333333, "service": 0.3333333333333333},
+      "common_overrides": {
+        "csi_report_mode": "perfect",
+        "csi_report_period_slots": 1,
+        "csi_report_delay_slots": 0,
+        "csi_report_error_std": 0.0,
+        "link_adaptation_mode": "cqi_mcs_bler"
+      }
+    },
+    {
+      "id": "mcs_bler_delayed_csi",
+      "label": "MCS/BLER + periodic delayed CSI",
+      "hypothesis": "The selected realism profile should expose the physical cost of CSI staleness because MCS is chosen from reported CQI while BLER is determined by the current true CQI.",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.3333333333333333, "fairness": 0.3333333333333333, "service": 0.3333333333333333},
+      "common_overrides": {
+        "csi_report_mode": "periodic",
+        "csi_report_period_slots": 4,
+        "csi_report_delay_slots": 2,
+        "csi_report_error_std": 0.0,
+        "link_adaptation_mode": "cqi_mcs_bler"
+      }
+    },
+    {
+      "id": "mcs_bler_delayed_noisy_csi",
+      "label": "MCS/BLER + delayed noisy CSI",
+      "hypothesis": "Adding measurement error should increase MCS/channel mismatch and provide a robustness stress case for BLER and HARQ behavior.",
+      "positive_scale": 1.0,
+      "positive_weights": {"throughput": 0.3333333333333333, "fairness": 0.3333333333333333, "service": 0.3333333333333333},
+      "common_overrides": {
+        "csi_report_mode": "periodic",
+        "csi_report_period_slots": 4,
+        "csi_report_delay_slots": 2,
+        "csi_report_error_std": 0.75,
+        "link_adaptation_mode": "cqi_mcs_bler"
+      }
+    }
+  ]
+}

@@ -12,3 +12,8 @@ docs/reports/*.md
 
 # Local diagnostic/runtime logs
 *.log
+
+# Internal research/analysis artifacts (keep local, do not push)
+docs/analysis/
+docs/research/*.html
+docs/research/*.csv

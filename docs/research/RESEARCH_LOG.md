@@ -319,3 +319,17 @@ Decision: freeze T–J–S as the active reward and move to Dynamic CQI rather t
 Reward exploration is closed with T–J–S as the active objective. The first realism increase is a controlled temporally correlated CQI process around each UE's heterogeneous anchor. Static mode remains available as an exact baseline. Round 10 compares static, slow-correlated, and faster-correlated CQI without changing PPO, architecture, traffic, BLER, or HARQ control.
 
 Future Joint Link Adaptation + Scheduler work is expected to extend the action space from UE/PRB decisions toward UE + PRB + MCS + transmission-layer selection after MIMO/CSI support is introduced.
+
+## Round 10 — Dynamic CQI
+Static CQI reproduced the TJS baseline. Slow correlated CQI increased goodput but degraded fairness/service. Faster CQI caused deterministic late collapse even though mean CQI stayed similar. Keep static as regression, slow dynamic as primary realism, fast dynamic as stress test. Do not retune TJS from this round. Next: true CQI vs CSI-reported CQI, then CQI→MCS→BLER.
+
+## v0.12.0 — CSI reporting realism
+
+Slow Dynamic CQI is retained as the true channel process. A separate scheduler-visible `reported_cqi` now passes through configurable reporting period, delay and measurement error. Round 11 isolates periodicity, then delay, then noise while holding T–J–S, PPO and the physical true-CQI trajectory fixed.
+
+CSI delay creates partial observability, making RPPO a plausible later architecture. It is deliberately not introduced in Round 11 so the cost of stale/noisy CSI can be measured before architecture optimization.
+
+
+## Round 11 — CSI reporting
+
+Slow Dynamic CQI was evaluated under perfect, periodic, delayed, and delayed+noisy CSI while T–J–S and PPO remained fixed. Perfect CSI achieved the highest goodput but weaker fairness/service. Periodic CSI removed starvation; adding a 2-slot delivery delay further improved Jain and tail service with a small additional goodput cost. Noise did not add a clear marginal benefit. Period-4 + delay-2 is selected as the next realism profile. The result is interpreted as temporal smoothing of opportunistic behavior, not as evidence that degraded CSI is intrinsically beneficial. Next: add CQI/MCS/BLER Link Adaptation, then compare feed-forward PPO against RPPO under stale CSI.

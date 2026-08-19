@@ -418,6 +418,13 @@ def _validate(
     cqi_innovation_std: float,
     cqi_update_interval_slots: int,
     cqi_max_delta_per_update: int,
+    csi_report_mode: str,
+    csi_report_period_slots: int,
+    csi_report_delay_slots: int,
+    csi_report_error_std: float,
+    link_adaptation_mode: str,
+    link_adaptation_cqi_backoff: int,
+    bler_mismatch_slope: float,
     deadline_risk_start_ratio: float,
     deadline_risk_penalty_weight: float,
     reference_deadline_target_slots: float,
@@ -457,6 +464,13 @@ def _validate(
         cqi_innovation_std=cqi_innovation_std,
         cqi_update_interval_slots=cqi_update_interval_slots,
         cqi_max_delta_per_update=cqi_max_delta_per_update,
+        csi_report_mode=csi_report_mode,
+        csi_report_period_slots=csi_report_period_slots,
+        csi_report_delay_slots=csi_report_delay_slots,
+        csi_report_error_std=csi_report_error_std,
+        link_adaptation_mode=link_adaptation_mode,
+        link_adaptation_cqi_backoff=link_adaptation_cqi_backoff,
+        bler_mismatch_slope=bler_mismatch_slope,
         deadline_target_slots=constraints.max_p99_wait_slots,
         reference_deadline_target_slots=reference_deadline_target_slots,
         deadline_risk_start_ratio=deadline_risk_start_ratio,
@@ -524,6 +538,15 @@ def _validate(
         ),
         "mean_goodput_bits_per_slot": mean(
             float(row["mean_goodput_bits_per_slot"]) for row in rows
+        ),
+        "mean_spectral_efficiency_bps_hz": mean(
+            float(row["mean_spectral_efficiency_bps_hz"]) for row in rows
+        ),
+        "mean_observed_bler": mean(float(row["mean_observed_bler"]) for row in rows),
+        "mean_predicted_bler": mean(float(row["mean_predicted_bler"]) for row in rows),
+        "mean_mcs_index": mean(float(row["mean_mcs_index"]) for row in rows),
+        "mean_harq_retransmission_fraction": mean(
+            float(row["mean_harq_retransmission_fraction"]) for row in rows
         ),
         "mean_cqi": mean(float(row["mean_cqi"]) for row in rows),
         "mean_cqi_std": mean(float(row["mean_cqi_std"]) for row in rows),
@@ -628,6 +651,17 @@ def main() -> None:
     parser.add_argument("--cqi-innovation-std", type=float, default=0.35)
     parser.add_argument("--cqi-update-interval-slots", type=int, default=1)
     parser.add_argument("--cqi-max-delta-per-update", type=int, default=1)
+    parser.add_argument("--csi-report-mode", choices=["perfect", "periodic"], default="perfect")
+    parser.add_argument("--csi-report-period-slots", type=int, default=1)
+    parser.add_argument("--csi-report-delay-slots", type=int, default=0)
+    parser.add_argument("--csi-report-error-std", type=float, default=0.0)
+    parser.add_argument(
+        "--link-adaptation-mode",
+        choices=["legacy_fixed_bler", "cqi_mcs_bler"],
+        default="legacy_fixed_bler",
+    )
+    parser.add_argument("--link-adaptation-cqi-backoff", type=int, default=0)
+    parser.add_argument("--bler-mismatch-slope", type=float, default=1.5)
     parser.add_argument("--single-seed-upper-bound", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--deadline-risk-start-ratio", type=float, default=0.60)
     parser.add_argument("--deadline-risk-penalty-weight", type=float, default=0.15)
@@ -793,6 +827,12 @@ def main() -> None:
         parser.error("cqi-update-interval-slots must be positive")
     if args.cqi_max_delta_per_update <= 0:
         parser.error("cqi-max-delta-per-update must be positive")
+    if args.csi_report_period_slots <= 0:
+        parser.error("csi-report-period-slots must be positive")
+    if args.csi_report_delay_slots < 0:
+        parser.error("csi-report-delay-slots must be non-negative")
+    if args.csi_report_error_std < 0.0:
+        parser.error("csi-report-error-std must be non-negative")
     if not 0.0 <= args.deadline_risk_start_ratio < 1.0:
         parser.error("deadline-risk-start-ratio must be in [0, 1)")
     if args.deadline_risk_penalty_weight < 0.0:
@@ -897,6 +937,13 @@ def main() -> None:
                     "cqi_innovation_std": args.cqi_innovation_std,
                     "cqi_update_interval_slots": args.cqi_update_interval_slots,
                     "cqi_max_delta_per_update": args.cqi_max_delta_per_update,
+                    "csi_report_mode": args.csi_report_mode,
+                    "csi_report_period_slots": args.csi_report_period_slots,
+                    "csi_report_delay_slots": args.csi_report_delay_slots,
+                    "csi_report_error_std": args.csi_report_error_std,
+                    "link_adaptation_mode": args.link_adaptation_mode,
+                    "link_adaptation_cqi_backoff": args.link_adaptation_cqi_backoff,
+                    "bler_mismatch_slope": args.bler_mismatch_slope,
                 },
                 "rng_after_seed": {
                     "numpy": numpy_global_rng_sha256(),
@@ -1013,6 +1060,13 @@ def main() -> None:
             cqi_innovation_std=args.cqi_innovation_std,
             cqi_update_interval_slots=args.cqi_update_interval_slots,
             cqi_max_delta_per_update=args.cqi_max_delta_per_update,
+            csi_report_mode=args.csi_report_mode,
+            csi_report_period_slots=args.csi_report_period_slots,
+            csi_report_delay_slots=args.csi_report_delay_slots,
+            csi_report_error_std=args.csi_report_error_std,
+            link_adaptation_mode=args.link_adaptation_mode,
+            link_adaptation_cqi_backoff=args.link_adaptation_cqi_backoff,
+            bler_mismatch_slope=args.bler_mismatch_slope,
             deadline_target_slots=initial_p99_limit,
             reference_deadline_target_slots=args.max_p99_wait_slots,
             deadline_risk_start_ratio=args.deadline_risk_start_ratio,
@@ -1126,8 +1180,14 @@ def main() -> None:
                     "p99_wait", "max_wait", "near_deadline_rate",
                     "starvation_excess", "wait_excess", "fairness_excess",
                     "max_wait_excess", "goodput", "mean_cqi", "std_cqi",
-                    "cqi_mean_abs_change", "cqi_changed_fraction", "candidate_coverage",
-                    "harq_retention", "long_wait_retention", "long_wait_missed",
+                    "cqi_mean_abs_change", "cqi_changed_fraction",
+                    "mean_reported_cqi", "csi_abs_error", "csi_p95_abs_error",
+                    "csi_stale_fraction", "csi_report_age",
+                    "csi_report_generated", "csi_report_delivered",
+                    "mcs_index", "modulation_order", "predicted_bler", "observed_bler",
+                    "spectral_efficiency", "attempted_spectral_efficiency",
+                    "harq_retransmission_attempts", "harq_retransmission_fraction",
+                    "candidate_coverage", "harq_retention", "long_wait_retention", "long_wait_missed",
                     "safety_selected", "oldest_selected", "scheduler_selected",
                     "scheduler_fraction", "ppo_selected", "rule_selected",
                     "learned_selected", "learned_fraction",
@@ -1230,6 +1290,27 @@ def main() -> None:
                         "std_cqi": float(info["std_cqi"]),
                         "cqi_mean_abs_change": float(info["cqi_mean_abs_change"]),
                         "cqi_changed_fraction": float(info["cqi_changed_fraction"]),
+                        "mean_reported_cqi": float(info["mean_reported_cqi"]),
+                        "csi_abs_error": float(info["mean_csi_abs_error"]),
+                        "csi_p95_abs_error": float(info["p95_csi_abs_error"]),
+                        "csi_stale_fraction": float(info["csi_stale_fraction"]),
+                        "csi_report_age": float(info["csi_report_age_slots"]),
+                        "csi_report_generated": float(info["csi_report_generated"]),
+                        "csi_report_delivered": float(info["csi_report_delivered"]),
+                        "mcs_index": float(info["mean_mcs_index"]),
+                        "modulation_order": float(info["mean_modulation_order"]),
+                        "predicted_bler": float(info["mean_predicted_bler"]),
+                        "observed_bler": float(info["observed_bler"]),
+                        "spectral_efficiency": float(info["spectral_efficiency_bps_hz"]),
+                        "attempted_spectral_efficiency": float(
+                            info["attempted_spectral_efficiency_bps_hz"]
+                        ),
+                        "harq_retransmission_attempts": float(
+                            info["harq_retransmission_attempts"]
+                        ),
+                        "harq_retransmission_fraction": float(
+                            info["harq_retransmission_fraction"]
+                        ),
                         "candidate_coverage": diagnostics.candidate_coverage,
                         "harq_retention": diagnostics.harq_retention_rate,
                         "long_wait_retention": diagnostics.long_wait_retention_rate,
@@ -1357,6 +1438,27 @@ def main() -> None:
                 "mean_cqi_std": mean(metric_window["std_cqi"]),
                 "mean_cqi_abs_change_per_slot": mean(metric_window["cqi_mean_abs_change"]),
                 "mean_cqi_changed_fraction": mean(metric_window["cqi_changed_fraction"]),
+                "mean_reported_cqi": mean(metric_window["mean_reported_cqi"]),
+                "mean_csi_abs_error": mean(metric_window["csi_abs_error"]),
+                "max_p95_csi_abs_error": max(metric_window["csi_p95_abs_error"]),
+                "mean_csi_stale_fraction": mean(metric_window["csi_stale_fraction"]),
+                "mean_csi_report_age_slots": mean(metric_window["csi_report_age"]),
+                "mean_csi_report_generated_rate": mean(metric_window["csi_report_generated"]),
+                "mean_csi_report_delivered_rate": mean(metric_window["csi_report_delivered"]),
+                "mean_mcs_index": mean(metric_window["mcs_index"]),
+                "mean_modulation_order": mean(metric_window["modulation_order"]),
+                "mean_predicted_bler": mean(metric_window["predicted_bler"]),
+                "mean_observed_bler": mean(metric_window["observed_bler"]),
+                "mean_spectral_efficiency_bps_hz": mean(metric_window["spectral_efficiency"]),
+                "mean_attempted_spectral_efficiency_bps_hz": mean(
+                    metric_window["attempted_spectral_efficiency"]
+                ),
+                "mean_harq_retransmission_attempts": mean(
+                    metric_window["harq_retransmission_attempts"]
+                ),
+                "mean_harq_retransmission_fraction": mean(
+                    metric_window["harq_retransmission_fraction"]
+                ),
                 "mean_throughput_score": mean(metric_window["throughput"]),
                 "mean_fairness_score": mean(metric_window["fairness"]),
                 "mean_jain_fairness": mean(metric_window["jain_fairness"]),
@@ -1468,6 +1570,13 @@ def main() -> None:
                     cqi_innovation_std=config.cqi_innovation_std,
                     cqi_update_interval_slots=config.cqi_update_interval_slots,
                     cqi_max_delta_per_update=config.cqi_max_delta_per_update,
+                    csi_report_mode=config.csi_report_mode,
+                    csi_report_period_slots=config.csi_report_period_slots,
+                    csi_report_delay_slots=config.csi_report_delay_slots,
+                    csi_report_error_std=config.csi_report_error_std,
+                    link_adaptation_mode=config.link_adaptation_mode,
+                    link_adaptation_cqi_backoff=config.link_adaptation_cqi_backoff,
+                    bler_mismatch_slope=config.bler_mismatch_slope,
                     deadline_risk_start_ratio=args.deadline_risk_start_ratio,
                     deadline_risk_penalty_weight=args.deadline_risk_penalty_weight,
                     reference_deadline_target_slots=args.max_p99_wait_slots,

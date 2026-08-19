@@ -13,6 +13,8 @@ from scalemac_rl.reward_analysis import build_incremental_reward_analysis
 from scalemac_rl.multiseed_analysis import build_multiseed_confirmation_analysis
 from scalemac_rl.reproducibility_analysis import build_reproducibility_analysis
 from scalemac_rl.channel_analysis import build_dynamic_cqi_analysis
+from scalemac_rl.csi_analysis import build_csi_reporting_analysis
+from scalemac_rl.link_adaptation_analysis import build_link_adaptation_analysis
 from scalemac_rl.reward_study import RewardStudyPlan, write_json
 
 
@@ -99,6 +101,20 @@ def _common_command(
         str(int(common.get("cqi_update_interval_slots", 1))),
         "--cqi-max-delta-per-update",
         str(int(common.get("cqi_max_delta_per_update", 1))),
+        "--csi-report-mode",
+        str(common.get("csi_report_mode", "perfect")),
+        "--csi-report-period-slots",
+        str(int(common.get("csi_report_period_slots", 1))),
+        "--csi-report-delay-slots",
+        str(int(common.get("csi_report_delay_slots", 0))),
+        "--csi-report-error-std",
+        str(float(common.get("csi_report_error_std", 0.0))),
+        "--link-adaptation-mode",
+        str(common.get("link_adaptation_mode", "legacy_fixed_bler")),
+        "--link-adaptation-cqi-backoff",
+        str(int(common.get("link_adaptation_cqi_backoff", 0))),
+        "--bler-mismatch-slope",
+        str(float(common.get("bler_mismatch_slope", 1.5))),
         "--hidden-dim",
         str(int(common.get("hidden_dim", 64))),
         "--lr",
@@ -342,6 +358,19 @@ def main() -> None:
                     "cqi_innovation_std": float(effective_common.get("cqi_innovation_std", 0.35)),
                     "cqi_update_interval_slots": int(effective_common.get("cqi_update_interval_slots", 1)),
                     "cqi_max_delta_per_update": int(effective_common.get("cqi_max_delta_per_update", 1)),
+                    "csi_report_mode": str(effective_common.get("csi_report_mode", "perfect")),
+                    "csi_report_period_slots": int(effective_common.get("csi_report_period_slots", 1)),
+                    "csi_report_delay_slots": int(effective_common.get("csi_report_delay_slots", 0)),
+                    "csi_report_error_std": float(effective_common.get("csi_report_error_std", 0.0)),
+                    "link_adaptation_mode": str(
+                        effective_common.get("link_adaptation_mode", "legacy_fixed_bler")
+                    ),
+                    "link_adaptation_cqi_backoff": int(
+                        effective_common.get("link_adaptation_cqi_backoff", 0)
+                    ),
+                    "bler_mismatch_slope": float(
+                        effective_common.get("bler_mismatch_slope", 1.5)
+                    ),
                 },
                 "command": command,
             },
@@ -390,6 +419,18 @@ def main() -> None:
                 )
             elif plan.analysis.get("design") == "dynamic_cqi_screen":
                 analysis_path = build_dynamic_cqi_analysis(
+                    plan=plan,
+                    round_dir=round_dir,
+                    output_path=Path(str(plan.analysis["output"])),
+                )
+            elif plan.analysis.get("design") == "csi_reporting_screen":
+                analysis_path = build_csi_reporting_analysis(
+                    plan=plan,
+                    round_dir=round_dir,
+                    output_path=Path(str(plan.analysis["output"])),
+                )
+            elif plan.analysis.get("design") == "link_adaptation_screen":
+                analysis_path = build_link_adaptation_analysis(
                     plan=plan,
                     round_dir=round_dir,
                     output_path=Path(str(plan.analysis["output"])),

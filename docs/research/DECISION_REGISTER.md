@@ -137,3 +137,18 @@ concentration tuning, architecture changes, and dataset/Pareto work.
 - Introduce Dynamic CQI before CQI-dependent BLER, traffic arrivals, QoS, or mobility.
 - Preserve a static CQI case as the direct baseline in every first channel-realism comparison.
 - Do not add MCS or transmission-layer actions in the same round; those belong to later Joint Link Adaptation + Scheduler work.
+
+## Decision after Round 10
+- Keep TJS fixed.
+- Static CQI = regression baseline.
+- Slow Dynamic CQI = primary realism profile.
+- Fast Dynamic CQI = stress test.
+- Next add CSI report period/delay/noise, then explicit MCS/BLER and later joint UE+PRB+MCS+transmission-layer control.
+
+## Decision — optimize at realism checkpoints, not after every feature
+
+- Do not retune reward or switch to RPPO in the same round that CSI reporting is introduced.
+- Build the minimum radio-realism core in stages: Dynamic CQI → CSI reporting → MCS/CQI-dependent BLER.
+- After that core exists, open an optimization checkpoint comparing feed-forward PPO against recurrent PPO and only add/reshape objectives when a measured KPI is missing from T–J–S.
+- Later traffic/QoS/MIMO additions form new realism stages and may trigger another controlled optimization checkpoint.
+- Future Joint Link Adaptation + Scheduler target remains UE + PRB + MCS + transmission-layer decisions when MIMO/RI/PMI support exists.
