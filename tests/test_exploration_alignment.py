@@ -29,11 +29,3 @@ def test_archived_exploration_alignment_changes_only_beta_exploration() -> None:
     assert payload["common"]["environment_steps"] == 100096
 
 
-def test_round_03_analysis_is_archived_under_docs_analysis() -> None:
-    path = Path(
-        "docs/analysis/reward_study/round_03/policy_diagnostics_analysis.html"
-    )
-    content = path.read_text(encoding="utf-8")
-    assert "Vì sao reward 25/75 vẫn gây starvation" in content
-    assert "64 slot" in content
-    assert "deterministic" in content

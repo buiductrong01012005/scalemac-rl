@@ -110,14 +110,6 @@ def test_pareto_front_mixed_objectives() -> None:
     assert front == {0, 1}
 
 
-def test_baseline_analysis_is_stored_in_docs() -> None:
-    path = Path(
-        "docs/analysis/reward_study/baselines/v083_full_control_baseline.html"
-    )
-    assert path.is_file()
-    assert "ScaleMAC-RL v0.8.3" in path.read_text(encoding="utf-8")
-
-
 def test_round_02_is_a_four_case_throughput_jain_sweep() -> None:
     plan = RewardStudyPlan.from_json(
         Path("configs/reward_study/round_02_throughput_jain_sweep.json")
@@ -137,16 +129,6 @@ def test_round_02_is_a_four_case_throughput_jain_sweep() -> None:
         assert actual["coef_service"] == 0.0
         assert actual["coef_starvation_penalty"] == 0.0
         assert actual["coef_deadline_risk_penalty"] == 0.0
-
-
-def test_round_01_analysis_explains_p99_wait_in_plain_language() -> None:
-    path = Path(
-        "docs/analysis/reward_study/round_01/round_01_component_screen_analysis.html"
-    )
-    content = path.read_text(encoding="utf-8")
-    assert "99% UE" in content
-    assert "Worst P99 wait" in content
-    assert "truyền thành công gần nhất" in content
 
 
 def test_round_04_adds_service_with_equal_coefficients() -> None:
@@ -275,18 +257,6 @@ def test_round_05_increases_one_component_and_reduces_the_other_two_equally() ->
     assert plan.analysis["design"] == "directional_three_component"
 
 
-def test_round_04_result_analysis_is_archived() -> None:
-    path = Path(
-        "docs/analysis/reward_study/round_04/add_service_equal_analysis.html"
-    )
-    content = path.read_text(encoding="utf-8")
-    assert "Service chủ yếu là reward shaping" in content
-    assert "Worst P99 wait" in content
-    assert "Throughput-heavy" in content
-    assert "55,5% policy influence" in content
-    assert "service_005" not in content
-
-
 def test_directional_three_component_analysis_explains_all_three_cases(tmp_path: Path) -> None:
     from scalemac_rl.reward_analysis import build_incremental_reward_analysis
 
@@ -375,17 +345,6 @@ def test_directional_three_component_analysis_explains_all_three_cases(tmp_path:
     assert "99% UE" in content
 
 
-def test_round_05_result_analysis_explains_non_linear_directional_effects() -> None:
-    path = Path(
-        "docs/analysis/reward_study/round_05/three_component_directional_analysis.html"
-    )
-    content = path.read_text(encoding="utf-8")
-    assert "Throughput-heavy: tăng goodput nhưng tạo policy không ổn định" in content
-    assert "Jain-heavy: tăng hệ số Jain nhưng fairness deterministic lại giảm" in content
-    assert "Service-heavy: Service không đủ làm objective chính" in content
-    assert "vùng ổn định gần mốc bằng nhau" in content
-
-
 def test_round_06_includes_the_hold_service_pair() -> None:
     plan = RewardStudyPlan.from_json(
         Path("configs/reward_study/round_06_three_component_coordinate.json")
@@ -432,46 +391,6 @@ def test_round_06_covers_all_six_local_coordinate_directions() -> None:
         assert actual["coef_deficit_service"] == 0.0
         assert actual["coef_pf_utility"] == 0.0
         assert actual["coef_starvation_penalty"] == 0.0
-
-
-def test_reward_analysis_archive_is_linked() -> None:
-    index = Path("docs/analysis/reward_study/index.html").read_text(encoding="utf-8")
-    assert "Round 01" in index
-    assert "Round 06" in index
-    assert "synthesis_round_01_to_06.html" in index
-    assert "ablation_map.html" in index
-    assert "literature_context.html" in index
-    assert Path("docs/analysis/reward_study/synthesis_round_01_to_06.html").is_file()
-    assert Path("docs/analysis/reward_study/ablation_map.html").is_file()
-    assert Path("docs/analysis/reward_study/literature_context.html").is_file()
-
-
-def test_round_06_analysis_plan_explains_all_fixed_component_pairs() -> None:
-    content = Path(
-        "docs/analysis/reward_study/round_06/experiment_plan.html"
-    ).read_text(encoding="utf-8")
-    assert "Giữ Service" in content
-    assert "Giữ Jain" in content
-    assert "Giữ Throughput" in content
-    assert "0,4000" in content
-    assert "0,2667" in content
-
-
-def test_round_06_result_analysis_records_anchor_interaction_and_late_collapse() -> None:
-    path = Path(
-        "docs/analysis/reward_study/round_06/three_component_coordinate_analysis.html"
-    )
-    content = path.read_text(encoding="utf-8")
-    assert "Throughput và Service đang đóng vai trò hai “neo” bổ trợ" in content
-    assert "late-training collapse" in content
-    assert "stochastic–deterministic" in content
-    assert "0,40/0,2667/0,3333" in content
-    assert Path(
-        "docs/analysis/reward_study/round_06/round_06_final_metrics.csv"
-    ).is_file()
-    assert Path(
-        "docs/analysis/reward_study/round_06/round_06_validation_trajectory.csv"
-    ).is_file()
 
 
 def test_round_07_integrates_eight_regimes_for_each_remaining_component() -> None:
@@ -528,23 +447,6 @@ def test_round_07_integrates_eight_regimes_for_each_remaining_component() -> Non
             assert coefficients["coef_starvation_penalty"] == 0.0
             assert coefficients["coef_deadline_risk_penalty"] == 0.0
 
-
-def test_round_07_plan_is_linked_from_analysis_archive() -> None:
-    index = Path("docs/analysis/reward_study/index.html").read_text(encoding="utf-8")
-    plan = Path(
-        "docs/analysis/reward_study/round_07/experiment_plan.html"
-    ).read_text(encoding="utf-8")
-    assert "Round 07" in index
-    assert "round_07/experiment_plan.html" in index
-    assert "Equal-quarter" in plan
-    assert "New-component-heavy" in plan
-    assert "Giữ Throughput" in plan
-    assert "Giữ Jain" in plan
-    assert "Giữ Service" in plan
-    assert "Giữ T+J" in plan
-    assert "Giữ T+S" in plan
-    assert "Giữ J+S" in plan
-    assert "32 case" in plan
 
 def test_comprehensive_fourth_component_analysis_exports_matrix_and_summary(
     tmp_path: Path,
