@@ -51,6 +51,13 @@ class ScaleMacConfig:
     csi_report_delay_slots: int = 0
     csi_report_error_std: float = 0.0
 
+    # Optional feed-forward observation enrichments. Defaults preserve the
+    # pre-v0.16 16-feature observation exactly. CSI age exposes how old the
+    # current report is; reported-CQI trend exposes the signed change between
+    # the two most recently delivered CSI reports.
+    observation_include_csi_age: bool = False
+    observation_include_reported_cqi_trend: bool = False
+
     # Link-adaptation abstraction. ``legacy_fixed_bler`` preserves the pre-v0.13
     # PHY path: true-CQI efficiency with a fixed BLER. ``cqi_mcs_bler`` maps the
     # scheduler-visible reported CQI to 3GPP-inspired PDSCH MCS Table 1 and makes

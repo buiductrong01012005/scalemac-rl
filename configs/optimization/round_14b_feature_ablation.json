@@ -1,0 +1,293 @@
+{
+  "study_id": "ppo_feature_ablation",
+  "round_id": "round_14b_feature_ablation",
+  "description": "Controlled feed-forward PPO observation ablation under fixed realistic Dynamic CQI + delayed CSI + CQI/MCS/BLER. Tests whether explicit CSI age and reported-CQI trend can reduce seed-level collapse before requiring recurrent memory.",
+  "common": {
+    "environment_steps": 100096,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 2.5e-05,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64,
+    "cqi_mode": "correlated",
+    "cqi_temporal_correlation": 0.97,
+    "cqi_innovation_std": 0.35,
+    "cqi_update_interval_slots": 1,
+    "cqi_max_delta_per_update": 1,
+    "csi_report_mode": "periodic",
+    "csi_report_period_slots": 4,
+    "csi_report_delay_slots": 2,
+    "csi_report_error_std": 0.0,
+    "link_adaptation_mode": "cqi_mcs_bler",
+    "link_adaptation_cqi_backoff": 0,
+    "bler_mismatch_slope": 1.5,
+    "policy_architecture": "feedforward",
+    "observation_include_csi_age": false,
+    "observation_include_reported_cqi_trend": false
+  },
+  "analysis": {
+    "design": "feature_ablation_screen",
+    "title": "Round 14B \u2014 PPO Observation Feature Ablation",
+    "output": "docs/analysis/optimization/round_14b/feature_ablation_analysis.html",
+    "markdown_output": "docs/analysis/optimization/round_14b/feature_ablation_summary.md",
+    "metrics_output": "docs/analysis/optimization/round_14b/feature_ablation_metrics.csv",
+    "summary_output": "docs/analysis/optimization/round_14b/feature_ablation_profile_summary.csv",
+    "paired_output": "docs/analysis/optimization/round_14b/feature_ablation_paired_comparison.csv"
+  },
+  "cases": [
+    {
+      "id": "baseline_seed1701",
+      "label": "Baseline 16 features \u2014 seed 1701",
+      "hypothesis": "Reference observation used in Round 14A.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ],
+        "observation_include_csi_age": false,
+        "observation_include_reported_cqi_trend": false
+      }
+    },
+    {
+      "id": "baseline_seed2701",
+      "label": "Baseline 16 features \u2014 seed 2701",
+      "hypothesis": "Reference observation used in Round 14A.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ],
+        "observation_include_csi_age": false,
+        "observation_include_reported_cqi_trend": false
+      }
+    },
+    {
+      "id": "baseline_seed3701",
+      "label": "Baseline 16 features \u2014 seed 3701",
+      "hypothesis": "Reference observation used in Round 14A.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ],
+        "observation_include_csi_age": false,
+        "observation_include_reported_cqi_trend": false
+      }
+    },
+    {
+      "id": "csi_age_seed1701",
+      "label": "Add CSI age \u2014 seed 1701",
+      "hypothesis": "Tests whether explicit report staleness lets feed-forward PPO discount old CQI.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ],
+        "observation_include_csi_age": true,
+        "observation_include_reported_cqi_trend": false
+      }
+    },
+    {
+      "id": "csi_age_seed2701",
+      "label": "Add CSI age \u2014 seed 2701",
+      "hypothesis": "Tests whether explicit report staleness lets feed-forward PPO discount old CQI.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ],
+        "observation_include_csi_age": true,
+        "observation_include_reported_cqi_trend": false
+      }
+    },
+    {
+      "id": "csi_age_seed3701",
+      "label": "Add CSI age \u2014 seed 3701",
+      "hypothesis": "Tests whether explicit report staleness lets feed-forward PPO discount old CQI.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ],
+        "observation_include_csi_age": true,
+        "observation_include_reported_cqi_trend": false
+      }
+    },
+    {
+      "id": "cqi_trend_seed1701",
+      "label": "Add reported-CQI trend \u2014 seed 1701",
+      "hypothesis": "Tests whether the direction of recent reported-CQI movement substitutes for short memory.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ],
+        "observation_include_csi_age": false,
+        "observation_include_reported_cqi_trend": true
+      }
+    },
+    {
+      "id": "cqi_trend_seed2701",
+      "label": "Add reported-CQI trend \u2014 seed 2701",
+      "hypothesis": "Tests whether the direction of recent reported-CQI movement substitutes for short memory.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ],
+        "observation_include_csi_age": false,
+        "observation_include_reported_cqi_trend": true
+      }
+    },
+    {
+      "id": "cqi_trend_seed3701",
+      "label": "Add reported-CQI trend \u2014 seed 3701",
+      "hypothesis": "Tests whether the direction of recent reported-CQI movement substitutes for short memory.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ],
+        "observation_include_csi_age": false,
+        "observation_include_reported_cqi_trend": true
+      }
+    },
+    {
+      "id": "age_trend_seed1701",
+      "label": "Add CSI age + CQI trend \u2014 seed 1701",
+      "hypothesis": "Tests whether staleness plus direction together provide enough temporal context without recurrence.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ],
+        "observation_include_csi_age": true,
+        "observation_include_reported_cqi_trend": true
+      }
+    },
+    {
+      "id": "age_trend_seed2701",
+      "label": "Add CSI age + CQI trend \u2014 seed 2701",
+      "hypothesis": "Tests whether staleness plus direction together provide enough temporal context without recurrence.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ],
+        "observation_include_csi_age": true,
+        "observation_include_reported_cqi_trend": true
+      }
+    },
+    {
+      "id": "age_trend_seed3701",
+      "label": "Add CSI age + CQI trend \u2014 seed 3701",
+      "hypothesis": "Tests whether staleness plus direction together provide enough temporal context without recurrence.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ],
+        "observation_include_csi_age": true,
+        "observation_include_reported_cqi_trend": true
+      }
+    }
+  ]
+}

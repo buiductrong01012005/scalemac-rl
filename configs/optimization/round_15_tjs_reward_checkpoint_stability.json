@@ -1,0 +1,272 @@
+{
+  "study_id": "tjs_reward_checkpoint_stability",
+  "round_id": "round_15_tjs_reward_checkpoint_stability",
+  "description": "Controlled T/J/S reward-weight re-check on the fixed 16-feature feed-forward PPO stack. Each case is analyzed over the full validation trajectory and at both best_tradeoff and latest checkpoints to distinguish failure-to-learn from learn-then-drift.",
+  "common": {
+    "environment_steps": 100096,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 2.5e-05,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64,
+    "cqi_mode": "correlated",
+    "cqi_temporal_correlation": 0.97,
+    "cqi_innovation_std": 0.35,
+    "cqi_update_interval_slots": 1,
+    "cqi_max_delta_per_update": 1,
+    "csi_report_mode": "periodic",
+    "csi_report_period_slots": 4,
+    "csi_report_delay_slots": 2,
+    "csi_report_error_std": 0.0,
+    "link_adaptation_mode": "cqi_mcs_bler",
+    "link_adaptation_cqi_backoff": 0,
+    "bler_mismatch_slope": 1.5,
+    "policy_architecture": "feedforward",
+    "observation_include_csi_age": false,
+    "observation_include_reported_cqi_trend": false,
+    "baseline_compatible_feature_init": false
+  },
+  "analysis": {
+    "design": "reward_checkpoint_stability_screen",
+    "title": "Round 15 \u2014 TJS Reward and Checkpoint Stability",
+    "output": "docs/analysis/optimization/round_15/tjs_reward_checkpoint_stability.html",
+    "markdown_output": "docs/analysis/optimization/round_15/tjs_reward_checkpoint_stability.md",
+    "metrics_output": "docs/analysis/optimization/round_15/tjs_checkpoint_case_metrics.csv",
+    "summary_output": "docs/analysis/optimization/round_15/tjs_checkpoint_profile_summary.csv",
+    "trajectory_output": "docs/analysis/optimization/round_15/tjs_checkpoint_validation_trajectory.csv",
+    "ranking_output": "docs/analysis/optimization/round_15/tjs_checkpoint_profile_ranking.csv",
+    "decision_output": "docs/analysis/optimization/round_15/tjs_checkpoint_decision.json"
+  },
+  "cases": [
+    {
+      "id": "equal_seed1701",
+      "label": "Equal T/J/S \u2014 seed 1701",
+      "hypothesis": "Reference TJS reward retained from the current baseline.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "equal_seed2701",
+      "label": "Equal T/J/S \u2014 seed 2701",
+      "hypothesis": "Reference TJS reward retained from the current baseline.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "equal_seed3701",
+      "label": "Equal T/J/S \u2014 seed 3701",
+      "hypothesis": "Reference TJS reward retained from the current baseline.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    },
+    {
+      "id": "throughput40_seed1701",
+      "label": "Throughput 0.40 / Jain 0.30 / Service 0.30 \u2014 seed 1701",
+      "hypothesis": "Tests a mild throughput tilt while keeping Jain and Service at 0.30.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.4,
+        "fairness": 0.3,
+        "service": 0.3
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "throughput40_seed2701",
+      "label": "Throughput 0.40 / Jain 0.30 / Service 0.30 \u2014 seed 2701",
+      "hypothesis": "Tests a mild throughput tilt while keeping Jain and Service at 0.30.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.4,
+        "fairness": 0.3,
+        "service": 0.3
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "throughput40_seed3701",
+      "label": "Throughput 0.40 / Jain 0.30 / Service 0.30 \u2014 seed 3701",
+      "hypothesis": "Tests a mild throughput tilt while keeping Jain and Service at 0.30.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.4,
+        "fairness": 0.3,
+        "service": 0.3
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    },
+    {
+      "id": "jain40_seed1701",
+      "label": "Throughput 0.30 / Jain 0.40 / Service 0.30 \u2014 seed 1701",
+      "hypothesis": "Tests whether a mild Jain tilt improves cross-seed fairness without losing service feasibility.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.4,
+        "service": 0.3
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "jain40_seed2701",
+      "label": "Throughput 0.30 / Jain 0.40 / Service 0.30 \u2014 seed 2701",
+      "hypothesis": "Tests whether a mild Jain tilt improves cross-seed fairness without losing service feasibility.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.4,
+        "service": 0.3
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "jain40_seed3701",
+      "label": "Throughput 0.30 / Jain 0.40 / Service 0.30 \u2014 seed 3701",
+      "hypothesis": "Tests whether a mild Jain tilt improves cross-seed fairness without losing service feasibility.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.4,
+        "service": 0.3
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    },
+    {
+      "id": "service40_seed1701",
+      "label": "Throughput 0.30 / Jain 0.30 / Service 0.40 \u2014 seed 1701",
+      "hypothesis": "Tests whether a mild Service tilt reduces failure-to-learn and learn-then-drift failure modes.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "service40_seed2701",
+      "label": "Throughput 0.30 / Jain 0.30 / Service 0.40 \u2014 seed 2701",
+      "hypothesis": "Tests whether a mild Service tilt reduces failure-to-learn and learn-then-drift failure modes.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "service40_seed3701",
+      "label": "Throughput 0.30 / Jain 0.30 / Service 0.40 \u2014 seed 3701",
+      "hypothesis": "Tests whether a mild Service tilt reduces failure-to-learn and learn-then-drift failure modes.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    }
+  ]
+}

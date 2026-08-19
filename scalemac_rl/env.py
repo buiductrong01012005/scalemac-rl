@@ -42,6 +42,15 @@ LAST_PRB_SHARE = 15
 OBSERVATION_FEATURES = 16
 
 
+def observation_feature_count(config: ScaleMacConfig) -> int:
+    """Return per-UE observation width for the selected feature ablation."""
+    return (
+        OBSERVATION_FEATURES
+        + int(config.observation_include_csi_age)
+        + int(config.observation_include_reported_cqi_trend)
+    )
+
+
 def deadline_risk_score(
     tail_waits: np.ndarray,
     *,
@@ -131,13 +140,15 @@ class ScaleMacDownlinkEnv:
         self._last_cqi_mean_abs_change = 0.0
         self._last_cqi_changed_fraction = 0.0
         self._reported_cqi_generation_slot = 0
+        self._previous_reported_cqi = np.zeros(n, dtype=np.int16)
+        self._reported_cqi_trend = np.zeros(n, dtype=np.float32)
         self._pending_csi_reports: list[tuple[int, int, np.ndarray]] = []
 
         self.reset(seed=self.config.seed)
 
     @property
     def observation_shape(self) -> tuple[int, int]:
-        return (self.config.num_ues, OBSERVATION_FEATURES)
+        return (self.config.num_ues, observation_feature_count(self.config))
 
     @property
     def action_shape(self) -> tuple[int, int]:
@@ -186,6 +197,8 @@ class ScaleMacDownlinkEnv:
         # Start every episode with an exact initial report. Staleness/error only
         # appears after the true channel begins evolving.
         self.reported_cqi = self.cqi.copy()
+        self._previous_reported_cqi = self.reported_cqi.copy()
+        self._reported_cqi_trend.fill(0.0)
         self._reported_cqi_generation_slot = 0
         self._pending_csi_reports.clear()
 
@@ -319,7 +332,12 @@ class ScaleMacDownlinkEnv:
         generated = 0.0
         delivered = 0.0
         if self.config.csi_report_mode == "perfect":
+            previous_report = self.reported_cqi.copy()
             self.reported_cqi = self.cqi.copy()
+            self._previous_reported_cqi = previous_report
+            self._reported_cqi_trend = (
+                self.reported_cqi.astype(np.float32) - previous_report.astype(np.float32)
+            )
             self._reported_cqi_generation_slot = self.slot
             self._pending_csi_reports.clear()
             generated = 1.0
@@ -348,7 +366,12 @@ class ScaleMacDownlinkEnv:
                 # If several reports become deliverable together, the newest
                 # measurement supersedes older snapshots.
                 _, generation_slot, measurement = max(ready, key=lambda item: item[1])
+                previous_report = self.reported_cqi.copy()
                 self.reported_cqi = measurement.copy()
+                self._previous_reported_cqi = previous_report
+                self._reported_cqi_trend = (
+                    self.reported_cqi.astype(np.float32) - previous_report.astype(np.float32)
+                )
                 self._reported_cqi_generation_slot = generation_slot
                 self._pending_csi_reports = [
                     item for item in self._pending_csi_reports if item[0] > self.slot
@@ -369,6 +392,7 @@ class ScaleMacDownlinkEnv:
             ),
             "csi_report_generated": generated,
             "csi_report_delivered": delivered,
+            "mean_abs_reported_cqi_trend": float(np.mean(np.abs(self._reported_cqi_trend))),
         }
 
     def _sample_cqi_profiles(self, rng: np.random.Generator) -> np.ndarray:
@@ -407,7 +431,8 @@ class ScaleMacDownlinkEnv:
         wait_denominator = max(self.config.starvation_threshold_slots, 1)
         retx_denominator = max(self.config.max_harq_retransmissions, 1)
 
-        observation = np.empty(self.observation_shape, dtype=np.float32)
+        base = np.empty((self.config.num_ues, OBSERVATION_FEATURES), dtype=np.float32)
+        observation = base
         observation[:, CQI] = self.reported_cqi / 15.0
         observation[:, QUEUE] = np.clip(self.queue_bytes / max_queue, 0.0, 1.0)
         observation[:, DEMAND] = self.demand_factor / 2.0
@@ -462,7 +487,29 @@ class ScaleMacDownlinkEnv:
         observation[:, LAST_PRB_SHARE] = np.clip(
             self.last_grant / max(self.config.num_prbs, 1), 0.0, 1.0
         )
-        return observation
+
+        extras: list[np.ndarray] = []
+        if self.config.observation_include_csi_age:
+            age_slots = max(self.slot - self._reported_cqi_generation_slot, 0)
+            age_scale = max(
+                self.config.csi_report_period_slots + self.config.csi_report_delay_slots,
+                1,
+            )
+            extras.append(
+                np.full(
+                    (self.config.num_ues, 1),
+                    min(age_slots / age_scale, 2.0),
+                    dtype=np.float32,
+                )
+            )
+        if self.config.observation_include_reported_cqi_trend:
+            extras.append(
+                np.clip(self._reported_cqi_trend / 14.0, -1.0, 1.0)
+                .astype(np.float32)[:, None]
+            )
+        if extras:
+            return np.concatenate([base, *extras], axis=1).astype(np.float32, copy=False)
+        return base
 
     @staticmethod
     def _percentile_rank(values: np.ndarray) -> np.ndarray:

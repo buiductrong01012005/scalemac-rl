@@ -1,0 +1,243 @@
+{
+  "study_id": "controlled_feature_and_oracle_sanity",
+  "round_id": "round_14c_controlled_features",
+  "description": "Controlled PPO feature test with baseline-compatible initialization before reward re-check; paired with a separate Oracle/PF/PPO environment-feasibility sanity evaluation.",
+  "common": {
+    "environment_steps": 100096,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 2.5e-05,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64,
+    "cqi_mode": "correlated",
+    "cqi_temporal_correlation": 0.97,
+    "cqi_innovation_std": 0.35,
+    "cqi_update_interval_slots": 1,
+    "cqi_max_delta_per_update": 1,
+    "csi_report_mode": "periodic",
+    "csi_report_period_slots": 4,
+    "csi_report_delay_slots": 2,
+    "csi_report_error_std": 0.0,
+    "link_adaptation_mode": "cqi_mcs_bler",
+    "link_adaptation_cqi_backoff": 0,
+    "bler_mismatch_slope": 1.5,
+    "policy_architecture": "feedforward",
+    "observation_include_csi_age": false,
+    "observation_include_reported_cqi_trend": false,
+    "baseline_compatible_feature_init": false
+  },
+  "analysis": {
+    "design": "feature_ablation_screen",
+    "title": "Round 14C \u2014 Controlled Feature Initialization",
+    "output": "docs/analysis/optimization/round_14c/controlled_feature_analysis.html",
+    "markdown_output": "docs/analysis/optimization/round_14c/controlled_feature_summary.md",
+    "metrics_output": "docs/analysis/optimization/round_14c/controlled_feature_metrics.csv",
+    "summary_output": "docs/analysis/optimization/round_14c/controlled_feature_profile_summary.csv",
+    "paired_output": "docs/analysis/optimization/round_14c/controlled_feature_paired_comparison.csv"
+  },
+  "cases": [
+    {
+      "id": "baseline_seed1701",
+      "label": "Baseline 16 features \u2014 seed 1701",
+      "hypothesis": "Reference observation used in Round 14A.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ],
+        "observation_include_csi_age": false,
+        "observation_include_reported_cqi_trend": false,
+        "baseline_compatible_feature_init": false
+      }
+    },
+    {
+      "id": "baseline_seed2701",
+      "label": "Baseline 16 features \u2014 seed 2701",
+      "hypothesis": "Reference observation used in Round 14A.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ],
+        "observation_include_csi_age": false,
+        "observation_include_reported_cqi_trend": false,
+        "baseline_compatible_feature_init": false
+      }
+    },
+    {
+      "id": "baseline_seed3701",
+      "label": "Baseline 16 features \u2014 seed 3701",
+      "hypothesis": "Reference observation used in Round 14A.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ],
+        "observation_include_csi_age": false,
+        "observation_include_reported_cqi_trend": false,
+        "baseline_compatible_feature_init": false
+      }
+    },
+    {
+      "id": "csi_age_seed1701",
+      "label": "Add CSI age \u2014 seed 1701",
+      "hypothesis": "Tests whether explicit report staleness lets feed-forward PPO discount old CQI. Uses baseline-compatible zero-column initialization so step-0 policy and post-init RNG match the paired 16-feature baseline.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ],
+        "observation_include_csi_age": true,
+        "observation_include_reported_cqi_trend": false,
+        "baseline_compatible_feature_init": true
+      }
+    },
+    {
+      "id": "csi_age_seed2701",
+      "label": "Add CSI age \u2014 seed 2701",
+      "hypothesis": "Tests whether explicit report staleness lets feed-forward PPO discount old CQI. Uses baseline-compatible zero-column initialization so step-0 policy and post-init RNG match the paired 16-feature baseline.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ],
+        "observation_include_csi_age": true,
+        "observation_include_reported_cqi_trend": false,
+        "baseline_compatible_feature_init": true
+      }
+    },
+    {
+      "id": "csi_age_seed3701",
+      "label": "Add CSI age \u2014 seed 3701",
+      "hypothesis": "Tests whether explicit report staleness lets feed-forward PPO discount old CQI. Uses baseline-compatible zero-column initialization so step-0 policy and post-init RNG match the paired 16-feature baseline.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ],
+        "observation_include_csi_age": true,
+        "observation_include_reported_cqi_trend": false,
+        "baseline_compatible_feature_init": true
+      }
+    },
+    {
+      "id": "cqi_trend_seed1701",
+      "label": "Add reported-CQI trend \u2014 seed 1701",
+      "hypothesis": "Tests whether the direction of recent reported-CQI movement substitutes for short memory. Uses baseline-compatible zero-column initialization so step-0 policy and post-init RNG match the paired 16-feature baseline.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ],
+        "observation_include_csi_age": false,
+        "observation_include_reported_cqi_trend": true,
+        "baseline_compatible_feature_init": true
+      }
+    },
+    {
+      "id": "cqi_trend_seed2701",
+      "label": "Add reported-CQI trend \u2014 seed 2701",
+      "hypothesis": "Tests whether the direction of recent reported-CQI movement substitutes for short memory. Uses baseline-compatible zero-column initialization so step-0 policy and post-init RNG match the paired 16-feature baseline.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ],
+        "observation_include_csi_age": false,
+        "observation_include_reported_cqi_trend": true,
+        "baseline_compatible_feature_init": true
+      }
+    },
+    {
+      "id": "cqi_trend_seed3701",
+      "label": "Add reported-CQI trend \u2014 seed 3701",
+      "hypothesis": "Tests whether the direction of recent reported-CQI movement substitutes for short memory. Uses baseline-compatible zero-column initialization so step-0 policy and post-init RNG match the paired 16-feature baseline.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ],
+        "observation_include_csi_age": false,
+        "observation_include_reported_cqi_trend": true,
+        "baseline_compatible_feature_init": true
+      }
+    }
+  ]
+}

@@ -17,6 +17,8 @@ from scalemac_rl.csi_analysis import build_csi_reporting_analysis
 from scalemac_rl.link_adaptation_analysis import build_link_adaptation_analysis
 from scalemac_rl.policy_architecture_analysis import build_policy_architecture_analysis
 from scalemac_rl.training_stability_analysis import build_training_stability_analysis
+from scalemac_rl.feature_ablation_analysis import build_feature_ablation_analysis
+from scalemac_rl.reward_checkpoint_analysis import build_reward_checkpoint_stability_analysis
 from scalemac_rl.reward_study import RewardStudyPlan, write_json
 
 
@@ -111,6 +113,15 @@ def _common_command(
         str(int(common.get("csi_report_delay_slots", 0))),
         "--csi-report-error-std",
         str(float(common.get("csi_report_error_std", 0.0))),
+        "--observation-include-csi-age"
+        if bool(common.get("observation_include_csi_age", False))
+        else "--no-observation-include-csi-age",
+        "--observation-include-reported-cqi-trend"
+        if bool(common.get("observation_include_reported_cqi_trend", False))
+        else "--no-observation-include-reported-cqi-trend",
+        "--baseline-compatible-feature-init"
+        if bool(common.get("baseline_compatible_feature_init", False))
+        else "--no-baseline-compatible-feature-init",
         "--link-adaptation-mode",
         str(common.get("link_adaptation_mode", "legacy_fixed_bler")),
         "--link-adaptation-cqi-backoff",
@@ -351,7 +362,20 @@ def main() -> None:
                     args.validation_slots or effective_common.get("validation_slots", 5_000)
                 ),
                 "architecture": {
-                    "observation_features_per_ue": 16,
+                    "observation_features_per_ue": (
+                        16
+                        + int(bool(effective_common.get("observation_include_csi_age", False)))
+                        + int(bool(effective_common.get("observation_include_reported_cqi_trend", False)))
+                    ),
+                    "observation_include_csi_age": bool(
+                        effective_common.get("observation_include_csi_age", False)
+                    ),
+                    "observation_include_reported_cqi_trend": bool(
+                        effective_common.get("observation_include_reported_cqi_trend", False)
+                    ),
+                    "baseline_compatible_feature_init": bool(
+                        effective_common.get("baseline_compatible_feature_init", False)
+                    ),
                     "encoder": "shared_set_encoder",
                     "embedding_dim": int(effective_common.get("hidden_dim", 64)),
                     "policy_architecture": str(
@@ -460,6 +484,18 @@ def main() -> None:
                 )
             elif plan.analysis.get("design") == "ppo_training_stability_screen":
                 analysis_path = build_training_stability_analysis(
+                    plan=plan,
+                    round_dir=round_dir,
+                    output_path=Path(str(plan.analysis["output"])),
+                )
+            elif plan.analysis.get("design") == "feature_ablation_screen":
+                analysis_path = build_feature_ablation_analysis(
+                    plan=plan,
+                    round_dir=round_dir,
+                    output_path=Path(str(plan.analysis["output"])),
+                )
+            elif plan.analysis.get("design") == "reward_checkpoint_stability_screen":
+                analysis_path = build_reward_checkpoint_stability_analysis(
                     plan=plan,
                     round_dir=round_dir,
                     output_path=Path(str(plan.analysis["output"])),

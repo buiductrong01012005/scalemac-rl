@@ -24,7 +24,7 @@ from scalemac_rl.candidates import (
     scatter_candidate_action_batch,
 )
 from scalemac_rl.constraints import LagrangeController, ServiceConstraints, validation_feasible
-from scalemac_rl.models import RecurrentSharedSetActorCritic, SharedSetActorCritic
+from scalemac_rl.models import RecurrentSharedSetActorCritic, SharedSetActorCritic, build_baseline_compatible_expanded_model
 from scalemac_rl.reporting import markdown_report_path, write_csv, write_markdown
 from scalemac_rl.rl_evaluation import evaluate_actor_critic
 from scalemac_rl.reproducibility import (
@@ -358,7 +358,7 @@ def _checkpoint_payload(
         "policy_architecture": args.policy_architecture,
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
-        "input_dim": OBSERVATION_FEATURES,
+        "input_dim": model.input_dim,
         "hidden_dim": args.hidden_dim,
         "curriculum": args.curriculum,
         "initialized_from": initialized_from,
@@ -492,7 +492,7 @@ def _load_initial_state(
         checkpoint = torch.load(resume_checkpoint, map_location=device, weights_only=False)
         checkpoint_input_dim = int(checkpoint.get("input_dim", OBSERVATION_FEATURES))
         model.load_compatible_state_dict(checkpoint["model_state_dict"], strict=True)
-        if "optimizer_state_dict" in checkpoint and checkpoint_input_dim == OBSERVATION_FEATURES:
+        if "optimizer_state_dict" in checkpoint and checkpoint_input_dim == model.input_dim:
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         for key, value in checkpoint.get("lagrange_controller", {}).items():
             if hasattr(controller, key):
@@ -552,6 +552,8 @@ def _validate(
     csi_report_period_slots: int,
     csi_report_delay_slots: int,
     csi_report_error_std: float,
+    observation_include_csi_age: bool,
+    observation_include_reported_cqi_trend: bool,
     link_adaptation_mode: str,
     link_adaptation_cqi_backoff: int,
     bler_mismatch_slope: float,
@@ -598,6 +600,8 @@ def _validate(
         csi_report_period_slots=csi_report_period_slots,
         csi_report_delay_slots=csi_report_delay_slots,
         csi_report_error_std=csi_report_error_std,
+        observation_include_csi_age=observation_include_csi_age,
+        observation_include_reported_cqi_trend=observation_include_reported_cqi_trend,
         link_adaptation_mode=link_adaptation_mode,
         link_adaptation_cqi_backoff=link_adaptation_cqi_backoff,
         bler_mismatch_slope=bler_mismatch_slope,
@@ -785,6 +789,18 @@ def main() -> None:
     parser.add_argument("--csi-report-period-slots", type=int, default=1)
     parser.add_argument("--csi-report-delay-slots", type=int, default=0)
     parser.add_argument("--csi-report-error-std", type=float, default=0.0)
+    parser.add_argument("--observation-include-csi-age", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--observation-include-reported-cqi-trend", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument(
+        "--baseline-compatible-feature-init",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "for feed-forward feature ablations, initialize the original 16-feature "
+            "network exactly as the baseline, append zero-weight input columns, and "
+            "restore the post-baseline-init RNG state so step-0 policy/RNG match"
+        ),
+    )
     parser.add_argument(
         "--link-adaptation-mode",
         choices=["legacy_fixed_bler", "cqi_mcs_bler"],
@@ -1072,16 +1088,29 @@ def main() -> None:
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     device = _resolve_device(args.device)
+    observation_input_dim = (
+        OBSERVATION_FEATURES
+        + int(args.observation_include_csi_age)
+        + int(args.observation_include_reported_cqi_trend)
+    )
     model: PolicyModel
     if args.policy_architecture == "recurrent":
+        if args.baseline_compatible_feature_init:
+            parser.error("baseline-compatible feature init currently supports feed-forward PPO only")
         model = RecurrentSharedSetActorCritic(
-            input_dim=OBSERVATION_FEATURES,
+            input_dim=observation_input_dim,
+            hidden_dim=args.hidden_dim,
+            initial_concentration=args.beta_concentration_start,
+        ).to(device)
+    elif args.baseline_compatible_feature_init and observation_input_dim > OBSERVATION_FEATURES:
+        model = build_baseline_compatible_expanded_model(
+            input_dim=observation_input_dim,
             hidden_dim=args.hidden_dim,
             initial_concentration=args.beta_concentration_start,
         ).to(device)
     else:
         model = SharedSetActorCritic(
-            input_dim=OBSERVATION_FEATURES,
+            input_dim=observation_input_dim,
             hidden_dim=args.hidden_dim,
             initial_concentration=args.beta_concentration_start,
         ).to(device)
@@ -1107,6 +1136,10 @@ def main() -> None:
                     "csi_report_period_slots": args.csi_report_period_slots,
                     "csi_report_delay_slots": args.csi_report_delay_slots,
                     "csi_report_error_std": args.csi_report_error_std,
+                    "observation_include_csi_age": args.observation_include_csi_age,
+                    "observation_include_reported_cqi_trend": args.observation_include_reported_cqi_trend,
+                    "observation_features_per_ue": observation_input_dim,
+                    "baseline_compatible_feature_init": args.baseline_compatible_feature_init,
                     "link_adaptation_mode": args.link_adaptation_mode,
                     "link_adaptation_cqi_backoff": args.link_adaptation_cqi_backoff,
                     "bler_mismatch_slope": args.bler_mismatch_slope,
@@ -1230,6 +1263,8 @@ def main() -> None:
             csi_report_period_slots=args.csi_report_period_slots,
             csi_report_delay_slots=args.csi_report_delay_slots,
             csi_report_error_std=args.csi_report_error_std,
+            observation_include_csi_age=args.observation_include_csi_age,
+            observation_include_reported_cqi_trend=args.observation_include_reported_cqi_trend,
             link_adaptation_mode=args.link_adaptation_mode,
             link_adaptation_cqi_backoff=args.link_adaptation_cqi_backoff,
             bler_mismatch_slope=args.bler_mismatch_slope,
@@ -1598,7 +1633,7 @@ def main() -> None:
                 )
             else:
                 flat_obs = torch.from_numpy(
-                    obs_array.reshape(-1, candidate_count, OBSERVATION_FEATURES)
+                    obs_array.reshape(-1, candidate_count, observation_input_dim)
                 ).to(device)
                 flat_actions = torch.from_numpy(
                     action_array.reshape(-1, candidate_count, 2)
@@ -1801,6 +1836,8 @@ def main() -> None:
                     csi_report_period_slots=config.csi_report_period_slots,
                     csi_report_delay_slots=config.csi_report_delay_slots,
                     csi_report_error_std=config.csi_report_error_std,
+                    observation_include_csi_age=config.observation_include_csi_age,
+                    observation_include_reported_cqi_trend=config.observation_include_reported_cqi_trend,
                     link_adaptation_mode=config.link_adaptation_mode,
                     link_adaptation_cqi_backoff=config.link_adaptation_cqi_backoff,
                     bler_mismatch_slope=config.bler_mismatch_slope,

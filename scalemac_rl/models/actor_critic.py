@@ -191,3 +191,36 @@ class SharedSetActorCritic(nn.Module):
         if unexpected_missing:
             raise RuntimeError(f"imitation checkpoint is missing actor keys: {unexpected_missing}")
         return list(result.missing_keys), list(result.unexpected_keys)
+
+
+def build_baseline_compatible_expanded_model(
+    *, input_dim: int, hidden_dim: int = 64, initial_concentration: float = 20.0
+) -> SharedSetActorCritic:
+    """Build an expanded feed-forward model paired to the 16-feature baseline init.
+
+    The first 16 input columns and every downstream parameter are exactly the
+    baseline model for the current torch RNG state. Added input columns start at
+    zero weight. The torch CPU RNG is restored to the state immediately after
+    constructing the baseline, so subsequent stochastic PPO sampling is paired.
+    """
+    if input_dim <= 16:
+        return SharedSetActorCritic(
+            input_dim=input_dim,
+            hidden_dim=hidden_dim,
+            initial_concentration=initial_concentration,
+        )
+    baseline = SharedSetActorCritic(
+        input_dim=16,
+        hidden_dim=hidden_dim,
+        initial_concentration=initial_concentration,
+    )
+    state = {k: v.detach().clone() for k, v in baseline.state_dict().items()}
+    rng_after_baseline = torch.get_rng_state().clone()
+    expanded = SharedSetActorCritic(
+        input_dim=input_dim,
+        hidden_dim=hidden_dim,
+        initial_concentration=initial_concentration,
+    )
+    expanded.load_compatible_state_dict(state, strict=True)
+    torch.set_rng_state(rng_after_baseline)
+    return expanded
