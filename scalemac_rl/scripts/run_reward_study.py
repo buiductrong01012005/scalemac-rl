@@ -15,6 +15,7 @@ from scalemac_rl.reproducibility_analysis import build_reproducibility_analysis
 from scalemac_rl.channel_analysis import build_dynamic_cqi_analysis
 from scalemac_rl.csi_analysis import build_csi_reporting_analysis
 from scalemac_rl.link_adaptation_analysis import build_link_adaptation_analysis
+from scalemac_rl.policy_architecture_analysis import build_policy_architecture_analysis
 from scalemac_rl.reward_study import RewardStudyPlan, write_json
 
 
@@ -117,6 +118,12 @@ def _common_command(
         str(float(common.get("bler_mismatch_slope", 1.5))),
         "--hidden-dim",
         str(int(common.get("hidden_dim", 64))),
+        "--policy-architecture",
+        str(common.get("policy_architecture", "feedforward")),
+        "--recurrent-seq-len",
+        str(int(common.get("recurrent_seq_len", 16))),
+        "--recurrent-minibatch-sequences",
+        str(int(common.get("recurrent_minibatch_sequences", 4))),
         "--lr",
         str(float(common.get("learning_rate_start", 1.0e-4))),
         "--lr-end",
@@ -346,6 +353,15 @@ def main() -> None:
                     "observation_features_per_ue": 16,
                     "encoder": "shared_set_encoder",
                     "embedding_dim": int(effective_common.get("hidden_dim", 64)),
+                    "policy_architecture": str(
+                        effective_common.get("policy_architecture", "feedforward")
+                    ),
+                    "recurrent_seq_len": int(
+                        effective_common.get("recurrent_seq_len", 16)
+                    ),
+                    "recurrent_minibatch_sequences": int(
+                        effective_common.get("recurrent_minibatch_sequences", 4)
+                    ),
                     "candidate_mode": "all",
                     "scheduler_mode": "ppo_only",
                     "num_ues": 1200,
@@ -431,6 +447,12 @@ def main() -> None:
                 )
             elif plan.analysis.get("design") == "link_adaptation_screen":
                 analysis_path = build_link_adaptation_analysis(
+                    plan=plan,
+                    round_dir=round_dir,
+                    output_path=Path(str(plan.analysis["output"])),
+                )
+            elif plan.analysis.get("design") == "policy_architecture_screen":
+                analysis_path = build_policy_architecture_analysis(
                     plan=plan,
                     round_dir=round_dir,
                     output_path=Path(str(plan.analysis["output"])),

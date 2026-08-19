@@ -11,7 +11,7 @@ import torch
 from .config import ScaleMacConfig
 from .constraints import ServiceConstraints
 from .env import OBSERVATION_FEATURES
-from .models import SharedSetActorCritic
+from .models import RecurrentSharedSetActorCritic, SharedSetActorCritic
 
 
 UNIFIED_EVALUATION_VERSION = "unified-v1"
@@ -298,12 +298,20 @@ def resolve_policy_runtime(
 def load_policy_checkpoint(
     path: Path,
     device: torch.device,
-) -> tuple[SharedSetActorCritic, dict[str, Any]]:
+) -> tuple[SharedSetActorCritic | RecurrentSharedSetActorCritic, dict[str, Any]]:
     checkpoint = torch.load(Path(path), map_location=device, weights_only=False)
-    model = SharedSetActorCritic(
-        input_dim=OBSERVATION_FEATURES,
-        hidden_dim=int(checkpoint["hidden_dim"]),
-    ).to(device)
+    architecture = str(checkpoint.get("policy_architecture", "feedforward"))
+    model: SharedSetActorCritic | RecurrentSharedSetActorCritic
+    if architecture == "recurrent":
+        model = RecurrentSharedSetActorCritic(
+            input_dim=OBSERVATION_FEATURES,
+            hidden_dim=int(checkpoint["hidden_dim"]),
+        ).to(device)
+    else:
+        model = SharedSetActorCritic(
+            input_dim=OBSERVATION_FEATURES,
+            hidden_dim=int(checkpoint["hidden_dim"]),
+        ).to(device)
     model.load_compatible_state_dict(checkpoint["model_state_dict"], strict=True)
     model.eval()
     return model, checkpoint

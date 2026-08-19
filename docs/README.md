@@ -16,6 +16,10 @@ ScaleMAC-RL is a fast DRL training surrogate for **single-cell 5G NR downlink MA
 
 
 
+## What v0.14.0 adds
+
+v0.14.0 introduces the first controlled **feed-forward PPO vs recurrent PPO (RPPO)** checkpoint. The recurrent policy adds a shared per-UE GRU memory while keeping the 1,200-UE full-control scheduler, T–J–S reward, Slow Dynamic CQI, periodic CSI delay, CQI→MCS mapping, channel-dependent BLER, HARQ, and PPO objective settings fixed. Round 13 runs paired PPO/RPPO experiments on seeds 1701, 2701, and 3701. Internal research/analysis material remains local-only through `.gitignore`; public release notes remain versioned.
+
 ## What v0.11.0 adds
 
 v0.11.0 starts the post-reward channel-realism phase. It keeps the selected equal-third Throughput–Jain–Service reward and adds a controlled temporally correlated Dynamic CQI process. Round 10 compares static, slow-correlated, and faster-correlated CQI while PPO, architecture, traffic, BLER and HARQ control remain fixed. Dynamic CQI metrics are exported to training/validation CSV and a dedicated HTML/Markdown comparison. Link Adaptation is intentionally deferred: BLER is still CQI-independent and the agent does not yet choose MCS or transmission layers.

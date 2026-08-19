@@ -15,5 +15,6 @@ docs/reports/*.md
 
 # Internal research/analysis artifacts (keep local, do not push)
 docs/analysis/
+docs/research/
 docs/research/*.html
 docs/research/*.csv

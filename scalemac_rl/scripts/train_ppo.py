@@ -24,7 +24,7 @@ from scalemac_rl.candidates import (
     scatter_candidate_action_batch,
 )
 from scalemac_rl.constraints import LagrangeController, ServiceConstraints, validation_feasible
-from scalemac_rl.models import SharedSetActorCritic
+from scalemac_rl.models import RecurrentSharedSetActorCritic, SharedSetActorCritic
 from scalemac_rl.reporting import markdown_report_path, write_csv, write_markdown
 from scalemac_rl.rl_evaluation import evaluate_actor_critic
 from scalemac_rl.reproducibility import (
@@ -35,6 +35,9 @@ from scalemac_rl.reproducibility import (
     write_runtime_metadata,
 )
 from scalemac_rl.tradeoff import validation_tradeoff_metrics
+
+
+PolicyModel = SharedSetActorCritic | RecurrentSharedSetActorCritic
 
 
 @dataclass(slots=True)
@@ -58,7 +61,7 @@ def _resolve_device(name: str) -> torch.device:
     return torch.device(name)
 
 
-def _set_beta_concentration(model: SharedSetActorCritic, concentration: float) -> None:
+def _set_beta_concentration(model: PolicyModel, concentration: float) -> None:
     """Set both Beta action heads to the requested total concentration."""
     if concentration <= 2.0:
         raise ValueError("Beta concentration must be greater than 2")
@@ -67,7 +70,7 @@ def _set_beta_concentration(model: SharedSetActorCritic, concentration: float) -
         model.raw_concentration.fill_(raw)
 
 
-def _current_beta_concentration(model: SharedSetActorCritic) -> tuple[float, float]:
+def _current_beta_concentration(model: PolicyModel) -> tuple[float, float]:
     values = torch.nn.functional.softplus(model.raw_concentration.detach()) + 2.0
     return float(values[0].item()), float(values[1].item())
 
@@ -122,7 +125,7 @@ def _candidate_masks(
 
 def _ppo_update(
     *,
-    model: SharedSetActorCritic,
+    model: PolicyModel,
     optimizer: torch.optim.Optimizer,
     observations: torch.Tensor,
     actions: torch.Tensor,
@@ -187,8 +190,127 @@ def _ppo_update(
     return {name: mean(values) if values else 0.0 for name, values in losses.items()}
 
 
+def _rppo_update(
+    *,
+    model: RecurrentSharedSetActorCritic,
+    optimizer: torch.optim.Optimizer,
+    observations: torch.Tensor,
+    actions: torch.Tensor,
+    candidate_masks: torch.Tensor,
+    old_log_probs: torch.Tensor,
+    returns: torch.Tensor,
+    advantages: torch.Tensor,
+    dones: torch.Tensor,
+    hidden_states: torch.Tensor,
+    sequence_length: int,
+    minibatch_sequences: int,
+    hyper: PpoHyperparameters,
+) -> dict[str, float]:
+    """PPO update over contiguous recurrent sequences using truncated BPTT.
+
+    Input tensors use rollout-major shapes [T,W,...]. Sequence boundaries never
+    mix workers, and the hidden state recorded before each action initializes the
+    corresponding truncated sequence.
+    """
+    rollout_steps, workers = observations.shape[:2]
+    if rollout_steps % sequence_length != 0:
+        raise ValueError(
+            "rollout_steps must be divisible by recurrent sequence length"
+        )
+    sequences_per_worker = rollout_steps // sequence_length
+    sequence_refs = [
+        (worker, start)
+        for worker in range(workers)
+        for start in range(0, rollout_steps, sequence_length)
+    ]
+    order = np.arange(len(sequence_refs))
+    losses: dict[str, list[float]] = {
+        "policy_loss": [],
+        "value_loss": [],
+        "entropy": [],
+        "approx_kl": [],
+        "clip_fraction": [],
+    }
+
+    for _ in range(hyper.update_epochs):
+        np.random.shuffle(order)
+        stop_early = False
+        for batch_start in range(0, len(order), minibatch_sequences):
+            batch_ids = order[batch_start : batch_start + minibatch_sequences]
+            obs_batch = []
+            action_batch = []
+            mask_batch = []
+            old_logprob_batch = []
+            return_batch = []
+            advantage_batch = []
+            done_batch = []
+            hidden_batch = []
+            for seq_index in batch_ids:
+                worker, start = sequence_refs[int(seq_index)]
+                stop = start + sequence_length
+                obs_batch.append(observations[start:stop, worker])
+                action_batch.append(actions[start:stop, worker])
+                mask_batch.append(candidate_masks[start:stop, worker])
+                old_logprob_batch.append(old_log_probs[start:stop, worker])
+                return_batch.append(returns[start:stop, worker])
+                advantage_batch.append(advantages[start:stop, worker])
+                done_batch.append(dones[start:stop, worker])
+                hidden_batch.append(hidden_states[start, worker])
+
+            obs_mb = torch.stack(obs_batch, dim=0)
+            actions_mb = torch.stack(action_batch, dim=0)
+            masks_mb = torch.stack(mask_batch, dim=0)
+            old_logprobs_mb = torch.stack(old_logprob_batch, dim=0)
+            returns_mb = torch.stack(return_batch, dim=0)
+            advantages_mb = torch.stack(advantage_batch, dim=0)
+            dones_mb = torch.stack(done_batch, dim=0)
+            initial_hidden_mb = torch.stack(hidden_batch, dim=0)
+
+            log_prob, entropy, value, _ = model.evaluate_sequence(
+                obs_mb, masks_mb, actions_mb, initial_hidden_mb, dones_mb
+            )
+            log_ratio = log_prob - old_logprobs_mb
+            ratio = torch.exp(torch.clamp(log_ratio, -10.0, 10.0))
+            policy_loss = torch.maximum(
+                -advantages_mb * ratio,
+                -advantages_mb
+                * torch.clamp(
+                    ratio, 1.0 - hyper.clip_coef, 1.0 + hyper.clip_coef
+                ),
+            ).mean()
+            value_loss = 0.5 * torch.mean((value - returns_mb) ** 2)
+            entropy_loss = entropy.mean()
+            loss = (
+                policy_loss
+                + hyper.value_coef * value_loss
+                - hyper.entropy_coef * entropy_loss
+            )
+
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), hyper.max_grad_norm)
+            optimizer.step()
+
+            with torch.no_grad():
+                approx_kl = torch.mean((ratio - 1.0) - log_ratio).abs()
+                clip_fraction = torch.mean(
+                    (torch.abs(ratio - 1.0) > hyper.clip_coef).float()
+                )
+            losses["policy_loss"].append(float(policy_loss.item()))
+            losses["value_loss"].append(float(value_loss.item()))
+            losses["entropy"].append(float(entropy_loss.item()))
+            losses["approx_kl"].append(float(approx_kl.item()))
+            losses["clip_fraction"].append(float(clip_fraction.item()))
+            if hyper.target_kl > 0.0 and float(approx_kl.item()) > hyper.target_kl:
+                stop_early = True
+                break
+        if stop_early:
+            break
+    return {name: mean(values) if values else 0.0 for name, values in losses.items()}
+
+
 def _snapshot(
-    model: SharedSetActorCritic,
+    model: PolicyModel,
     optimizer: torch.optim.Optimizer,
     controller: LagrangeController,
 ) -> dict[str, Any]:
@@ -201,7 +323,7 @@ def _snapshot(
 
 def _restore(
     snapshot: dict[str, Any],
-    model: SharedSetActorCritic,
+    model: PolicyModel,
     optimizer: torch.optim.Optimizer,
     controller: LagrangeController,
 ) -> None:
@@ -213,7 +335,7 @@ def _restore(
 
 def _checkpoint_payload(
     *,
-    model: SharedSetActorCritic,
+    model: PolicyModel,
     optimizer: torch.optim.Optimizer,
     args: argparse.Namespace,
     initialized_from: str,
@@ -227,8 +349,13 @@ def _checkpoint_payload(
     validation: dict[str, Any] | None,
 ) -> dict[str, Any]:
     return {
-        "checkpoint_type": f"{args.scheduler_mode}_constrained_ppo_actor_critic",
+        "checkpoint_type": (
+            f"{args.scheduler_mode}_constrained_rppo_actor_critic"
+            if args.policy_architecture == "recurrent"
+            else f"{args.scheduler_mode}_constrained_ppo_actor_critic"
+        ),
         "checkpoint_tag": tag,
+        "policy_architecture": args.policy_architecture,
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "input_dim": OBSERVATION_FEATURES,
@@ -243,6 +370,9 @@ def _checkpoint_payload(
             "steps_per_stage": args.steps_per_stage,
             "workers": args.workers,
             "rollout_steps": args.rollout_steps,
+            "policy_architecture": args.policy_architecture,
+            "recurrent_seq_len": args.recurrent_seq_len,
+            "recurrent_minibatch_sequences": args.recurrent_minibatch_sequences,
             "max_candidates": args.max_candidates,
             "candidate_mode": args.candidate_mode,
             "scheduler_mode": args.scheduler_mode,
@@ -348,7 +478,7 @@ def _active_fairness_target(
 
 def _load_initial_state(
     *,
-    model: SharedSetActorCritic,
+    model: PolicyModel,
     optimizer: torch.optim.Optimizer,
     controller: LagrangeController,
     init_checkpoint: Path,
@@ -399,7 +529,7 @@ def _validation_seed_list(
 
 def _validate(
     *,
-    model: SharedSetActorCritic,
+    model: PolicyModel,
     device: torch.device,
     num_ues: int,
     slots: int,
@@ -681,6 +811,24 @@ def main() -> None:
     parser.add_argument("--reward-pf-utility-delta-weight", type=float, default=0.02)
     parser.add_argument("--reward-starvation-penalty-weight", type=float, default=0.50)
     parser.add_argument("--hidden-dim", type=int, default=64)
+    parser.add_argument(
+        "--policy-architecture",
+        choices=["feedforward", "recurrent"],
+        default="feedforward",
+        help="feedforward PPO or per-UE shared-GRU recurrent PPO",
+    )
+    parser.add_argument(
+        "--recurrent-seq-len",
+        type=int,
+        default=16,
+        help="truncated-BPTT sequence length used only by recurrent PPO",
+    )
+    parser.add_argument(
+        "--recurrent-minibatch-sequences",
+        type=int,
+        default=4,
+        help="number of contiguous recurrent sequences per PPO minibatch",
+    )
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument(
         "--lr-end", type=float, default=None,
@@ -805,6 +953,13 @@ def main() -> None:
 
     if args.steps_per_stage <= 0 or args.workers <= 0 or args.rollout_steps <= 0:
         parser.error("steps, workers, and rollout length must be positive")
+    if args.recurrent_seq_len <= 0 or args.recurrent_minibatch_sequences <= 0:
+        parser.error("recurrent sequence settings must be positive")
+    if args.policy_architecture == "recurrent":
+        if args.candidate_mode != "all":
+            parser.error("recurrent policy currently requires --candidate-mode all to preserve UE memory identity")
+        if args.rollout_steps % args.recurrent_seq_len != 0:
+            parser.error("recurrent policy requires rollout-steps divisible by recurrent-seq-len")
     if args.max_candidates < 64 and args.candidate_mode != "all":
         parser.error("max_candidates must be at least the Top-K value 64")
     if not 0 <= args.safety_reserve_ues <= 64:
@@ -917,11 +1072,19 @@ def main() -> None:
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     device = _resolve_device(args.device)
-    model = SharedSetActorCritic(
-        input_dim=OBSERVATION_FEATURES,
-        hidden_dim=args.hidden_dim,
-        initial_concentration=args.beta_concentration_start,
-    ).to(device)
+    model: PolicyModel
+    if args.policy_architecture == "recurrent":
+        model = RecurrentSharedSetActorCritic(
+            input_dim=OBSERVATION_FEATURES,
+            hidden_dim=args.hidden_dim,
+            initial_concentration=args.beta_concentration_start,
+        ).to(device)
+    else:
+        model = SharedSetActorCritic(
+            input_dim=OBSERVATION_FEATURES,
+            hidden_dim=args.hidden_dim,
+            initial_concentration=args.beta_concentration_start,
+        ).to(device)
     if args.runtime_metadata_output is not None:
         write_runtime_metadata(
             args.runtime_metadata_output,
@@ -932,6 +1095,9 @@ def main() -> None:
                     "fixed_profile_seed": args.fixed_profile_seed,
                     "validation_seeds": args.validation_seeds,
                     "device": str(device),
+                    "policy_architecture": args.policy_architecture,
+                    "recurrent_seq_len": args.recurrent_seq_len,
+                    "recurrent_minibatch_sequences": args.recurrent_minibatch_sequences,
                     "cqi_mode": args.cqi_mode,
                     "cqi_temporal_correlation": args.cqi_temporal_correlation,
                     "cqi_innovation_std": args.cqi_innovation_std,
@@ -1094,6 +1260,11 @@ def main() -> None:
         observations = np.stack(
             [env.reset(seed=config.seed + worker)[0] for worker, env in enumerate(envs)], axis=0
         )
+        recurrent_hidden: torch.Tensor | None = None
+        if isinstance(model, RecurrentSharedSetActorCritic):
+            recurrent_hidden = model.initial_state(
+                args.workers, num_ues, device=device
+            )
         stage_env_steps = 0
         stage_best_feasible_reward = float("-inf")
         stage_best_feasible_snapshot: dict[str, Any] | None = None
@@ -1164,6 +1335,7 @@ def main() -> None:
             value_buffer: list[np.ndarray] = []
             reward_buffer: list[np.ndarray] = []
             done_buffer: list[np.ndarray] = []
+            hidden_buffer: list[np.ndarray] = []
             metric_window: dict[str, list[float]] = {
                 key: []
                 for key in (
@@ -1204,7 +1376,16 @@ def main() -> None:
                 obs_tensor = torch.from_numpy(compact_observations).to(device)
                 mask_tensor = torch.from_numpy(compact_masks).to(device)
                 with torch.no_grad():
-                    output = model.get_action_and_value(obs_tensor, mask_tensor)
+                    if isinstance(model, RecurrentSharedSetActorCritic):
+                        assert recurrent_hidden is not None
+                        hidden_buffer.append(recurrent_hidden.cpu().numpy().copy())
+                        output = model.get_action_and_value(
+                            obs_tensor, mask_tensor, recurrent_hidden
+                        )
+                        next_recurrent_hidden = output.hidden_state
+                    else:
+                        output = model.get_action_and_value(obs_tensor, mask_tensor)
+                        next_recurrent_hidden = None
                 compact_actions = output.action.cpu().numpy()
                 full_actions = scatter_candidate_action_batch(
                     compact_actions, candidate_indices, num_ues=num_ues
@@ -1338,6 +1519,12 @@ def main() -> None:
                 reward_buffer.append(rewards)
                 done_buffer.append(dones)
                 observations = np.stack(next_observations, axis=0)
+                if isinstance(model, RecurrentSharedSetActorCritic):
+                    assert next_recurrent_hidden is not None
+                    keep = torch.from_numpy(1.0 - dones).to(
+                        device=device, dtype=next_recurrent_hidden.dtype
+                    ).view(args.workers, 1, 1)
+                    recurrent_hidden = next_recurrent_hidden * keep
 
             with torch.no_grad():
                 next_masks_full = _candidate_masks(
@@ -1349,9 +1536,18 @@ def main() -> None:
                 next_compact_masks = torch.ones(
                     next_compact_obs.shape[:2], dtype=torch.bool, device=device
                 )
-                next_value = model.get_action_and_value(
-                    next_obs_tensor, next_compact_masks, deterministic=True
-                ).value.cpu().numpy()
+                if isinstance(model, RecurrentSharedSetActorCritic):
+                    assert recurrent_hidden is not None
+                    next_value = model.get_action_and_value(
+                        next_obs_tensor,
+                        next_compact_masks,
+                        recurrent_hidden,
+                        deterministic=True,
+                    ).value.cpu().numpy()
+                else:
+                    next_value = model.get_action_and_value(
+                        next_obs_tensor, next_compact_masks, deterministic=True
+                    ).value.cpu().numpy()
 
             rewards_np = np.asarray(reward_buffer, dtype=np.float32)
             dones_np = np.asarray(done_buffer, dtype=np.float32)
@@ -1367,27 +1563,58 @@ def main() -> None:
             returns_np = advantages_np + values_np
 
             candidate_count = max_candidates
-            flat_obs = torch.from_numpy(
-                np.asarray(obs_buffer).reshape(-1, candidate_count, OBSERVATION_FEATURES)
-            ).to(device)
-            flat_actions = torch.from_numpy(
-                np.asarray(action_buffer).reshape(-1, candidate_count, 2)
-            ).to(device)
-            flat_masks = torch.from_numpy(
-                np.asarray(compact_mask_buffer).reshape(-1, candidate_count)
-            ).to(device)
-            flat_logprobs = torch.from_numpy(np.asarray(logprob_buffer).reshape(-1)).to(device)
-            flat_returns = torch.from_numpy(returns_np.reshape(-1)).to(device)
-            flat_advantages = torch.from_numpy(advantages_np.reshape(-1)).to(device)
-            flat_advantages = (flat_advantages - flat_advantages.mean()) / (
-                flat_advantages.std(unbiased=False) + 1e-8
+            obs_array = np.asarray(obs_buffer)
+            action_array = np.asarray(action_buffer)
+            mask_array = np.asarray(compact_mask_buffer)
+            logprob_array = np.asarray(logprob_buffer)
+            advantages_norm = (advantages_np - advantages_np.mean()) / (
+                advantages_np.std() + 1e-8
             )
-            update_metrics = _ppo_update(
-                model=model, optimizer=optimizer, observations=flat_obs,
-                actions=flat_actions, candidate_masks=flat_masks,
-                old_log_probs=flat_logprobs, returns=flat_returns,
-                advantages=flat_advantages, hyper=hyper,
-            )
+            if isinstance(model, RecurrentSharedSetActorCritic):
+                recurrent_obs = torch.from_numpy(obs_array).to(device)
+                recurrent_actions = torch.from_numpy(action_array).to(device)
+                recurrent_masks = torch.from_numpy(mask_array).to(device)
+                recurrent_logprobs = torch.from_numpy(logprob_array).to(device)
+                recurrent_returns = torch.from_numpy(returns_np).to(device)
+                recurrent_advantages = torch.from_numpy(advantages_norm).to(device)
+                recurrent_dones = torch.from_numpy(dones_np).to(device)
+                recurrent_hidden_states = torch.from_numpy(
+                    np.asarray(hidden_buffer)
+                ).to(device)
+                update_metrics = _rppo_update(
+                    model=model,
+                    optimizer=optimizer,
+                    observations=recurrent_obs,
+                    actions=recurrent_actions,
+                    candidate_masks=recurrent_masks,
+                    old_log_probs=recurrent_logprobs,
+                    returns=recurrent_returns,
+                    advantages=recurrent_advantages,
+                    dones=recurrent_dones,
+                    hidden_states=recurrent_hidden_states,
+                    sequence_length=args.recurrent_seq_len,
+                    minibatch_sequences=args.recurrent_minibatch_sequences,
+                    hyper=hyper,
+                )
+            else:
+                flat_obs = torch.from_numpy(
+                    obs_array.reshape(-1, candidate_count, OBSERVATION_FEATURES)
+                ).to(device)
+                flat_actions = torch.from_numpy(
+                    action_array.reshape(-1, candidate_count, 2)
+                ).to(device)
+                flat_masks = torch.from_numpy(
+                    mask_array.reshape(-1, candidate_count)
+                ).to(device)
+                flat_logprobs = torch.from_numpy(logprob_array.reshape(-1)).to(device)
+                flat_returns = torch.from_numpy(returns_np.reshape(-1)).to(device)
+                flat_advantages = torch.from_numpy(advantages_norm.reshape(-1)).to(device)
+                update_metrics = _ppo_update(
+                    model=model, optimizer=optimizer, observations=flat_obs,
+                    actions=flat_actions, candidate_masks=flat_masks,
+                    old_log_probs=flat_logprobs, returns=flat_returns,
+                    advantages=flat_advantages, hyper=hyper,
+                )
             controller.update(
                 mean_starvation_excess=mean(metric_window["starvation_excess"]),
                 mean_wait_excess=mean(metric_window["wait_excess"]),

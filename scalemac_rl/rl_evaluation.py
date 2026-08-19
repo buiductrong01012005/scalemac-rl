@@ -17,7 +17,7 @@ from .candidates import (
 from .config import ScaleMacConfig
 from .constraints import ServiceConstraints
 from .env import ScaleMacDownlinkEnv
-from .models import SharedSetActorCritic
+from .models import RecurrentSharedSetActorCritic, SharedSetActorCritic
 from .schedulers.base import Scheduler
 
 
@@ -269,7 +269,7 @@ def summarize_episode(
 
 def evaluate_actor_critic(
     *,
-    model: SharedSetActorCritic,
+    model: SharedSetActorCritic | RecurrentSharedSetActorCritic,
     device: torch.device,
     config: ScaleMacConfig,
     seed: int,
@@ -299,6 +299,11 @@ def evaluate_actor_critic(
         if candidate_mode == "all"
         else min(max(max_candidates, config.max_selected_ues), config.num_ues)
     )
+    recurrent_hidden: torch.Tensor | None = None
+    if isinstance(model, RecurrentSharedSetActorCritic):
+        if candidate_mode != "all":
+            raise ValueError("recurrent policy evaluation requires candidate_mode='all'")
+        recurrent_hidden = model.initial_state(1, candidate_count, device=device).squeeze(0)
 
     with torch.inference_mode():
         while True:
@@ -320,7 +325,13 @@ def evaluate_actor_critic(
             compact_observation, indices = gather_candidates(observation, mask)
             start_ns = perf_counter_ns()
             x = torch.from_numpy(compact_observation).to(device)
-            compact_action = model.deterministic_action(x).action.cpu().numpy()
+            if isinstance(model, RecurrentSharedSetActorCritic):
+                assert recurrent_hidden is not None
+                recurrent_output = model.deterministic_action(x, recurrent_hidden)
+                compact_action = recurrent_output.action.cpu().numpy()
+                recurrent_hidden = recurrent_output.hidden_state
+            else:
+                compact_action = model.deterministic_action(x).action.cpu().numpy()
             if device.type == "cuda":
                 torch.cuda.synchronize()
             inference_us.append((perf_counter_ns() - start_ns) / 1000.0)
