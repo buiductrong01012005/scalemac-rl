@@ -16,6 +16,7 @@ from scalemac_rl.channel_analysis import build_dynamic_cqi_analysis
 from scalemac_rl.csi_analysis import build_csi_reporting_analysis
 from scalemac_rl.link_adaptation_analysis import build_link_adaptation_analysis
 from scalemac_rl.policy_architecture_analysis import build_policy_architecture_analysis
+from scalemac_rl.training_stability_analysis import build_training_stability_analysis
 from scalemac_rl.reward_study import RewardStudyPlan, write_json
 
 
@@ -453,6 +454,12 @@ def main() -> None:
                 )
             elif plan.analysis.get("design") == "policy_architecture_screen":
                 analysis_path = build_policy_architecture_analysis(
+                    plan=plan,
+                    round_dir=round_dir,
+                    output_path=Path(str(plan.analysis["output"])),
+                )
+            elif plan.analysis.get("design") == "ppo_training_stability_screen":
+                analysis_path = build_training_stability_analysis(
                     plan=plan,
                     round_dir=round_dir,
                     output_path=Path(str(plan.analysis["output"])),

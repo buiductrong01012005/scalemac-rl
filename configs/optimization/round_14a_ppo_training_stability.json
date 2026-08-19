@@ -1,0 +1,297 @@
+{
+  "study_id": "ppo_training_stability",
+  "round_id": "round_14a_ppo_training_stability",
+  "description": "Self-contained 2x2 factorial screen of PPO learning-rate schedule and update epochs under the fixed realistic stale-CSI Link Adaptation environment. Reward, features, policy architecture and environment are unchanged.",
+  "common": {
+    "environment_steps": 100096,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 2.5e-05,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64,
+    "cqi_mode": "correlated",
+    "cqi_temporal_correlation": 0.97,
+    "cqi_innovation_std": 0.35,
+    "cqi_update_interval_slots": 1,
+    "cqi_max_delta_per_update": 1,
+    "csi_report_mode": "periodic",
+    "csi_report_period_slots": 4,
+    "csi_report_delay_slots": 2,
+    "csi_report_error_std": 0.0,
+    "link_adaptation_mode": "cqi_mcs_bler",
+    "link_adaptation_cqi_backoff": 0,
+    "bler_mismatch_slope": 1.5,
+    "policy_architecture": "feedforward"
+  },
+  "analysis": {
+    "design": "ppo_training_stability_screen",
+    "title": "Round 14A \u2014 PPO Training Stability 2x2 factorial",
+    "output": "docs/analysis/optimization/round_14a/ppo_training_stability_analysis.html",
+    "markdown_output": "docs/analysis/optimization/round_14a/ppo_training_stability_summary.md",
+    "metrics_output": "docs/analysis/optimization/round_14a/ppo_training_stability_metrics.csv",
+    "summary_output": "docs/analysis/optimization/round_14a/ppo_training_stability_recipe_summary.csv",
+    "factor_effects_output": "docs/analysis/optimization/round_14a/ppo_training_stability_factor_effects.csv"
+  },
+  "cases": [
+    {
+      "id": "baseline_seed1701",
+      "label": "Baseline PPO: LR 1e-4\u21922.5e-5, 4 epochs \u2014 seed 1701",
+      "hypothesis": "Reference recipe from Round 13, rerun in the same Round 14A runtime for a self-contained factorial comparison.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "policy_architecture": "feedforward",
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "baseline_seed2701",
+      "label": "Baseline PPO: LR 1e-4\u21922.5e-5, 4 epochs \u2014 seed 2701",
+      "hypothesis": "Reference recipe from Round 13, rerun in the same Round 14A runtime for a self-contained factorial comparison.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "policy_architecture": "feedforward",
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "baseline_seed3701",
+      "label": "Baseline PPO: LR 1e-4\u21922.5e-5, 4 epochs \u2014 seed 3701",
+      "hypothesis": "Reference recipe from Round 13, rerun in the same Round 14A runtime for a self-contained factorial comparison.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "policy_architecture": "feedforward",
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    },
+    {
+      "id": "low_lr_seed1701",
+      "label": "Low LR: 5e-5\u21921.25e-5, 4 epochs \u2014 seed 1701",
+      "hypothesis": "Tests whether smaller policy updates reduce KL/clip pressure and seed-level collapse.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "policy_architecture": "feedforward",
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ],
+        "learning_rate_start": 5e-05,
+        "learning_rate_end": 1.25e-05
+      }
+    },
+    {
+      "id": "low_lr_seed2701",
+      "label": "Low LR: 5e-5\u21921.25e-5, 4 epochs \u2014 seed 2701",
+      "hypothesis": "Tests whether smaller policy updates reduce KL/clip pressure and seed-level collapse.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "policy_architecture": "feedforward",
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ],
+        "learning_rate_start": 5e-05,
+        "learning_rate_end": 1.25e-05
+      }
+    },
+    {
+      "id": "low_lr_seed3701",
+      "label": "Low LR: 5e-5\u21921.25e-5, 4 epochs \u2014 seed 3701",
+      "hypothesis": "Tests whether smaller policy updates reduce KL/clip pressure and seed-level collapse.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "policy_architecture": "feedforward",
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ],
+        "learning_rate_start": 5e-05,
+        "learning_rate_end": 1.25e-05
+      }
+    },
+    {
+      "id": "epochs2_seed1701",
+      "label": "Two epochs: LR 1e-4\u21922.5e-5, 2 epochs \u2014 seed 1701",
+      "hypothesis": "Tests whether fewer passes over each rollout reduce over-updating without changing the LR schedule.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "policy_architecture": "feedforward",
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ],
+        "update_epochs": 2
+      }
+    },
+    {
+      "id": "epochs2_seed2701",
+      "label": "Two epochs: LR 1e-4\u21922.5e-5, 2 epochs \u2014 seed 2701",
+      "hypothesis": "Tests whether fewer passes over each rollout reduce over-updating without changing the LR schedule.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "policy_architecture": "feedforward",
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ],
+        "update_epochs": 2
+      }
+    },
+    {
+      "id": "epochs2_seed3701",
+      "label": "Two epochs: LR 1e-4\u21922.5e-5, 2 epochs \u2014 seed 3701",
+      "hypothesis": "Tests whether fewer passes over each rollout reduce over-updating without changing the LR schedule.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "policy_architecture": "feedforward",
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ],
+        "update_epochs": 2
+      }
+    },
+    {
+      "id": "low_lr_epochs2_seed1701",
+      "label": "Low LR + two epochs \u2014 seed 1701",
+      "hypothesis": "Tests the interaction of both conservative update controls.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "policy_architecture": "feedforward",
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ],
+        "learning_rate_start": 5e-05,
+        "learning_rate_end": 1.25e-05,
+        "update_epochs": 2
+      }
+    },
+    {
+      "id": "low_lr_epochs2_seed2701",
+      "label": "Low LR + two epochs \u2014 seed 2701",
+      "hypothesis": "Tests the interaction of both conservative update controls.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "policy_architecture": "feedforward",
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ],
+        "learning_rate_start": 5e-05,
+        "learning_rate_end": 1.25e-05,
+        "update_epochs": 2
+      }
+    },
+    {
+      "id": "low_lr_epochs2_seed3701",
+      "label": "Low LR + two epochs \u2014 seed 3701",
+      "hypothesis": "Tests the interaction of both conservative update controls.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3333333333333333,
+        "fairness": 0.3333333333333333,
+        "service": 0.3333333333333333
+      },
+      "common_overrides": {
+        "policy_architecture": "feedforward",
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ],
+        "learning_rate_start": 5e-05,
+        "learning_rate_end": 1.25e-05,
+        "update_epochs": 2
+      }
+    }
+  ]
+}
