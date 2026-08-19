@@ -4,4 +4,4 @@ from .config import ScaleMacConfig
 from .env import ScaleMacDownlinkEnv
 
 __all__ = ["ScaleMacConfig", "ScaleMacDownlinkEnv"]
-__version__ = "0.13.0"
+__version__ = "0.13.1"

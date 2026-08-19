@@ -597,7 +597,7 @@ class ScaleMacDownlinkEnv:
 
         if selected.size:
             if self.config.link_adaptation_mode == "legacy_fixed_bler":
-                efficiency = _CQI_EFFICIENCY[self.cqi[selected] - 1].astype(np.float64)
+                efficiency = _CQI_EFFICIENCY[self.cqi[selected] - 1]
                 predicted_bler.fill(self.config.target_bler if self.config.harq_enabled else 0.0)
                 selected_mcs.fill(-1)
                 selected_mod_order.fill(0)

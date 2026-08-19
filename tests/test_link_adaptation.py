@@ -213,3 +213,27 @@ def test_link_adaptation_analysis_exports_metrics(tmp_path: Path) -> None:
     assert (tmp_path / "la.md").is_file()
     assert (tmp_path / "la.csv").is_file()
     assert "MCS/BLER + periodic delayed CSI" in out.read_text(encoding="utf-8")
+
+
+def test_legacy_mode_preserves_pre_v013_float32_attempted_bits() -> None:
+    """Legacy PHY must retain the exact pre-v0.13 float32 CQI arithmetic path.
+
+    PPO is sensitive enough that a float32→float64 change in the legacy branch
+    can perturb the first reward and eventually send training to another basin.
+    """
+    env = ScaleMacDownlinkEnv(
+        _cfg(
+            link_adaptation_mode="legacy_fixed_bler",
+            harq_enabled=False,
+        )
+    )
+    env.reset(seed=17)
+    _, _, _, _, info = env.step(_action(env))
+
+    selected = np.asarray(info["selected_ues"], dtype=np.int64)
+    grants = np.asarray(info["prbs_per_selected_ue"], dtype=np.float64)
+    legacy_efficiency = CQI_TABLE1_EFFICIENCY.astype(np.float32)[env.cqi[selected] - 1]
+    legacy_bits_per_prb = 12.0 * 14.0 * legacy_efficiency * 0.86
+    expected_attempted = float(np.sum(grants * legacy_bits_per_prb))
+
+    assert info["cell_attempted_bits"] == expected_attempted
