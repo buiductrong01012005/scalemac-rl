@@ -1,0 +1,355 @@
+{
+  "study_id": "ppo_root_cause_audit",
+  "round_id": "round_16a_ppo_root_cause_audit",
+  "description": "Controlled 2x2 PPO audit on the fixed service40 reward and 16-feature environment. Tests whether larger sampling or PPO value-function clipping improves multi-seed stability while logging KL/ratio, gradient, critic, advantage/return, target-KL early-stop and checkpoint-feasibility diagnostics.",
+  "common": {
+    "environment_steps": 98304,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "rollback_patience": 1000000,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "value_coef": 0.5,
+    "value_clip_coef": 0.0,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 2.5e-05,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "audit_ppo_diagnostics": true,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64,
+    "cqi_mode": "correlated",
+    "cqi_temporal_correlation": 0.97,
+    "cqi_innovation_std": 0.35,
+    "cqi_update_interval_slots": 1,
+    "cqi_max_delta_per_update": 1,
+    "csi_report_mode": "periodic",
+    "csi_report_period_slots": 4,
+    "csi_report_delay_slots": 2,
+    "csi_report_error_std": 0.0,
+    "link_adaptation_mode": "cqi_mcs_bler",
+    "link_adaptation_cqi_backoff": 0,
+    "bler_mismatch_slope": 1.5,
+    "policy_architecture": "feedforward",
+    "observation_include_csi_age": false,
+    "observation_include_reported_cqi_trend": false,
+    "baseline_compatible_feature_init": false
+  },
+  "analysis": {
+    "design": "ppo_root_cause_audit",
+    "title": "Round 16A \u2014 PPO Root-Cause Audit",
+    "output": "docs/analysis/optimization/round_16a/ppo_root_cause_audit.html",
+    "markdown_output": "docs/analysis/optimization/round_16a/ppo_root_cause_audit.md",
+    "metrics_output": "docs/analysis/optimization/round_16a/ppo_root_cause_case_metrics.csv",
+    "summary_output": "docs/analysis/optimization/round_16a/ppo_root_cause_profile_summary.csv",
+    "ranking_output": "docs/analysis/optimization/round_16a/ppo_root_cause_profile_ranking.csv",
+    "factor_output": "docs/analysis/optimization/round_16a/ppo_root_cause_factor_effects.csv",
+    "trajectory_output": "docs/analysis/optimization/round_16a/ppo_root_cause_validation_trajectory.csv",
+    "decision_output": "docs/analysis/optimization/round_16a/ppo_root_cause_decision.json"
+  },
+  "cases": [
+    {
+      "id": "baseline_seed1701",
+      "label": "Standard sampling + standard critic \u2014 seed 1701",
+      "hypothesis": "Reference service40 PPO training dynamics.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "rollout_steps": 256,
+        "minibatch_size": 8,
+        "value_clip_coef": 0.0,
+        "validate_every": 64,
+        "checkpoint_every": 128,
+        "audit_profile": "baseline",
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "baseline_seed2701",
+      "label": "Standard sampling + standard critic \u2014 seed 2701",
+      "hypothesis": "Reference service40 PPO training dynamics.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "rollout_steps": 256,
+        "minibatch_size": 8,
+        "value_clip_coef": 0.0,
+        "validate_every": 64,
+        "checkpoint_every": 128,
+        "audit_profile": "baseline",
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "baseline_seed3701",
+      "label": "Standard sampling + standard critic \u2014 seed 3701",
+      "hypothesis": "Reference service40 PPO training dynamics.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "rollout_steps": 256,
+        "minibatch_size": 8,
+        "value_clip_coef": 0.0,
+        "validate_every": 64,
+        "checkpoint_every": 128,
+        "audit_profile": "baseline",
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    },
+    {
+      "id": "large_sampling_seed1701",
+      "label": "Large rollout/minibatch + standard critic \u2014 seed 1701",
+      "hypothesis": "Tests whether a larger on-policy batch reduces noisy high-dimensional PPO updates.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "rollout_steps": 1024,
+        "minibatch_size": 64,
+        "value_clip_coef": 0.0,
+        "validate_every": 16,
+        "checkpoint_every": 32,
+        "audit_profile": "large_sampling",
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "large_sampling_seed2701",
+      "label": "Large rollout/minibatch + standard critic \u2014 seed 2701",
+      "hypothesis": "Tests whether a larger on-policy batch reduces noisy high-dimensional PPO updates.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "rollout_steps": 1024,
+        "minibatch_size": 64,
+        "value_clip_coef": 0.0,
+        "validate_every": 16,
+        "checkpoint_every": 32,
+        "audit_profile": "large_sampling",
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "large_sampling_seed3701",
+      "label": "Large rollout/minibatch + standard critic \u2014 seed 3701",
+      "hypothesis": "Tests whether a larger on-policy batch reduces noisy high-dimensional PPO updates.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "rollout_steps": 1024,
+        "minibatch_size": 64,
+        "value_clip_coef": 0.0,
+        "validate_every": 16,
+        "checkpoint_every": 32,
+        "audit_profile": "large_sampling",
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    },
+    {
+      "id": "critic_stabilized_seed1701",
+      "label": "Standard sampling + critic-stabilized (value_coef 0.25 + value clip 0.2) \u2014 seed 1701",
+      "hypothesis": "Tests whether reducing critic pressure and clipping value updates protects the shared encoder from policy damage.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "rollout_steps": 256,
+        "minibatch_size": 8,
+        "value_clip_coef": 0.2,
+        "validate_every": 64,
+        "checkpoint_every": 128,
+        "audit_profile": "critic_stabilized",
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ],
+        "value_coef": 0.25
+      }
+    },
+    {
+      "id": "critic_stabilized_seed2701",
+      "label": "Standard sampling + critic-stabilized (value_coef 0.25 + value clip 0.2) \u2014 seed 2701",
+      "hypothesis": "Tests whether reducing critic pressure and clipping value updates protects the shared encoder from policy damage.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "rollout_steps": 256,
+        "minibatch_size": 8,
+        "value_clip_coef": 0.2,
+        "validate_every": 64,
+        "checkpoint_every": 128,
+        "audit_profile": "critic_stabilized",
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ],
+        "value_coef": 0.25
+      }
+    },
+    {
+      "id": "critic_stabilized_seed3701",
+      "label": "Standard sampling + critic-stabilized (value_coef 0.25 + value clip 0.2) \u2014 seed 3701",
+      "hypothesis": "Tests whether reducing critic pressure and clipping value updates protects the shared encoder from policy damage.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "rollout_steps": 256,
+        "minibatch_size": 8,
+        "value_clip_coef": 0.2,
+        "validate_every": 64,
+        "checkpoint_every": 128,
+        "audit_profile": "critic_stabilized",
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ],
+        "value_coef": 0.25
+      }
+    },
+    {
+      "id": "large_sampling_critic_stabilized_seed1701",
+      "label": "Large rollout/minibatch + critic-stabilized (value_coef 0.25 + value clip 0.2) \u2014 seed 1701",
+      "hypothesis": "Tests whether larger sampling and critic stabilization are complementary.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "rollout_steps": 1024,
+        "minibatch_size": 64,
+        "value_clip_coef": 0.2,
+        "validate_every": 16,
+        "checkpoint_every": 32,
+        "audit_profile": "large_sampling_critic_stabilized",
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ],
+        "value_coef": 0.25
+      }
+    },
+    {
+      "id": "large_sampling_critic_stabilized_seed2701",
+      "label": "Large rollout/minibatch + critic-stabilized (value_coef 0.25 + value clip 0.2) \u2014 seed 2701",
+      "hypothesis": "Tests whether larger sampling and critic stabilization are complementary.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "rollout_steps": 1024,
+        "minibatch_size": 64,
+        "value_clip_coef": 0.2,
+        "validate_every": 16,
+        "checkpoint_every": 32,
+        "audit_profile": "large_sampling_critic_stabilized",
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ],
+        "value_coef": 0.25
+      }
+    },
+    {
+      "id": "large_sampling_critic_stabilized_seed3701",
+      "label": "Large rollout/minibatch + critic-stabilized (value_coef 0.25 + value clip 0.2) \u2014 seed 3701",
+      "hypothesis": "Tests whether larger sampling and critic stabilization are complementary.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "rollout_steps": 1024,
+        "minibatch_size": 64,
+        "value_clip_coef": 0.2,
+        "validate_every": 16,
+        "checkpoint_every": 32,
+        "audit_profile": "large_sampling_critic_stabilized",
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ],
+        "value_coef": 0.25
+      }
+    }
+  ]
+}

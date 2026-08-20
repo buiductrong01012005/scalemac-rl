@@ -51,6 +51,8 @@ class PpoHyperparameters:
     update_epochs: int
     minibatch_size: int
     target_kl: float
+    value_clip_coef: float
+    audit_gradients: bool
 
 
 def _resolve_device(name: str) -> torch.device:
@@ -123,6 +125,27 @@ def _candidate_masks(
     )
 
 
+def _loss_grad_norm(loss: torch.Tensor, parameters: list[torch.nn.Parameter]) -> float:
+    """Global L2 gradient norm for a diagnostic loss without mutating .grad."""
+    grads = torch.autograd.grad(
+        loss, parameters, retain_graph=True, allow_unused=True
+    )
+    squared = torch.zeros((), device=loss.device, dtype=torch.float32)
+    for grad in grads:
+        if grad is not None:
+            squared = squared + torch.sum(grad.detach().float() ** 2)
+    return float(torch.sqrt(squared).item())
+
+
+def _explained_variance(target: np.ndarray, prediction: np.ndarray) -> float:
+    target = np.asarray(target, dtype=np.float64).reshape(-1)
+    prediction = np.asarray(prediction, dtype=np.float64).reshape(-1)
+    variance = float(np.var(target))
+    if variance <= 1e-12:
+        return 0.0
+    return float(1.0 - np.var(target - prediction) / variance)
+
+
 def _ppo_update(
     *,
     model: PolicyModel,
@@ -131,6 +154,7 @@ def _ppo_update(
     actions: torch.Tensor,
     candidate_masks: torch.Tensor,
     old_log_probs: torch.Tensor,
+    old_values: torch.Tensor,
     returns: torch.Tensor,
     advantages: torch.Tensor,
     hyper: PpoHyperparameters,
@@ -143,9 +167,25 @@ def _ppo_update(
         "entropy": [],
         "approx_kl": [],
         "clip_fraction": [],
+        "value_clip_fraction": [],
+        "ratio_mean": [],
+        "ratio_std": [],
+        "ratio_min": [],
+        "ratio_max": [],
+        "abs_log_ratio_max": [],
+        "grad_norm_preclip": [],
+        "actor_grad_norm_probe": [],
+        "critic_grad_norm_probe": [],
     }
+    parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
+    minibatches_processed = 0
+    epochs_started = 0
+    early_stop = False
+    early_stop_kl = 0.0
+    gradient_probe_done = False
 
     for _ in range(hyper.update_epochs):
+        epochs_started += 1
         np.random.shuffle(indices)
         stop_early = False
         for start in range(0, batch_size, hyper.minibatch_size):
@@ -163,13 +203,41 @@ def _ppo_update(
                 -mb_adv
                 * torch.clamp(ratio, 1.0 - hyper.clip_coef, 1.0 + hyper.clip_coef),
             ).mean()
-            value_loss = 0.5 * torch.mean((output.value - returns[mb]) ** 2)
+
+            value_error = (output.value - returns[mb]) ** 2
+            if hyper.value_clip_coef > 0.0:
+                value_delta = output.value - old_values[mb]
+                clipped_value = old_values[mb] + torch.clamp(
+                    value_delta,
+                    -hyper.value_clip_coef,
+                    hyper.value_clip_coef,
+                )
+                clipped_value_error = (clipped_value - returns[mb]) ** 2
+                value_loss = 0.5 * torch.maximum(value_error, clipped_value_error).mean()
+                value_clip_fraction = torch.mean(
+                    (torch.abs(value_delta) > hyper.value_clip_coef).float()
+                )
+            else:
+                value_loss = 0.5 * value_error.mean()
+                value_clip_fraction = torch.zeros((), device=observations.device)
+
             entropy = output.entropy.mean()
-            loss = policy_loss + hyper.value_coef * value_loss - hyper.entropy_coef * entropy
+            actor_objective = policy_loss - hyper.entropy_coef * entropy
+            critic_objective = hyper.value_coef * value_loss
+            loss = actor_objective + critic_objective
+
+            if hyper.audit_gradients and not gradient_probe_done:
+                losses["actor_grad_norm_probe"].append(
+                    _loss_grad_norm(actor_objective, parameters)
+                )
+                losses["critic_grad_norm_probe"].append(
+                    _loss_grad_norm(critic_objective, parameters)
+                )
+                gradient_probe_done = True
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), hyper.max_grad_norm)
+            grad_norm = nn.utils.clip_grad_norm_(model.parameters(), hyper.max_grad_norm)
             optimizer.step()
 
             with torch.no_grad():
@@ -182,13 +250,49 @@ def _ppo_update(
             losses["entropy"].append(float(entropy.item()))
             losses["approx_kl"].append(float(approx_kl.item()))
             losses["clip_fraction"].append(float(clip_fraction.item()))
+            losses["value_clip_fraction"].append(float(value_clip_fraction.item()))
+            losses["ratio_mean"].append(float(ratio.mean().item()))
+            losses["ratio_std"].append(float(ratio.std(unbiased=False).item()))
+            losses["ratio_min"].append(float(ratio.min().item()))
+            losses["ratio_max"].append(float(ratio.max().item()))
+            losses["abs_log_ratio_max"].append(float(log_ratio.abs().max().item()))
+            losses["grad_norm_preclip"].append(float(grad_norm.item()))
+            minibatches_processed += 1
+
             if hyper.target_kl > 0.0 and float(approx_kl.item()) > hyper.target_kl:
                 stop_early = True
+                early_stop = True
+                early_stop_kl = float(approx_kl.item())
                 break
         if stop_early:
             break
-    return {name: mean(values) if values else 0.0 for name, values in losses.items()}
 
+    result = {name: mean(values) if values else 0.0 for name, values in losses.items()}
+    result["max_approx_kl"] = max(losses["approx_kl"], default=0.0)
+    result["max_ratio"] = max(losses["ratio_max"], default=1.0)
+    result["min_ratio"] = min(losses["ratio_min"], default=1.0)
+    result["max_abs_log_ratio"] = max(losses["abs_log_ratio_max"], default=0.0)
+    result["max_grad_norm_preclip"] = max(losses["grad_norm_preclip"], default=0.0)
+    result["grad_clip_fraction"] = (
+        sum(value > hyper.max_grad_norm for value in losses["grad_norm_preclip"])
+        / len(losses["grad_norm_preclip"])
+        if losses["grad_norm_preclip"]
+        else 0.0
+    )
+    result["ppo_minibatches_processed"] = float(minibatches_processed)
+    result["ppo_epochs_started"] = float(epochs_started)
+    result["ppo_early_stop"] = float(early_stop)
+    result["ppo_early_stop_kl"] = early_stop_kl
+    result["ppo_sample_reuse"] = (
+        float(minibatches_processed * hyper.minibatch_size) / float(batch_size)
+        if batch_size > 0 else 0.0
+    )
+    actor_probe = result["actor_grad_norm_probe"]
+    critic_probe = result["critic_grad_norm_probe"]
+    result["critic_to_actor_grad_ratio_probe"] = (
+        critic_probe / max(actor_probe, 1e-12) if hyper.audit_gradients else 0.0
+    )
+    return result
 
 def _rppo_update(
     *,
@@ -854,6 +958,18 @@ def main() -> None:
     parser.add_argument("--gae-lambda", type=float, default=0.95)
     parser.add_argument("--clip-coef", type=float, default=0.2)
     parser.add_argument("--value-coef", type=float, default=0.5)
+    parser.add_argument(
+        "--value-clip-coef",
+        type=float,
+        default=0.0,
+        help="PPO value-function clip range; 0 disables value clipping",
+    )
+    parser.add_argument(
+        "--audit-ppo-diagnostics",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="record root-cause PPO diagnostics including actor/critic gradient probes",
+    )
     parser.add_argument("--entropy-coef", type=float, default=0.001)
     parser.add_argument(
         "--entropy-coef-end", type=float, default=None,
@@ -1008,6 +1124,8 @@ def main() -> None:
         parser.error("deadline-risk-start-ratio must be in [0, 1)")
     if args.deadline_risk_penalty_weight < 0.0:
         parser.error("deadline-risk-penalty-weight must be non-negative")
+    if args.value_clip_coef < 0.0:
+        parser.error("value-clip-coef must be non-negative")
     if args.max_wait_risk_penalty_weight < 0.0:
         parser.error("max-wait-risk-penalty-weight must be non-negative")
     if args.population_wait_penalty_weight < 0.0:
@@ -1181,6 +1299,8 @@ def main() -> None:
         update_epochs=args.update_epochs,
         minibatch_size=args.minibatch_size,
         target_kl=args.target_kl,
+        value_clip_coef=args.value_clip_coef,
+        audit_gradients=args.audit_ppo_diagnostics,
     )
 
     log_rows: list[dict[str, Any]] = []
@@ -1642,12 +1762,13 @@ def main() -> None:
                     mask_array.reshape(-1, candidate_count)
                 ).to(device)
                 flat_logprobs = torch.from_numpy(logprob_array.reshape(-1)).to(device)
+                flat_old_values = torch.from_numpy(values_np.reshape(-1)).to(device)
                 flat_returns = torch.from_numpy(returns_np.reshape(-1)).to(device)
                 flat_advantages = torch.from_numpy(advantages_norm.reshape(-1)).to(device)
                 update_metrics = _ppo_update(
                     model=model, optimizer=optimizer, observations=flat_obs,
                     actions=flat_actions, candidate_masks=flat_masks,
-                    old_log_probs=flat_logprobs, returns=flat_returns,
+                    old_log_probs=flat_logprobs, old_values=flat_old_values, returns=flat_returns,
                     advantages=flat_advantages, hyper=hyper,
                 )
             controller.update(
@@ -1777,6 +1898,19 @@ def main() -> None:
                         1e-9,
                     )
                 ),
+                "rollout_steps": args.rollout_steps,
+                "minibatch_size": args.minibatch_size,
+                "value_coef": args.value_coef,
+                "value_clip_coef": args.value_clip_coef,
+                "audit_ppo_diagnostics": int(args.audit_ppo_diagnostics),
+                "return_mean": float(np.mean(returns_np)),
+                "return_std": float(np.std(returns_np)),
+                "value_prediction_mean_preupdate": float(np.mean(values_np)),
+                "value_prediction_std_preupdate": float(np.std(values_np)),
+                "value_rmse_preupdate": float(np.sqrt(np.mean((returns_np - values_np) ** 2))),
+                "value_explained_variance_preupdate": _explained_variance(returns_np, values_np),
+                "advantage_raw_mean": float(np.mean(advantages_np)),
+                "advantage_raw_std": float(np.std(advantages_np)),
                 **update_metrics,
                 "device": str(device),
             }

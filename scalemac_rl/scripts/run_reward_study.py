@@ -19,6 +19,8 @@ from scalemac_rl.policy_architecture_analysis import build_policy_architecture_a
 from scalemac_rl.training_stability_analysis import build_training_stability_analysis
 from scalemac_rl.feature_ablation_analysis import build_feature_ablation_analysis
 from scalemac_rl.reward_checkpoint_analysis import build_reward_checkpoint_stability_analysis
+from scalemac_rl.ppo_root_cause_analysis import build_ppo_root_cause_analysis
+from scalemac_rl.sampling_budget_analysis import build_sampling_budget_analysis
 from scalemac_rl.reward_study import RewardStudyPlan, write_json
 
 
@@ -86,7 +88,7 @@ def _common_command(
         "--validate-every",
         str(int(common.get("validate_every", 64))),
         "--rollback-patience",
-        "1000000",
+        str(int(common.get("rollback_patience", 1000000))),
         "--checkpoint-every",
         str(int(common.get("checkpoint_every", 128))),
         "--milestone-env-steps",
@@ -146,6 +148,13 @@ def _common_command(
         str(float(common.get("gae_lambda", 0.97))),
         "--clip-coef",
         str(float(common.get("clip_coef", 0.10))),
+        "--value-coef",
+        str(float(common.get("value_coef", 0.5))),
+        "--value-clip-coef",
+        str(float(common.get("value_clip_coef", 0.0))),
+        "--audit-ppo-diagnostics"
+        if bool(common.get("audit_ppo_diagnostics", False))
+        else "--no-audit-ppo-diagnostics",
         "--entropy-coef",
         str(float(common.get("entropy_coef_start", 5.0e-3))),
         "--entropy-coef-end",
@@ -496,6 +505,18 @@ def main() -> None:
                 )
             elif plan.analysis.get("design") == "reward_checkpoint_stability_screen":
                 analysis_path = build_reward_checkpoint_stability_analysis(
+                    plan=plan,
+                    round_dir=round_dir,
+                    output_path=Path(str(plan.analysis["output"])),
+                )
+            elif plan.analysis.get("design") == "ppo_root_cause_audit":
+                analysis_path = build_ppo_root_cause_analysis(
+                    plan=plan,
+                    round_dir=round_dir,
+                    output_path=Path(str(plan.analysis["output"])),
+                )
+            elif plan.analysis.get("design") == "ppo_sampling_budget_control":
+                analysis_path = build_sampling_budget_analysis(
                     plan=plan,
                     round_dir=round_dir,
                     output_path=Path(str(plan.analysis["output"])),
