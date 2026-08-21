@@ -56,6 +56,9 @@ class PpoHyperparameters:
     ratio_mode: str = "joint"
     strict_kl_guard: bool = False
     strict_kl_limit: float = 0.0
+    disc_is_alpha: float = 1.0
+    disc_is_target: float = 0.001
+    disc_normalize_dimensions: bool = False
 
 
 def _resolve_device(name: str) -> torch.device:
@@ -177,6 +180,14 @@ def _ppo_ratio_terms(
         )
         log_ratio = current_per_ue - old_log_probs
         mask = candidate_masks.bool()
+    elif ratio_mode in {"dimension", "ue_group"}:
+        if not isinstance(model, SharedSetActorCritic):
+            raise TypeError("dimension/group-wise PPO currently supports feed-forward PPO only")
+        current_per_dimension = model.action_log_prob_per_dimension(
+            observations, candidate_masks, actions
+        )
+        log_ratio = current_per_dimension - old_log_probs
+        mask = candidate_masks.bool().unsqueeze(-1).expand_as(log_ratio)
     else:
         raise ValueError(f"unknown PPO ratio mode: {ratio_mode}")
     ratio = torch.exp(torch.clamp(log_ratio, -10.0, 10.0))
@@ -240,6 +251,7 @@ def _ppo_update(
         "grad_norm_preclip": [],
         "actor_grad_norm_probe": [],
         "critic_grad_norm_probe": [],
+        "disc_is_loss": [],
     }
     parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
     minibatches_processed = 0
@@ -290,6 +302,7 @@ def _ppo_update(
                 break
 
             mb_adv = advantages[mb]
+            disc_is_loss = torch.zeros((), device=observations.device)
             if hyper.ratio_mode == "per_ue":
                 adv = mb_adv.unsqueeze(-1)
                 unclipped = -adv * ratio
@@ -297,6 +310,57 @@ def _ppo_update(
                     ratio, 1.0 - hyper.clip_coef, 1.0 + hyper.clip_coef
                 )
                 policy_loss = _masked_mean(torch.maximum(unclipped, clipped), ratio_mask)
+            elif hyper.ratio_mode == "ue_group":
+                # Scale-aware UE-group objective.  Each UE owns exactly two
+                # continuous action factors [priority, demand].  We clip the
+                # importance ratio per action dimension, aggregate the two
+                # clipped surrogate terms within each UE, then average over
+                # active UEs.  This keeps actor-loss scale independent of the
+                # number of UEs while preserving the natural 2-D UE group.
+                adv = mb_adv.view(-1, 1, 1)
+                clipped_ratio = torch.clamp(
+                    ratio, 1.0 - hyper.clip_coef, 1.0 + hyper.clip_coef
+                )
+                surrogate = torch.minimum(adv * ratio, adv * clipped_ratio)
+                assert ratio_mask is not None
+                dim_weights = ratio_mask.to(surrogate.dtype)
+                ue_mask = ratio_mask[..., 0]
+                ue_surrogate = (surrogate * dim_weights).sum(dim=-1)
+                surrogate_objective = _masked_mean(ue_surrogate, ue_mask)
+
+                # J_IS is controlled per UE rather than over the full ~2400-D
+                # joint action.  For UE i, log rho_i is the sum of its two
+                # factorized log-ratios.  We then average J_IS over active UEs.
+                ue_log_ratio = (log_ratio * dim_weights).sum(dim=-1)
+                disc_is_loss = 0.5 * _masked_mean(ue_log_ratio.square(), ue_mask)
+                policy_loss = -surrogate_objective + hyper.disc_is_alpha * disc_is_loss
+            elif hyper.ratio_mode == "dimension":
+                # On-policy DISC-core objective from Han & Sung (ICML 2019):
+                # clip each factorized action-dimension IS weight before aggregation.
+                adv = mb_adv.view(-1, 1, 1)
+                clipped_ratio = torch.clamp(
+                    ratio, 1.0 - hyper.clip_coef, 1.0 + hyper.clip_coef
+                )
+                surrogate = torch.minimum(adv * ratio, adv * clipped_ratio)
+                assert ratio_mask is not None
+                weights = ratio_mask.to(surrogate.dtype)
+                if hyper.disc_normalize_dimensions:
+                    surrogate_objective = (surrogate * weights).sum() / weights.sum().clamp_min(1.0)
+                else:
+                    # Paper Eq. (2): sum dimensions within each sample, then mean samples.
+                    surrogate_objective = (surrogate * weights).sum(dim=(-2, -1)).mean()
+                joint_log_ratio = (log_ratio * weights).sum(dim=(-2, -1))
+                # Paper Eq. (2): J_IS = 1/(2M) sum_m (log rho_m)^2.
+                # The normalized ScaleMAC ablation divides log-ratio by sqrt(D_active)
+                # so the control target is not automatically tightened as action
+                # dimension grows from ~17 (paper) to ~2400 here.
+                if hyper.disc_normalize_dimensions:
+                    active_dims = weights.sum(dim=(-2, -1)).clamp_min(1.0)
+                    controlled_log_ratio = joint_log_ratio / torch.sqrt(active_dims)
+                else:
+                    controlled_log_ratio = joint_log_ratio
+                disc_is_loss = 0.5 * torch.mean(controlled_log_ratio.square())
+                policy_loss = -surrogate_objective + hyper.disc_is_alpha * disc_is_loss
             else:
                 policy_loss = torch.maximum(
                     -mb_adv * ratio,
@@ -390,6 +454,7 @@ def _ppo_update(
                 float(selected_log_ratio.abs().max().item()) if selected_log_ratio.numel() else 0.0
             )
             losses["grad_norm_preclip"].append(float(grad_norm.item()))
+            losses["disc_is_loss"].append(float(disc_is_loss.item()))
             minibatches_processed += 1
 
             if (not hyper.strict_kl_guard) and hyper.target_kl > 0.0 and float(approx_kl.item()) > hyper.target_kl:
@@ -432,6 +497,16 @@ def _ppo_update(
     result["critic_to_actor_grad_ratio_probe"] = (
         critic_probe / max(actor_probe, 1e-12) if hyper.audit_gradients else 0.0
     )
+    result["disc_is_alpha_before"] = float(hyper.disc_is_alpha)
+    if hyper.ratio_mode in {"dimension", "ue_group"} and hyper.disc_is_target > 0.0 and losses["disc_is_loss"]:
+        mean_is = float(result["disc_is_loss"])
+        if mean_is < hyper.disc_is_target / 1.5:
+            hyper.disc_is_alpha = max(hyper.disc_is_alpha / 2.0, 1e-8)
+        elif mean_is > hyper.disc_is_target * 1.5:
+            hyper.disc_is_alpha = min(hyper.disc_is_alpha * 2.0, 1e8)
+    result["disc_is_alpha_after"] = float(hyper.disc_is_alpha)
+    result["disc_is_target"] = float(hyper.disc_is_target)
+    result["disc_dimension_normalized"] = float(hyper.disc_normalize_dimensions)
     return result
 
 def _rppo_update(
@@ -1165,9 +1240,20 @@ def main() -> None:
     parser.add_argument("--target-kl", type=float, default=0.03)
     parser.add_argument(
         "--ppo-ratio-mode",
-        choices=["joint", "per_ue"],
+        choices=["joint", "per_ue", "dimension", "ue_group"],
         default="joint",
-        help="PPO probability-ratio geometry: one joint action ratio or per-UE grouped ratios",
+        help=(
+            "PPO probability-ratio geometry: joint, legacy per-UE ratio, "
+            "factorized dimension-wise DISC, or UE-group dimension clipping/J_IS"
+        ),
+    )
+    parser.add_argument("--disc-is-alpha-start", type=float, default=1.0, help="initial adaptive J_IS coefficient for dimension-wise PPO")
+    parser.add_argument("--disc-is-target", type=float, default=0.001, help="target J_IS used for Han-Sung adaptive coefficient control")
+    parser.add_argument(
+        "--disc-normalize-dimensions",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="average the dimension-wise surrogate over active dimensions instead of the paper-form dimension sum",
     )
     parser.add_argument(
         "--strict-kl-guard",
@@ -1367,7 +1453,11 @@ def main() -> None:
     if args.strict_kl_limit < 0.0:
         parser.error("strict-kl-limit must be non-negative")
     if args.policy_architecture == "recurrent" and args.ppo_ratio_mode != "joint":
-        parser.error("per-UE PPO ratio currently supports feed-forward PPO only")
+        parser.error("non-joint PPO ratio modes currently support feed-forward PPO only")
+    if args.disc_is_alpha_start < 0.0:
+        parser.error("disc-is-alpha-start must be non-negative")
+    if args.disc_is_target < 0.0:
+        parser.error("disc-is-target must be non-negative")
     if args.policy_architecture == "recurrent" and args.strict_kl_guard:
         parser.error("strict KL guard currently supports feed-forward PPO only")
     if args.policy_architecture == "recurrent" and args.separate_critic_encoder:
@@ -1543,6 +1633,9 @@ def main() -> None:
         ratio_mode=args.ppo_ratio_mode,
         strict_kl_guard=args.strict_kl_guard,
         strict_kl_limit=args.strict_kl_limit,
+        disc_is_alpha=args.disc_is_alpha_start,
+        disc_is_target=args.disc_is_target,
+        disc_normalize_dimensions=args.disc_normalize_dimensions,
     )
 
     log_rows: list[dict[str, Any]] = []
@@ -1930,6 +2023,14 @@ def main() -> None:
                             obs_tensor, mask_tensor, output.action
                         )
                     logprob_buffer.append(per_ue_log_prob.cpu().numpy())
+                elif args.ppo_ratio_mode in {"dimension", "ue_group"}:
+                    if not isinstance(model, SharedSetActorCritic):
+                        raise TypeError("dimension/group-wise PPO requires feed-forward model")
+                    with torch.no_grad():
+                        per_dim_log_prob = model.action_log_prob_per_dimension(
+                            obs_tensor, mask_tensor, output.action
+                        )
+                    logprob_buffer.append(per_dim_log_prob.cpu().numpy())
                 else:
                     logprob_buffer.append(output.log_prob.cpu().numpy())
                 value_buffer.append(output.value.cpu().numpy())
@@ -2026,6 +2127,10 @@ def main() -> None:
                 if args.ppo_ratio_mode == "per_ue":
                     flat_logprobs = torch.from_numpy(
                         logprob_array.reshape(-1, candidate_count)
+                    ).to(device)
+                elif args.ppo_ratio_mode in {"dimension", "ue_group"}:
+                    flat_logprobs = torch.from_numpy(
+                        logprob_array.reshape(-1, candidate_count, 2)
                     ).to(device)
                 else:
                     flat_logprobs = torch.from_numpy(logprob_array.reshape(-1)).to(device)

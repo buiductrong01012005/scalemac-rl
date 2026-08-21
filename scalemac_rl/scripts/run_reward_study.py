@@ -195,6 +195,13 @@ def _common_command(
         else "--no-strict-kl-guard",
         "--strict-kl-limit",
         str(float(common.get("strict_kl_limit", common.get("target_kl", 0.02)))),
+        "--disc-is-alpha-start",
+        str(float(common.get("disc_is_alpha_start", 1.0))),
+        "--disc-is-target",
+        str(float(common.get("disc_is_target", 0.001))),
+        "--disc-normalize-dimensions"
+        if bool(common.get("disc_normalize_dimensions", False))
+        else "--no-disc-normalize-dimensions",
         "--deadline-risk-start-ratio",
         str(float(common.get("deadline_risk_start_ratio", 0.60))),
         "--low-throughput-percentile",

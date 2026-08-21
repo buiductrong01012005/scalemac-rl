@@ -90,7 +90,7 @@ def _config_from_run_config(
     profile_seed: int,
 ) -> ScaleMacConfig:
     architecture = payload.get("architecture", {})
-    common = payload.get("common", {})
+    common = payload.get("effective_common", payload.get("common", {}))
     case = payload.get("case", {})
     positive = case.get("positive_weights", {})
     delta = case.get("delta_weights", {})
@@ -134,6 +134,22 @@ def _config_from_run_config(
         reward_population_wait_penalty_weight=float(
             penalties.get("population_wait", 0.0)
         ),
+        cqi_mode=str(common.get("cqi_mode", "static")),
+        cqi_temporal_correlation=float(common.get("cqi_temporal_correlation", 0.97)),
+        cqi_innovation_std=float(common.get("cqi_innovation_std", 0.35)),
+        cqi_update_interval_slots=int(common.get("cqi_update_interval_slots", 1)),
+        cqi_max_delta_per_update=int(common.get("cqi_max_delta_per_update", 1)),
+        csi_report_mode=str(common.get("csi_report_mode", "perfect")),
+        csi_report_period_slots=int(common.get("csi_report_period_slots", 1)),
+        csi_report_delay_slots=int(common.get("csi_report_delay_slots", 0)),
+        csi_report_error_std=float(common.get("csi_report_error_std", 0.0)),
+        observation_include_csi_age=bool(common.get("observation_include_csi_age", False)),
+        observation_include_reported_cqi_trend=bool(
+            common.get("observation_include_reported_cqi_trend", False)
+        ),
+        link_adaptation_mode=str(common.get("link_adaptation_mode", "legacy_fixed_bler")),
+        link_adaptation_cqi_backoff=int(common.get("link_adaptation_cqi_backoff", 0)),
+        bler_mismatch_slope=float(common.get("bler_mismatch_slope", 1.5)),
         seed=seed,
     )
     config.validate()

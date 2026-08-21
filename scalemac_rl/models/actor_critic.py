@@ -122,6 +122,29 @@ class SharedSetActorCritic(nn.Module):
             return summed / denominator
         return summed
 
+    def action_log_prob_per_dimension(
+        self,
+        observation: torch.Tensor,
+        candidate_mask: torch.Tensor,
+        action: torch.Tensor,
+    ) -> torch.Tensor:
+        """Return masked log-probability for each UE action dimension.
+
+        Shape is [N,2] for a single observation and [B,N,2] for a batch.
+        The factorized Beta policy makes this the natural importance-sampling
+        unit for dimension-wise clipping. Invalid candidates are zeroed.
+        """
+        squeeze = observation.ndim == 2
+        mean_action, _ = self.action_mean_and_value(observation)
+        mean_action_b = mean_action.unsqueeze(0) if squeeze else mean_action
+        candidate_mask_b = candidate_mask.unsqueeze(0) if candidate_mask.ndim == 1 else candidate_mask
+        sampled = action.unsqueeze(0) if action.ndim == 2 else action
+        sampled = sampled.clamp(1e-5, 1.0 - 1e-5)
+        distribution = self._distribution(mean_action_b)
+        per_dimension = distribution.log_prob(sampled)
+        per_dimension = per_dimension * candidate_mask_b.unsqueeze(-1).to(per_dimension.dtype)
+        return per_dimension.squeeze(0) if squeeze else per_dimension
+
     def action_log_prob_per_ue(
         self,
         observation: torch.Tensor,
