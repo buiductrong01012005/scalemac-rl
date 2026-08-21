@@ -21,6 +21,10 @@ from scalemac_rl.feature_ablation_analysis import build_feature_ablation_analysi
 from scalemac_rl.reward_checkpoint_analysis import build_reward_checkpoint_stability_analysis
 from scalemac_rl.ppo_root_cause_analysis import build_ppo_root_cause_analysis
 from scalemac_rl.sampling_budget_analysis import build_sampling_budget_analysis
+from scalemac_rl.ppo_geometry_analysis import build_ppo_geometry_analysis
+from scalemac_rl.actor_critic_interference_analysis import build_actor_critic_interference_analysis
+from scalemac_rl.seed_decoupling_analysis import build_seed_decoupling_analysis
+from scalemac_rl.service_rollback_analysis import build_service_rollback_analysis
 from scalemac_rl.reward_study import RewardStudyPlan, write_json
 
 
@@ -45,7 +49,8 @@ def _common_command(
     validation_seeds = [int(value) for value in common.get("validation_seeds", [1701])]
     validation_repeats = int(common.get("validation_repeats", 1))
     seed = int(common.get("seed", 1701))
-    profile_seed = int(common.get("profile_seed", seed))
+    environment_seed = int(common.get("environment_seed", seed))
+    profile_seed = int(common.get("profile_seed", environment_seed))
     constraint_training = bool(common.get("constraint_training", False))
 
     command = [
@@ -89,12 +94,20 @@ def _common_command(
         str(int(common.get("validate_every", 64))),
         "--rollback-patience",
         str(int(common.get("rollback_patience", 1000000))),
+        "--rollback-mode",
+        str(common.get("rollback_mode", "constraint")),
+        "--rollback-lr-factor",
+        str(float(common.get("rollback_lr_factor", 1.0))),
+        "--rollback-min-lr-multiplier",
+        str(float(common.get("rollback_min_lr_multiplier", 0.125))),
         "--checkpoint-every",
         str(int(common.get("checkpoint_every", 128))),
         "--milestone-env-steps",
         str(steps),
         "--seed",
         str(seed),
+        "--environment-seed",
+        str(environment_seed),
         "--fixed-profile-seed",
         str(profile_seed),
         "--cqi-mode",
@@ -134,6 +147,9 @@ def _common_command(
         str(int(common.get("hidden_dim", 64))),
         "--policy-architecture",
         str(common.get("policy_architecture", "feedforward")),
+        "--separate-critic-encoder"
+        if bool(common.get("separate_critic_encoder", False))
+        else "--no-separate-critic-encoder",
         "--recurrent-seq-len",
         str(int(common.get("recurrent_seq_len", 16))),
         "--recurrent-minibatch-sequences",
@@ -172,6 +188,13 @@ def _common_command(
         str(int(common.get("minibatch_size", 8))),
         "--target-kl",
         str(float(common.get("target_kl", 0.02))),
+        "--ppo-ratio-mode",
+        str(common.get("ppo_ratio_mode", "joint")),
+        "--strict-kl-guard"
+        if bool(common.get("strict_kl_guard", False))
+        else "--no-strict-kl-guard",
+        "--strict-kl-limit",
+        str(float(common.get("strict_kl_limit", common.get("target_kl", 0.02)))),
         "--deadline-risk-start-ratio",
         str(float(common.get("deadline_risk_start_ratio", 0.60))),
         "--low-throughput-percentile",
@@ -517,6 +540,30 @@ def main() -> None:
                 )
             elif plan.analysis.get("design") == "ppo_sampling_budget_control":
                 analysis_path = build_sampling_budget_analysis(
+                    plan=plan,
+                    round_dir=round_dir,
+                    output_path=Path(str(plan.analysis["output"])),
+                )
+            elif plan.analysis.get("design") == "ppo_update_geometry":
+                analysis_path = build_ppo_geometry_analysis(
+                    plan=plan,
+                    round_dir=round_dir,
+                    output_path=Path(str(plan.analysis["output"])),
+                )
+            elif plan.analysis.get("design") == "actor_critic_interference":
+                analysis_path = build_actor_critic_interference_analysis(
+                    plan=plan,
+                    round_dir=round_dir,
+                    output_path=Path(str(plan.analysis["output"])),
+                )
+            elif plan.analysis.get("design") == "seed_decoupling":
+                analysis_path = build_seed_decoupling_analysis(
+                    plan=plan,
+                    round_dir=round_dir,
+                    output_path=Path(str(plan.analysis["output"])),
+                )
+            elif plan.analysis.get("design") == "service_rollback":
+                analysis_path = build_service_rollback_analysis(
                     plan=plan,
                     round_dir=round_dir,
                     output_path=Path(str(plan.analysis["output"])),

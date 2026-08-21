@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import math
 from typing import NamedTuple
 
@@ -121,6 +122,35 @@ class SharedSetActorCritic(nn.Module):
             return summed / denominator
         return summed
 
+    def action_log_prob_per_ue(
+        self,
+        observation: torch.Tensor,
+        candidate_mask: torch.Tensor,
+        action: torch.Tensor,
+    ) -> torch.Tensor:
+        """Return masked log-probability grouped per UE over priority+demand.
+
+        Shape is [N] for a single observation and [B,N] for a batch.  This is
+        intentionally separate from the legacy joint log-probability so PPO
+        ratio geometry can be ablated without changing action sampling.
+        """
+        squeeze = observation.ndim == 2
+        mean_action, _ = self.action_mean_and_value(observation)
+        if squeeze:
+            mean_action_b = mean_action.unsqueeze(0)
+        else:
+            mean_action_b = mean_action
+        if candidate_mask.ndim == 1:
+            candidate_mask_b = candidate_mask.unsqueeze(0)
+        else:
+            candidate_mask_b = candidate_mask
+        sampled = action.unsqueeze(0) if action.ndim == 2 else action
+        sampled = sampled.clamp(1e-5, 1.0 - 1e-5)
+        distribution = self._distribution(mean_action_b)
+        per_ue = distribution.log_prob(sampled).sum(dim=-1)
+        per_ue = per_ue * candidate_mask_b.to(per_ue.dtype)
+        return per_ue.squeeze(0) if squeeze else per_ue
+
     def get_action_and_value(
         self,
         observation: torch.Tensor,
@@ -192,6 +222,39 @@ class SharedSetActorCritic(nn.Module):
             raise RuntimeError(f"imitation checkpoint is missing actor keys: {unexpected_missing}")
         return list(result.missing_keys), list(result.unexpected_keys)
 
+
+
+class SplitEncoderActorCritic(SharedSetActorCritic):
+    """Feed-forward actor/critic with independent encoders after identical init.
+
+    The actor encoder and critic encoder start as exact copies of the legacy
+    shared encoder.  ``copy.deepcopy`` consumes no RNG, so when constructed from
+    the same torch seed, step-0 actor outputs, critic values, and subsequent PPO
+    sampling RNG match ``SharedSetActorCritic`` exactly.  Training can then
+    separate the actor and critic representations without an initialization
+    confound.
+    """
+
+    def __init__(self, input_dim: int = 16, hidden_dim: int = 64, initial_concentration: float = 20.0):
+        super().__init__(
+            input_dim=input_dim,
+            hidden_dim=hidden_dim,
+            initial_concentration=initial_concentration,
+        )
+        self.critic_encoder = copy.deepcopy(self.encoder)
+
+    def encode_features(self, observation: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        squeeze = observation.ndim == 2
+        if squeeze:
+            observation = observation.unsqueeze(0)
+        if observation.ndim != 3:
+            raise ValueError("observation must have shape [N,F] or [B,N,F]")
+        actor_local = self.encoder(observation)
+        critic_local = self.critic_encoder(observation)
+        mean_context = actor_local.mean(dim=1, keepdim=True).expand_as(actor_local)
+        actor_features = torch.cat([actor_local, mean_context], dim=-1)
+        pooled = torch.cat([critic_local.mean(dim=1), critic_local.amax(dim=1)], dim=-1)
+        return actor_features, pooled
 
 def build_baseline_compatible_expanded_model(
     *, input_dim: int, hidden_dim: int = 64, initial_concentration: float = 20.0

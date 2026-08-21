@@ -1,0 +1,327 @@
+{
+  "study_id": "ppo_update_geometry",
+  "round_id": "round_16c_ppo_update_geometry",
+  "description": "Controlled 2x2 PPO update-geometry study: joint vs per-UE grouped probability ratios crossed with legacy vs strict post-step KL commit protection. Service40, 16 features, R256/MB8 and radio environment remain fixed.",
+  "common": {
+    "environment_steps": 98304,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "rollback_patience": 1000000,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "value_coef": 0.5,
+    "value_clip_coef": 0.0,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 2.5e-05,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "audit_ppo_diagnostics": true,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64,
+    "cqi_mode": "correlated",
+    "cqi_temporal_correlation": 0.97,
+    "cqi_innovation_std": 0.35,
+    "cqi_update_interval_slots": 1,
+    "cqi_max_delta_per_update": 1,
+    "csi_report_mode": "periodic",
+    "csi_report_period_slots": 4,
+    "csi_report_delay_slots": 2,
+    "csi_report_error_std": 0.0,
+    "link_adaptation_mode": "cqi_mcs_bler",
+    "link_adaptation_cqi_backoff": 0,
+    "bler_mismatch_slope": 1.5,
+    "policy_architecture": "feedforward",
+    "observation_include_csi_age": false,
+    "observation_include_reported_cqi_trend": false,
+    "baseline_compatible_feature_init": false,
+    "ppo_ratio_mode": "joint",
+    "strict_kl_guard": false,
+    "strict_kl_limit": 0.02
+  },
+  "analysis": {
+    "design": "ppo_update_geometry",
+    "title": "Round 16C \u2014 PPO Update Geometry",
+    "output": "docs/analysis/optimization/round_16c/ppo_update_geometry.html",
+    "markdown_output": "docs/analysis/optimization/round_16c/ppo_update_geometry.md",
+    "metrics_output": "docs/analysis/optimization/round_16c/ppo_geometry_case_metrics.csv",
+    "summary_output": "docs/analysis/optimization/round_16c/ppo_geometry_profile_summary.csv",
+    "ranking_output": "docs/analysis/optimization/round_16c/ppo_geometry_profile_ranking.csv",
+    "trajectory_output": "docs/analysis/optimization/round_16c/ppo_geometry_validation_trajectory.csv",
+    "decision_output": "docs/analysis/optimization/round_16c/ppo_geometry_decision.json"
+  },
+  "cases": [
+    {
+      "id": "joint_seed1701",
+      "label": "joint \u2014 seed 1701",
+      "hypothesis": "Legacy high-dimensional joint ratio; reference.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "geometry_profile": "joint",
+        "ppo_ratio_mode": "joint",
+        "strict_kl_guard": false,
+        "strict_kl_limit": 0.02,
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "joint_seed2701",
+      "label": "joint \u2014 seed 2701",
+      "hypothesis": "Legacy high-dimensional joint ratio; reference.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "geometry_profile": "joint",
+        "ppo_ratio_mode": "joint",
+        "strict_kl_guard": false,
+        "strict_kl_limit": 0.02,
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "joint_seed3701",
+      "label": "joint \u2014 seed 3701",
+      "hypothesis": "Legacy high-dimensional joint ratio; reference.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "geometry_profile": "joint",
+        "ppo_ratio_mode": "joint",
+        "strict_kl_guard": false,
+        "strict_kl_limit": 0.02,
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    },
+    {
+      "id": "joint_strict_seed1701",
+      "label": "joint_strict \u2014 seed 1701",
+      "hypothesis": "Joint ratio with post-step hard KL rollback.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "geometry_profile": "joint_strict",
+        "ppo_ratio_mode": "joint",
+        "strict_kl_guard": true,
+        "strict_kl_limit": 0.02,
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "joint_strict_seed2701",
+      "label": "joint_strict \u2014 seed 2701",
+      "hypothesis": "Joint ratio with post-step hard KL rollback.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "geometry_profile": "joint_strict",
+        "ppo_ratio_mode": "joint",
+        "strict_kl_guard": true,
+        "strict_kl_limit": 0.02,
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "joint_strict_seed3701",
+      "label": "joint_strict \u2014 seed 3701",
+      "hypothesis": "Joint ratio with post-step hard KL rollback.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "geometry_profile": "joint_strict",
+        "ppo_ratio_mode": "joint",
+        "strict_kl_guard": true,
+        "strict_kl_limit": 0.02,
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    },
+    {
+      "id": "perue_seed1701",
+      "label": "perue \u2014 seed 1701",
+      "hypothesis": "Group priority+demand per UE and clip per-UE probability ratios.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "geometry_profile": "perue",
+        "ppo_ratio_mode": "per_ue",
+        "strict_kl_guard": false,
+        "strict_kl_limit": 0.02,
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "perue_seed2701",
+      "label": "perue \u2014 seed 2701",
+      "hypothesis": "Group priority+demand per UE and clip per-UE probability ratios.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "geometry_profile": "perue",
+        "ppo_ratio_mode": "per_ue",
+        "strict_kl_guard": false,
+        "strict_kl_limit": 0.02,
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "perue_seed3701",
+      "label": "perue \u2014 seed 3701",
+      "hypothesis": "Group priority+demand per UE and clip per-UE probability ratios.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "geometry_profile": "perue",
+        "ppo_ratio_mode": "per_ue",
+        "strict_kl_guard": false,
+        "strict_kl_limit": 0.02,
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    },
+    {
+      "id": "perue_strict_seed1701",
+      "label": "perue_strict \u2014 seed 1701",
+      "hypothesis": "Per-UE ratio plus hard post-step KL rollback.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "geometry_profile": "perue_strict",
+        "ppo_ratio_mode": "per_ue",
+        "strict_kl_guard": true,
+        "strict_kl_limit": 0.02,
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "perue_strict_seed2701",
+      "label": "perue_strict \u2014 seed 2701",
+      "hypothesis": "Per-UE ratio plus hard post-step KL rollback.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "geometry_profile": "perue_strict",
+        "ppo_ratio_mode": "per_ue",
+        "strict_kl_guard": true,
+        "strict_kl_limit": 0.02,
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "perue_strict_seed3701",
+      "label": "perue_strict \u2014 seed 3701",
+      "hypothesis": "Per-UE ratio plus hard post-step KL rollback.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "geometry_profile": "perue_strict",
+        "ppo_ratio_mode": "per_ue",
+        "strict_kl_guard": true,
+        "strict_kl_limit": 0.02,
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    }
+  ]
+}

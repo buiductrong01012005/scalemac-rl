@@ -1,4 +1,4 @@
-from .actor_critic import DeterministicPolicyOutput, PolicyOutput, SharedSetActorCritic, build_baseline_compatible_expanded_model
+from .actor_critic import DeterministicPolicyOutput, PolicyOutput, SharedSetActorCritic, SplitEncoderActorCritic, build_baseline_compatible_expanded_model
 from .set_policy import SharedSetPolicy
 from .recurrent_actor_critic import (
     RecurrentDeterministicPolicyOutput,
@@ -10,6 +10,7 @@ __all__ = [
     "DeterministicPolicyOutput",
     "PolicyOutput",
     "SharedSetActorCritic",
+    "SplitEncoderActorCritic",
     "build_baseline_compatible_expanded_model",
     "SharedSetPolicy",
     "RecurrentDeterministicPolicyOutput",

@@ -1,0 +1,184 @@
+{
+  "study_id": "actor_critic_interference",
+  "round_id": "round_16d_actor_critic_interference",
+  "description": "Controlled shared-vs-split actor/critic encoder study with identical step-0 functions and RNG. Service40, joint PPO ratio, R256/MB8, 16 features and radio environment remain fixed.",
+  "common": {
+    "environment_steps": 98304,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "rollback_patience": 1000000,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "value_coef": 0.5,
+    "value_clip_coef": 0.0,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 2.5e-05,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "audit_ppo_diagnostics": true,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64,
+    "cqi_mode": "correlated",
+    "cqi_temporal_correlation": 0.97,
+    "cqi_innovation_std": 0.35,
+    "cqi_update_interval_slots": 1,
+    "cqi_max_delta_per_update": 1,
+    "csi_report_mode": "periodic",
+    "csi_report_period_slots": 4,
+    "csi_report_delay_slots": 2,
+    "csi_report_error_std": 0.0,
+    "link_adaptation_mode": "cqi_mcs_bler",
+    "link_adaptation_cqi_backoff": 0,
+    "bler_mismatch_slope": 1.5,
+    "policy_architecture": "feedforward",
+    "observation_include_csi_age": false,
+    "observation_include_reported_cqi_trend": false,
+    "baseline_compatible_feature_init": false,
+    "ppo_ratio_mode": "joint",
+    "strict_kl_guard": false,
+    "strict_kl_limit": 0.02,
+    "separate_critic_encoder": false
+  },
+  "analysis": {
+    "design": "actor_critic_interference",
+    "title": "Round 16D \u2014 Actor/Critic Encoder Interference",
+    "output": "docs/analysis/optimization/round_16d/actor_critic_interference.html",
+    "markdown_output": "docs/analysis/optimization/round_16d/actor_critic_interference.md",
+    "metrics_output": "docs/analysis/optimization/round_16d/actor_critic_case_metrics.csv",
+    "summary_output": "docs/analysis/optimization/round_16d/actor_critic_profile_summary.csv",
+    "ranking_output": "docs/analysis/optimization/round_16d/actor_critic_profile_ranking.csv",
+    "trajectory_output": "docs/analysis/optimization/round_16d/actor_critic_validation_trajectory.csv",
+    "decision_output": "docs/analysis/optimization/round_16d/actor_critic_decision.json"
+  },
+  "cases": [
+    {
+      "id": "shared_seed1701",
+      "label": "shared encoder \u2014 seed 1701",
+      "hypothesis": "Legacy shared actor/critic encoder reference.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "encoder_profile": "shared",
+        "separate_critic_encoder": false,
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "shared_seed2701",
+      "label": "shared encoder \u2014 seed 2701",
+      "hypothesis": "Legacy shared actor/critic encoder reference.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "encoder_profile": "shared",
+        "separate_critic_encoder": false,
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "shared_seed3701",
+      "label": "shared encoder \u2014 seed 3701",
+      "hypothesis": "Legacy shared actor/critic encoder reference.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "encoder_profile": "shared",
+        "separate_critic_encoder": false,
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    },
+    {
+      "id": "split_seed1701",
+      "label": "split encoder \u2014 seed 1701",
+      "hypothesis": "Actor and critic encoders start identical but train independently to remove critic representation interference.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "encoder_profile": "split",
+        "separate_critic_encoder": true,
+        "seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "split_seed2701",
+      "label": "split encoder \u2014 seed 2701",
+      "hypothesis": "Actor and critic encoders start identical but train independently to remove critic representation interference.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "encoder_profile": "split",
+        "separate_critic_encoder": true,
+        "seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "split_seed3701",
+      "label": "split encoder \u2014 seed 3701",
+      "hypothesis": "Actor and critic encoders start identical but train independently to remove critic representation interference.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "encoder_profile": "split",
+        "separate_critic_encoder": true,
+        "seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    }
+  ]
+}

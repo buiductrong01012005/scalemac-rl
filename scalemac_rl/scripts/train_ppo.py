@@ -24,7 +24,7 @@ from scalemac_rl.candidates import (
     scatter_candidate_action_batch,
 )
 from scalemac_rl.constraints import LagrangeController, ServiceConstraints, validation_feasible
-from scalemac_rl.models import RecurrentSharedSetActorCritic, SharedSetActorCritic, build_baseline_compatible_expanded_model
+from scalemac_rl.models import RecurrentSharedSetActorCritic, SharedSetActorCritic, SplitEncoderActorCritic, build_baseline_compatible_expanded_model
 from scalemac_rl.reporting import markdown_report_path, write_csv, write_markdown
 from scalemac_rl.rl_evaluation import evaluate_actor_critic
 from scalemac_rl.reproducibility import (
@@ -37,7 +37,7 @@ from scalemac_rl.reproducibility import (
 from scalemac_rl.tradeoff import validation_tradeoff_metrics
 
 
-PolicyModel = SharedSetActorCritic | RecurrentSharedSetActorCritic
+PolicyModel = SharedSetActorCritic | SplitEncoderActorCritic | RecurrentSharedSetActorCritic
 
 
 @dataclass(slots=True)
@@ -53,6 +53,9 @@ class PpoHyperparameters:
     target_kl: float
     value_clip_coef: float
     audit_gradients: bool
+    ratio_mode: str = "joint"
+    strict_kl_guard: bool = False
+    strict_kl_limit: float = 0.0
 
 
 def _resolve_device(name: str) -> torch.device:
@@ -146,6 +149,66 @@ def _explained_variance(target: np.ndarray, prediction: np.ndarray) -> float:
     return float(1.0 - np.var(target - prediction) / variance)
 
 
+def _masked_mean(values: torch.Tensor, mask: torch.Tensor | None) -> torch.Tensor:
+    if mask is None:
+        return values.mean()
+    weights = mask.to(values.dtype)
+    return (values * weights).sum() / weights.sum().clamp_min(1.0)
+
+
+def _ppo_ratio_terms(
+    *,
+    model: PolicyModel,
+    observations: torch.Tensor,
+    actions: torch.Tensor,
+    candidate_masks: torch.Tensor,
+    old_log_probs: torch.Tensor,
+    ratio_mode: str,
+) -> tuple[Any, torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    output = model.get_action_and_value(observations, candidate_masks, action=actions)
+    if ratio_mode == "joint":
+        log_ratio = output.log_prob - old_log_probs
+        mask = None
+    elif ratio_mode == "per_ue":
+        if not isinstance(model, SharedSetActorCritic):
+            raise TypeError("per-UE PPO ratio currently supports feed-forward PPO only")
+        current_per_ue = model.action_log_prob_per_ue(
+            observations, candidate_masks, actions
+        )
+        log_ratio = current_per_ue - old_log_probs
+        mask = candidate_masks.bool()
+    else:
+        raise ValueError(f"unknown PPO ratio mode: {ratio_mode}")
+    ratio = torch.exp(torch.clamp(log_ratio, -10.0, 10.0))
+    return output, log_ratio, ratio, mask
+
+
+def _ratio_diagnostics(
+    *, log_ratio: torch.Tensor, ratio: torch.Tensor, mask: torch.Tensor | None, clip_coef: float
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    kl_values = (ratio - 1.0) - log_ratio
+    approx_kl = _masked_mean(kl_values, mask).abs()
+    clip_fraction = _masked_mean((torch.abs(ratio - 1.0) > clip_coef).float(), mask)
+    if mask is None:
+        selected_ratio = ratio.reshape(-1)
+        selected_log_ratio = log_ratio.reshape(-1)
+    else:
+        selected_ratio = ratio[mask]
+        selected_log_ratio = log_ratio[mask]
+    if selected_ratio.numel() == 0:
+        one = torch.ones((), device=ratio.device, dtype=ratio.dtype)
+        zero = torch.zeros((), device=ratio.device, dtype=ratio.dtype)
+        return approx_kl, clip_fraction, one, zero, one, one
+    return (
+        approx_kl,
+        clip_fraction,
+        selected_ratio.mean(),
+        selected_ratio.std(unbiased=False),
+        selected_ratio.min(),
+        selected_ratio.max(),
+    )
+
+
 def _ppo_update(
     *,
     model: PolicyModel,
@@ -166,6 +229,7 @@ def _ppo_update(
         "value_loss": [],
         "entropy": [],
         "approx_kl": [],
+        "post_step_kl": [],
         "clip_fraction": [],
         "value_clip_fraction": [],
         "ratio_mean": [],
@@ -179,6 +243,8 @@ def _ppo_update(
     }
     parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
     minibatches_processed = 0
+    minibatches_attempted = 0
+    strict_kl_rejections = 0
     epochs_started = 0
     early_stop = False
     early_stop_kl = 0.0
@@ -192,17 +258,51 @@ def _ppo_update(
             mb = torch.as_tensor(
                 indices[start : start + hyper.minibatch_size], device=observations.device
             )
-            output = model.get_action_and_value(
-                observations[mb], candidate_masks[mb], action=actions[mb]
+            minibatches_attempted += 1
+            output, log_ratio, ratio, ratio_mask = _ppo_ratio_terms(
+                model=model,
+                observations=observations[mb],
+                actions=actions[mb],
+                candidate_masks=candidate_masks[mb],
+                old_log_probs=old_log_probs[mb],
+                ratio_mode=hyper.ratio_mode,
             )
-            log_ratio = output.log_prob - old_log_probs[mb]
-            ratio = torch.exp(torch.clamp(log_ratio, -10.0, 10.0))
+            (
+                approx_kl,
+                clip_fraction,
+                ratio_mean,
+                ratio_std,
+                ratio_min,
+                ratio_max,
+            ) = _ratio_diagnostics(
+                log_ratio=log_ratio,
+                ratio=ratio,
+                mask=ratio_mask,
+                clip_coef=hyper.clip_coef,
+            )
+
+            # Strict mode refuses to apply a new gradient step when the current
+            # minibatch is already outside the trust region.
+            if hyper.strict_kl_guard and hyper.strict_kl_limit > 0.0 and float(approx_kl.item()) > hyper.strict_kl_limit:
+                early_stop = True
+                early_stop_kl = float(approx_kl.item())
+                stop_early = True
+                break
+
             mb_adv = advantages[mb]
-            policy_loss = torch.maximum(
-                -mb_adv * ratio,
-                -mb_adv
-                * torch.clamp(ratio, 1.0 - hyper.clip_coef, 1.0 + hyper.clip_coef),
-            ).mean()
+            if hyper.ratio_mode == "per_ue":
+                adv = mb_adv.unsqueeze(-1)
+                unclipped = -adv * ratio
+                clipped = -adv * torch.clamp(
+                    ratio, 1.0 - hyper.clip_coef, 1.0 + hyper.clip_coef
+                )
+                policy_loss = _masked_mean(torch.maximum(unclipped, clipped), ratio_mask)
+            else:
+                policy_loss = torch.maximum(
+                    -mb_adv * ratio,
+                    -mb_adv
+                    * torch.clamp(ratio, 1.0 - hyper.clip_coef, 1.0 + hyper.clip_coef),
+                ).mean()
 
             value_error = (output.value - returns[mb]) ** 2
             if hyper.value_clip_coef > 0.0:
@@ -235,31 +335,64 @@ def _ppo_update(
                 )
                 gradient_probe_done = True
 
+            model_before = None
+            optimizer_before = None
+            if hyper.strict_kl_guard:
+                model_before = copy.deepcopy(model.state_dict())
+                optimizer_before = copy.deepcopy(optimizer.state_dict())
+
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             grad_norm = nn.utils.clip_grad_norm_(model.parameters(), hyper.max_grad_norm)
             optimizer.step()
 
-            with torch.no_grad():
-                approx_kl = torch.mean((ratio - 1.0) - log_ratio).abs()
-                clip_fraction = torch.mean(
-                    (torch.abs(ratio - 1.0) > hyper.clip_coef).float()
-                )
+            post_step_kl = approx_kl
+            if hyper.strict_kl_guard:
+                with torch.no_grad():
+                    _, post_log_ratio, post_ratio, post_mask = _ppo_ratio_terms(
+                        model=model,
+                        observations=observations[mb],
+                        actions=actions[mb],
+                        candidate_masks=candidate_masks[mb],
+                        old_log_probs=old_log_probs[mb],
+                        ratio_mode=hyper.ratio_mode,
+                    )
+                    post_step_kl = _ratio_diagnostics(
+                        log_ratio=post_log_ratio,
+                        ratio=post_ratio,
+                        mask=post_mask,
+                        clip_coef=hyper.clip_coef,
+                    )[0]
+                if hyper.strict_kl_limit > 0.0 and float(post_step_kl.item()) > hyper.strict_kl_limit:
+                    assert model_before is not None and optimizer_before is not None
+                    model.load_state_dict(model_before)
+                    optimizer.load_state_dict(optimizer_before)
+                    strict_kl_rejections += 1
+                    early_stop = True
+                    early_stop_kl = float(post_step_kl.item())
+                    stop_early = True
+                    losses["post_step_kl"].append(float(post_step_kl.item()))
+                    break
+
             losses["policy_loss"].append(float(policy_loss.item()))
             losses["value_loss"].append(float(value_loss.item()))
             losses["entropy"].append(float(entropy.item()))
             losses["approx_kl"].append(float(approx_kl.item()))
+            losses["post_step_kl"].append(float(post_step_kl.item()))
             losses["clip_fraction"].append(float(clip_fraction.item()))
             losses["value_clip_fraction"].append(float(value_clip_fraction.item()))
-            losses["ratio_mean"].append(float(ratio.mean().item()))
-            losses["ratio_std"].append(float(ratio.std(unbiased=False).item()))
-            losses["ratio_min"].append(float(ratio.min().item()))
-            losses["ratio_max"].append(float(ratio.max().item()))
-            losses["abs_log_ratio_max"].append(float(log_ratio.abs().max().item()))
+            losses["ratio_mean"].append(float(ratio_mean.item()))
+            losses["ratio_std"].append(float(ratio_std.item()))
+            losses["ratio_min"].append(float(ratio_min.item()))
+            losses["ratio_max"].append(float(ratio_max.item()))
+            selected_log_ratio = log_ratio if ratio_mask is None else log_ratio[ratio_mask]
+            losses["abs_log_ratio_max"].append(
+                float(selected_log_ratio.abs().max().item()) if selected_log_ratio.numel() else 0.0
+            )
             losses["grad_norm_preclip"].append(float(grad_norm.item()))
             minibatches_processed += 1
 
-            if hyper.target_kl > 0.0 and float(approx_kl.item()) > hyper.target_kl:
+            if (not hyper.strict_kl_guard) and hyper.target_kl > 0.0 and float(approx_kl.item()) > hyper.target_kl:
                 stop_early = True
                 early_stop = True
                 early_stop_kl = float(approx_kl.item())
@@ -269,6 +402,7 @@ def _ppo_update(
 
     result = {name: mean(values) if values else 0.0 for name, values in losses.items()}
     result["max_approx_kl"] = max(losses["approx_kl"], default=0.0)
+    result["max_post_step_kl"] = max(losses["post_step_kl"], default=0.0)
     result["max_ratio"] = max(losses["ratio_max"], default=1.0)
     result["min_ratio"] = min(losses["ratio_min"], default=1.0)
     result["max_abs_log_ratio"] = max(losses["abs_log_ratio_max"], default=0.0)
@@ -280,6 +414,12 @@ def _ppo_update(
         else 0.0
     )
     result["ppo_minibatches_processed"] = float(minibatches_processed)
+    result["ppo_minibatches_attempted"] = float(minibatches_attempted)
+    result["strict_kl_rejections"] = float(strict_kl_rejections)
+    result["strict_kl_reject_fraction"] = (
+        float(strict_kl_rejections) / float(minibatches_attempted)
+        if minibatches_attempted else 0.0
+    )
     result["ppo_epochs_started"] = float(epochs_started)
     result["ppo_early_stop"] = float(early_stop)
     result["ppo_early_stop_kl"] = early_stop_kl
@@ -460,6 +600,7 @@ def _checkpoint_payload(
         ),
         "checkpoint_tag": tag,
         "policy_architecture": args.policy_architecture,
+        "separate_critic_encoder": args.separate_critic_encoder,
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "input_dim": model.input_dim,
@@ -475,6 +616,7 @@ def _checkpoint_payload(
             "workers": args.workers,
             "rollout_steps": args.rollout_steps,
             "policy_architecture": args.policy_architecture,
+            "separate_critic_encoder": args.separate_critic_encoder,
             "recurrent_seq_len": args.recurrent_seq_len,
             "recurrent_minibatch_sequences": args.recurrent_minibatch_sequences,
             "max_candidates": args.max_candidates,
@@ -526,6 +668,9 @@ def _checkpoint_payload(
             "gamma": args.gamma,
             "gae_lambda": args.gae_lambda,
             "clip_coef": args.clip_coef,
+            "ppo_ratio_mode": args.ppo_ratio_mode,
+            "strict_kl_guard": args.strict_kl_guard,
+            "strict_kl_limit": args.strict_kl_limit,
             "device": str(next(model.parameters()).device),
         },
         "constraints": asdict(constraints),
@@ -884,6 +1029,15 @@ def main() -> None:
     parser.add_argument("--long-wait-threshold", type=float, default=0.8)
     parser.add_argument("--freeze-static-profiles", action="store_true")
     parser.add_argument("--fixed-profile-seed", type=int, default=None)
+    parser.add_argument(
+        "--environment-seed",
+        type=int,
+        default=None,
+        help=(
+            "seed for environment reset/channel/CSI randomness; defaults to --seed "
+            "for backward compatibility, allowing policy RNG and environment RNG to be decoupled"
+        ),
+    )
     parser.add_argument("--cqi-mode", choices=["static", "correlated"], default="static")
     parser.add_argument("--cqi-temporal-correlation", type=float, default=0.97)
     parser.add_argument("--cqi-innovation-std", type=float, default=0.35)
@@ -936,6 +1090,15 @@ def main() -> None:
         choices=["feedforward", "recurrent"],
         default="feedforward",
         help="feedforward PPO or per-UE shared-GRU recurrent PPO",
+    )
+    parser.add_argument(
+        "--separate-critic-encoder",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "use an independent critic encoder initialized as an exact copy of "
+            "the actor encoder; feed-forward PPO only"
+        ),
     )
     parser.add_argument(
         "--recurrent-seq-len",
@@ -1000,6 +1163,24 @@ def main() -> None:
     parser.add_argument("--minibatch-size", type=int, default=64)
     parser.add_argument("--max-grad-norm", type=float, default=0.5)
     parser.add_argument("--target-kl", type=float, default=0.03)
+    parser.add_argument(
+        "--ppo-ratio-mode",
+        choices=["joint", "per_ue"],
+        default="joint",
+        help="PPO probability-ratio geometry: one joint action ratio or per-UE grouped ratios",
+    )
+    parser.add_argument(
+        "--strict-kl-guard",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="rollback a minibatch update if its post-step KL exceeds the strict limit",
+    )
+    parser.add_argument(
+        "--strict-kl-limit",
+        type=float,
+        default=None,
+        help="hard post-step KL limit used by strict guard; defaults to --target-kl",
+    )
     parser.add_argument("--max-starvation-rate", type=float, default=0.0)
     parser.add_argument("--max-p99-wait-slots", type=float, default=50.0)
     parser.add_argument("--min-jain-fairness", type=float, default=0.60)
@@ -1032,6 +1213,27 @@ def main() -> None:
     parser.add_argument("--validation-slots", type=int, default=1000)
     parser.add_argument("--validate-every", type=int, default=16)
     parser.add_argument("--rollback-patience", type=int, default=2)
+    parser.add_argument(
+        "--rollback-mode",
+        choices=["constraint", "service"],
+        default="constraint",
+        help=(
+            "validation rollback trigger: full constraint feasibility or service-only "
+            "feasibility (starvation, P99 wait, max wait; fairness excluded)"
+        ),
+    )
+    parser.add_argument(
+        "--rollback-lr-factor",
+        type=float,
+        default=1.0,
+        help="multiply the future learning-rate schedule by this factor after each validation rollback",
+    )
+    parser.add_argument(
+        "--rollback-min-lr-multiplier",
+        type=float,
+        default=0.125,
+        help="lower bound for the cumulative learning-rate multiplier after repeated rollbacks",
+    )
     parser.add_argument("--checkpoint-every", type=int, default=16)
     parser.add_argument(
         "--milestone-env-steps",
@@ -1106,6 +1308,8 @@ def main() -> None:
         parser.error("validation slots and repeats must be positive")
     if args.fixed_profile_seed is not None and args.fixed_profile_seed < 0:
         parser.error("fixed-profile-seed must be non-negative")
+    if args.environment_seed is not None and args.environment_seed < 0:
+        parser.error("environment-seed must be non-negative")
     if not 0.0 <= args.cqi_temporal_correlation < 1.0:
         parser.error("cqi-temporal-correlation must be in [0, 1)")
     if args.cqi_innovation_std < 0.0:
@@ -1158,6 +1362,18 @@ def main() -> None:
     ):
         if getattr(args, name) < 0.0:
             parser.error(f"{name.replace('_', '-')} must be non-negative")
+    if args.strict_kl_limit is None:
+        args.strict_kl_limit = args.target_kl
+    if args.strict_kl_limit < 0.0:
+        parser.error("strict-kl-limit must be non-negative")
+    if args.policy_architecture == "recurrent" and args.ppo_ratio_mode != "joint":
+        parser.error("per-UE PPO ratio currently supports feed-forward PPO only")
+    if args.policy_architecture == "recurrent" and args.strict_kl_guard:
+        parser.error("strict KL guard currently supports feed-forward PPO only")
+    if args.policy_architecture == "recurrent" and args.separate_critic_encoder:
+        parser.error("separate critic encoder currently supports feed-forward PPO only")
+    if args.baseline_compatible_feature_init and args.separate_critic_encoder:
+        parser.error("baseline-compatible feature init cannot be combined with separate critic encoder")
     if args.lr_end is None:
         args.lr_end = args.lr
     if args.entropy_coef_end is None:
@@ -1178,10 +1394,18 @@ def main() -> None:
         if len(args.validation_seeds) != 1:
             parser.error("single-seed-upper-bound requires exactly one validation seed")
         args.freeze_static_profiles = True
+        if args.environment_seed is None:
+            args.environment_seed = args.seed
         if args.fixed_profile_seed is None:
-            args.fixed_profile_seed = args.seed
+            args.fixed_profile_seed = args.environment_seed
+    if args.environment_seed is None:
+        args.environment_seed = args.seed
     if args.validate_every <= 0 or args.rollback_patience <= 0 or args.checkpoint_every <= 0:
         parser.error("validation, rollback, and checkpoint intervals must be positive")
+    if not 0.0 < args.rollback_lr_factor <= 1.0:
+        parser.error("rollback-lr-factor must be in (0, 1]")
+    if not 0.0 < args.rollback_min_lr_multiplier <= 1.0:
+        parser.error("rollback-min-lr-multiplier must be in (0, 1]")
     if any(step <= 0 for step in args.milestone_env_steps):
         parser.error("milestone environment steps must be positive")
     args.milestone_env_steps = sorted(set(args.milestone_env_steps))
@@ -1226,6 +1450,12 @@ def main() -> None:
             hidden_dim=args.hidden_dim,
             initial_concentration=args.beta_concentration_start,
         ).to(device)
+    elif args.separate_critic_encoder:
+        model = SplitEncoderActorCritic(
+            input_dim=observation_input_dim,
+            hidden_dim=args.hidden_dim,
+            initial_concentration=args.beta_concentration_start,
+        ).to(device)
     else:
         model = SharedSetActorCritic(
             input_dim=observation_input_dim,
@@ -1239,8 +1469,13 @@ def main() -> None:
                 "runtime": collect_runtime_fingerprint(),
                 "run": {
                     "seed": args.seed,
+                    "environment_seed": args.environment_seed,
                     "fixed_profile_seed": args.fixed_profile_seed,
                     "validation_seeds": args.validation_seeds,
+                    "rollback_mode": args.rollback_mode,
+                    "rollback_patience": args.rollback_patience,
+                    "rollback_lr_factor": args.rollback_lr_factor,
+                    "rollback_min_lr_multiplier": args.rollback_min_lr_multiplier,
                     "device": str(device),
                     "policy_architecture": args.policy_architecture,
                     "recurrent_seq_len": args.recurrent_seq_len,
@@ -1258,6 +1493,10 @@ def main() -> None:
                     "observation_include_reported_cqi_trend": args.observation_include_reported_cqi_trend,
                     "observation_features_per_ue": observation_input_dim,
                     "baseline_compatible_feature_init": args.baseline_compatible_feature_init,
+                    "separate_critic_encoder": args.separate_critic_encoder,
+                    "ppo_ratio_mode": args.ppo_ratio_mode,
+                    "strict_kl_guard": args.strict_kl_guard,
+                    "strict_kl_limit": args.strict_kl_limit,
                     "link_adaptation_mode": args.link_adaptation_mode,
                     "link_adaptation_cqi_backoff": args.link_adaptation_cqi_backoff,
                     "bler_mismatch_slope": args.bler_mismatch_slope,
@@ -1301,6 +1540,9 @@ def main() -> None:
         target_kl=args.target_kl,
         value_clip_coef=args.value_clip_coef,
         audit_gradients=args.audit_ppo_diagnostics,
+        ratio_mode=args.ppo_ratio_mode,
+        strict_kl_guard=args.strict_kl_guard,
+        strict_kl_limit=args.strict_kl_limit,
     )
 
     log_rows: list[dict[str, Any]] = []
@@ -1357,7 +1599,11 @@ def main() -> None:
             default_limit=stage_default_p99_limit,
             final_stage_schedule=args.final_stage_p99_schedule,
         )
-        stage_seed = args.seed if args.single_seed_upper_bound else args.seed + stage_index * 10_000
+        stage_seed = (
+            args.environment_seed
+            if args.single_seed_upper_bound
+            else args.environment_seed + stage_index * 10_000
+        )
         profile_seed = (
             args.fixed_profile_seed
             if args.fixed_profile_seed is not None
@@ -1423,9 +1669,15 @@ def main() -> None:
         stage_env_steps = 0
         stage_best_feasible_reward = float("-inf")
         stage_best_feasible_snapshot: dict[str, Any] | None = None
+        stage_best_service_reward = float("-inf")
+        stage_best_service_snapshot: dict[str, Any] | None = None
+        stage_best_service_validation: dict[str, Any] | None = None
         stage_best_candidate_snapshot: dict[str, Any] | None = None
         stage_best_candidate_score: tuple[float, float, float, float, float] | None = None
         consecutive_infeasible = 0
+        consecutive_service_infeasible = 0
+        rollback_count = 0
+        rollback_lr_multiplier = 1.0
 
         while stage_env_steps < args.steps_per_stage:
             active_p99_limit = _active_p99_limit(
@@ -1463,7 +1715,8 @@ def main() -> None:
             progress_fraction = min(
                 global_env_steps / max(total_requested_steps, 1), 1.0
             )
-            current_lr = args.lr + progress_fraction * (args.lr_end - args.lr)
+            scheduled_lr = args.lr + progress_fraction * (args.lr_end - args.lr)
+            current_lr = scheduled_lr * rollback_lr_multiplier
             current_entropy_coef = (
                 args.entropy_coef
                 + progress_fraction * (args.entropy_coef_end - args.entropy_coef)
@@ -1669,7 +1922,16 @@ def main() -> None:
                 obs_buffer.append(compact_observations.copy())
                 action_buffer.append(compact_actions.copy())
                 compact_mask_buffer.append(compact_masks.copy())
-                logprob_buffer.append(output.log_prob.cpu().numpy())
+                if args.ppo_ratio_mode == "per_ue":
+                    if not isinstance(model, SharedSetActorCritic):
+                        raise TypeError("per-UE PPO ratio requires feed-forward model")
+                    with torch.no_grad():
+                        per_ue_log_prob = model.action_log_prob_per_ue(
+                            obs_tensor, mask_tensor, output.action
+                        )
+                    logprob_buffer.append(per_ue_log_prob.cpu().numpy())
+                else:
+                    logprob_buffer.append(output.log_prob.cpu().numpy())
                 value_buffer.append(output.value.cpu().numpy())
                 reward_buffer.append(rewards)
                 done_buffer.append(dones)
@@ -1761,7 +2023,12 @@ def main() -> None:
                 flat_masks = torch.from_numpy(
                     mask_array.reshape(-1, candidate_count)
                 ).to(device)
-                flat_logprobs = torch.from_numpy(logprob_array.reshape(-1)).to(device)
+                if args.ppo_ratio_mode == "per_ue":
+                    flat_logprobs = torch.from_numpy(
+                        logprob_array.reshape(-1, candidate_count)
+                    ).to(device)
+                else:
+                    flat_logprobs = torch.from_numpy(logprob_array.reshape(-1)).to(device)
                 flat_old_values = torch.from_numpy(values_np.reshape(-1)).to(device)
                 flat_returns = torch.from_numpy(returns_np.reshape(-1)).to(device)
                 flat_advantages = torch.from_numpy(advantages_norm.reshape(-1)).to(device)
@@ -1882,6 +2149,9 @@ def main() -> None:
                 "mean_ppo_selected_count": mean(metric_window["ppo_selected"]),
                 "mean_rule_selected_count": mean(metric_window["rule_selected"]),
                 "learning_rate": current_lr,
+                "scheduled_learning_rate": scheduled_lr,
+                "rollback_lr_multiplier": rollback_lr_multiplier,
+                "rollback_count": rollback_count,
                 "entropy_coef": current_entropy_coef,
                 "beta_concentration_priority": current_beta_priority,
                 "beta_concentration_demand": current_beta_demand,
@@ -2210,20 +2480,106 @@ def main() -> None:
                         )
                 else:
                     consecutive_infeasible += 1
-                    if (
-                        stage_best_feasible_snapshot is not None
-                        and consecutive_infeasible >= args.rollback_patience
-                    ):
-                        _restore(stage_best_feasible_snapshot, model, optimizer, controller)
-                        observations = np.stack(
-                            [
-                                env.reset(seed=config.seed + worker + update_index)[0]
-                                for worker, env in enumerate(envs)
-                            ],
-                            axis=0,
+
+                # Service-only feasibility deliberately excludes Jain fairness. It is
+                # used only as a training safety mechanism to preserve a scheduler
+                # that has already achieved starvation/wait feasibility.
+                service_feasible = all(
+                    float(summary[key]) <= 1e-12
+                    for key in (
+                        "validation_starvation_excess",
+                        "validation_wait_excess",
+                        "validation_max_wait_excess",
+                    )
+                )
+                if service_feasible:
+                    consecutive_service_infeasible = 0
+                    service_score = float(summary["mean_final_target_reward"])
+                    if service_score > stage_best_service_reward:
+                        stage_best_service_reward = service_score
+                        stage_best_service_snapshot = _snapshot(model, optimizer, controller)
+                        stage_best_service_validation = copy.deepcopy(summary)
+                        _save_checkpoint(
+                            args.checkpoint_dir / f"best_service_stage_{num_ues}.pt",
+                            _checkpoint_payload(
+                                model=model, optimizer=optimizer, args=args,
+                                initialized_from=initialized_from,
+                                global_env_steps=global_env_steps, update_index=update_index,
+                                stage_index=stage_index, num_ues=num_ues,
+                                controller=controller, constraints=active_constraints,
+                                tag=f"best_service_stage_{num_ues}", validation=summary,
+                            ),
                         )
-                        summary["rolled_back"] = True
-                        consecutive_infeasible = 0
+                else:
+                    consecutive_service_infeasible += 1
+
+                rollback_snapshot = (
+                    stage_best_service_snapshot
+                    if args.rollback_mode == "service"
+                    else stage_best_feasible_snapshot
+                )
+                rollback_streak = (
+                    consecutive_service_infeasible
+                    if args.rollback_mode == "service"
+                    else consecutive_infeasible
+                )
+                rollback_trigger_infeasible = (
+                    not service_feasible
+                    if args.rollback_mode == "service"
+                    else not bool(summary["constraint_feasible"])
+                )
+                if (
+                    rollback_trigger_infeasible
+                    and rollback_snapshot is not None
+                    and rollback_streak >= args.rollback_patience
+                ):
+                    _restore(rollback_snapshot, model, optimizer, controller)
+                    rollback_count += 1
+                    rollback_lr_multiplier = max(
+                        args.rollback_min_lr_multiplier,
+                        rollback_lr_multiplier * args.rollback_lr_factor,
+                    )
+                    observations = np.stack(
+                        [
+                            env.reset(seed=config.seed + worker + update_index)[0]
+                            for worker, env in enumerate(envs)
+                        ],
+                        axis=0,
+                    )
+                    summary["rolled_back"] = True
+                    consecutive_infeasible = 0
+                    consecutive_service_infeasible = 0
+
+                summary["service_feasible"] = service_feasible
+                summary["rollback_mode"] = args.rollback_mode
+                summary["rollback_count"] = rollback_count
+                summary["rollback_lr_multiplier_after_validation"] = rollback_lr_multiplier
+                if summary["rolled_back"] and stage_best_service_validation is not None:
+                    summary["post_rollback_service_feasible"] = True
+                    summary["post_rollback_goodput_bits_per_slot"] = float(
+                        stage_best_service_validation["mean_goodput_bits_per_slot"]
+                    )
+                    summary["post_rollback_jain_fairness"] = float(
+                        stage_best_service_validation["mean_jain_fairness"]
+                    )
+                    summary["post_rollback_starvation_rate"] = float(
+                        stage_best_service_validation["worst_starvation_rate"]
+                    )
+                    summary["post_rollback_p99_wait_slots"] = float(
+                        stage_best_service_validation["worst_p99_wait_slots"]
+                    )
+                    summary["post_rollback_max_wait_slots"] = float(
+                        stage_best_service_validation["worst_max_wait_slots"]
+                    )
+                else:
+                    summary["post_rollback_service_feasible"] = service_feasible
+                    summary["post_rollback_goodput_bits_per_slot"] = float(
+                        summary["mean_goodput_bits_per_slot"]
+                    )
+                    summary["post_rollback_jain_fairness"] = float(summary["mean_jain_fairness"])
+                    summary["post_rollback_starvation_rate"] = float(summary["worst_starvation_rate"])
+                    summary["post_rollback_p99_wait_slots"] = float(summary["worst_p99_wait_slots"])
+                    summary["post_rollback_max_wait_slots"] = float(summary["worst_max_wait_slots"])
 
                 validation_rows.extend(detailed)
                 validation_summary_rows.append(summary)
