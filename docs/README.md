@@ -550,3 +550,12 @@ meaningful.
 ## Analysis archive
 
 Các bản phân tích thí nghiệm được lưu tại [`docs/analysis/index.html`](analysis/index.html) để phục vụ tổng hợp khóa luận. `docs/reports/` được giữ riêng cho báo cáo chính thức sau này.
+
+## Current analysis state
+
+For the current research narrative and experiment gate, start with:
+
+- `analysis/CURRENT_RESEARCH_STATE.html` — presentation-friendly overview;
+- `analysis/CONSOLIDATED_FINDINGS_THROUGH_ROUND21.md` — evidence synthesis;
+- `analysis/CURRENT_EXPERIMENTS_ROUND22_23.md` — running experiment tracker;
+- `analysis/MASTER_INDEX.md` — full archive inventory.
