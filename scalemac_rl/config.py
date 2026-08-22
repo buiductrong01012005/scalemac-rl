@@ -58,6 +58,14 @@ class ScaleMacConfig:
     observation_include_csi_age: bool = False
     observation_include_reported_cqi_trend: bool = False
 
+    # Scheduler-history observation features. These are fully deployable because
+    # the MAC scheduler knows which UEs it selected in previous slots. They make
+    # the local state behind schedule-frequency fairness directly observable
+    # instead of asking PPO to infer it only from a global reward.
+    observation_include_time_since_schedule: bool = False
+    observation_include_schedule_rate_deficit: bool = False
+    observation_include_schedule_rate_rank: bool = False
+
     # Link-adaptation abstraction. ``legacy_fixed_bler`` preserves the pre-v0.13
     # PHY path: true-CQI efficiency with a fixed BLER. ``cqi_mcs_bler`` maps the
     # scheduler-visible reported CQI to 3GPP-inspired PDSCH MCS Table 1 and makes

@@ -71,3 +71,45 @@ Every architecture should use:
 Only after an architecture is stable with 128 candidates should it be exposed to all
 1,200 UEs. A full-UE failure otherwise cannot be separated from a reward-design or
 exploration failure.
+
+## Pure-RL roadmap after Round 20
+
+The project should prefer policies learned from random initialization over PF/oracle
+behavior cloning when making the main research claim. Expert warm-start remains a
+sanity/control experiment because it can place PPO directly inside a scheduler-like
+basin and make the apparent RL improvement difficult to attribute to PPO itself.
+
+Before changing to multi-agent control, the current priority is:
+
+1. Equal4 reward with service-aware retention and train/deploy alignment;
+2. expose scheduler-owned per-UE scheduling history (`time_since_schedule`, recent
+   schedule-rate deficit and rank) so schedule-frequency reward is Markov/locally
+   observable to the actor;
+3. if necessary, split priority and PRB-demand representation paths while keeping
+   PPO end-to-end and teacher-free;
+4. test curriculum/mixed UE counts from random initialization.
+
+### Future hierarchical MAPPO design
+
+If centralized full-UE PPO remains fragile after the pure-PPO studies, the planned
+next architecture is hierarchical MAPPO rather than 1,200 independent agents:
+
+```text
+1200 UEs
+   -> 12 x ~100 UE groups   (also screen 16 x ~75)
+   -> global coordinator allocates per-group service/PRB quotas
+   -> parameter-shared local actors rank/select UEs inside each group
+   -> centralized critic observes the whole cell during training
+```
+
+The grouping must not be a fixed partition by UE ID. Candidate grouping signals
+include QoS/slice, queue load, service wait, reported CQI, and/or position. Group
+membership or quota changes require hysteresis/stability so slot-to-slot cluster
+churn does not create another non-stationary learning problem. Coordinator quotas
+must conserve total Top-K service opportunities and PRBs so lightly loaded groups
+cannot strand resources while another group starves.
+
+This remains PPO-family RL: the coordinator and local shared actors are learned,
+not replaced by PF/oracle scheduling rules. It is intentionally deferred until the
+single-agent PPO baseline has been pushed as far as practical so the MAPPO gain can
+be attributed to hierarchy/action decomposition rather than an unfinished baseline.

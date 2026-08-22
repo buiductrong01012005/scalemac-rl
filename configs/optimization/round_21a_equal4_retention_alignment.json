@@ -1,0 +1,291 @@
+{
+  "study_id": "equal4_retention_alignment",
+  "round_id": "round_21a_equal4_retention_alignment",
+  "description": "Round 21A: keep the self-learned Equal4 objective and test whether service-aware rollback plus moderate Beta annealing retain good deterministic basins without expert guidance.",
+  "common": {
+    "environment_steps": 98304,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "value_coef": 0.5,
+    "value_clip_coef": 0.0,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 2.5e-05,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "beta_concentration_start": 20.0,
+    "beta_concentration_end": 20.0,
+    "freeze_beta_concentration": false,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "audit_ppo_diagnostics": true,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64,
+    "cqi_mode": "correlated",
+    "cqi_temporal_correlation": 0.97,
+    "cqi_innovation_std": 0.35,
+    "cqi_update_interval_slots": 1,
+    "cqi_max_delta_per_update": 1,
+    "csi_report_mode": "periodic",
+    "csi_report_period_slots": 4,
+    "csi_report_delay_slots": 2,
+    "csi_report_error_std": 0.0,
+    "link_adaptation_mode": "cqi_mcs_bler",
+    "link_adaptation_cqi_backoff": 0,
+    "bler_mismatch_slope": 1.5,
+    "policy_architecture": "feedforward",
+    "observation_include_csi_age": false,
+    "observation_include_reported_cqi_trend": false,
+    "baseline_compatible_feature_init": false,
+    "strict_kl_guard": false,
+    "strict_kl_limit": 0.02,
+    "separate_critic_encoder": false,
+    "rollback_mode": "service",
+    "rollback_patience": 1000000,
+    "rollback_lr_factor": 1.0,
+    "ppo_ratio_mode": "joint",
+    "disc_is_alpha_start": 0.0,
+    "disc_is_target": 0.0,
+    "disc_normalize_dimensions": false,
+    "observation_include_time_since_schedule": false,
+    "observation_include_schedule_rate_deficit": false,
+    "observation_include_schedule_rate_rank": false,
+    "rollback_min_lr_multiplier": 0.125
+  },
+  "analysis": {},
+  "cases": [
+    {
+      "id": "equal4_base_seed1701",
+      "label": "Equal4 baseline \u2014 seed 1701",
+      "hypothesis": "Equal4 reference with no effective rollback and learned concentration around 20.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.25,
+        "schedule_fairness": 0.25,
+        "service": 0.25
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "environment_seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ],
+        "rollback_mode": "service",
+        "rollback_patience": 1000000,
+        "rollback_lr_factor": 1.0,
+        "beta_concentration_start": 20.0,
+        "beta_concentration_end": 20.0
+      }
+    },
+    {
+      "id": "equal4_base_seed2701",
+      "label": "Equal4 baseline \u2014 seed 2701",
+      "hypothesis": "Equal4 reference with no effective rollback and learned concentration around 20.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.25,
+        "schedule_fairness": 0.25,
+        "service": 0.25
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "environment_seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ],
+        "rollback_mode": "service",
+        "rollback_patience": 1000000,
+        "rollback_lr_factor": 1.0,
+        "beta_concentration_start": 20.0,
+        "beta_concentration_end": 20.0
+      }
+    },
+    {
+      "id": "equal4_base_seed3701",
+      "label": "Equal4 baseline \u2014 seed 3701",
+      "hypothesis": "Equal4 reference with no effective rollback and learned concentration around 20.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.25,
+        "schedule_fairness": 0.25,
+        "service": 0.25
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "environment_seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ],
+        "rollback_mode": "service",
+        "rollback_patience": 1000000,
+        "rollback_lr_factor": 1.0,
+        "beta_concentration_start": 20.0,
+        "beta_concentration_end": 20.0
+      }
+    },
+    {
+      "id": "equal4_rollback_seed1701",
+      "label": "Equal4 + service rollback LRx0.5 \u2014 seed 1701",
+      "hypothesis": "Protect any discovered service-feasible basin and reduce LR after rollback.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.25,
+        "schedule_fairness": 0.25,
+        "service": 0.25
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "environment_seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ],
+        "rollback_mode": "service",
+        "rollback_patience": 1,
+        "rollback_lr_factor": 0.5,
+        "beta_concentration_start": 20.0,
+        "beta_concentration_end": 20.0
+      }
+    },
+    {
+      "id": "equal4_rollback_seed2701",
+      "label": "Equal4 + service rollback LRx0.5 \u2014 seed 2701",
+      "hypothesis": "Protect any discovered service-feasible basin and reduce LR after rollback.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.25,
+        "schedule_fairness": 0.25,
+        "service": 0.25
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "environment_seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ],
+        "rollback_mode": "service",
+        "rollback_patience": 1,
+        "rollback_lr_factor": 0.5,
+        "beta_concentration_start": 20.0,
+        "beta_concentration_end": 20.0
+      }
+    },
+    {
+      "id": "equal4_rollback_seed3701",
+      "label": "Equal4 + service rollback LRx0.5 \u2014 seed 3701",
+      "hypothesis": "Protect any discovered service-feasible basin and reduce LR after rollback.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.25,
+        "schedule_fairness": 0.25,
+        "service": 0.25
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "environment_seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ],
+        "rollback_mode": "service",
+        "rollback_patience": 1,
+        "rollback_lr_factor": 0.5,
+        "beta_concentration_start": 20.0,
+        "beta_concentration_end": 20.0
+      }
+    },
+    {
+      "id": "equal4_rb_anneal80_seed1701",
+      "label": "Equal4 + rollback + Beta 20->80 \u2014 seed 1701",
+      "hypothesis": "Combine feasible-basin retention with moderate train/deploy exploration alignment.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.25,
+        "schedule_fairness": 0.25,
+        "service": 0.25
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "environment_seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ],
+        "rollback_mode": "service",
+        "rollback_patience": 1,
+        "rollback_lr_factor": 0.5,
+        "beta_concentration_start": 20.0,
+        "beta_concentration_end": 80.0
+      }
+    },
+    {
+      "id": "equal4_rb_anneal80_seed2701",
+      "label": "Equal4 + rollback + Beta 20->80 \u2014 seed 2701",
+      "hypothesis": "Combine feasible-basin retention with moderate train/deploy exploration alignment.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.25,
+        "schedule_fairness": 0.25,
+        "service": 0.25
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "environment_seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ],
+        "rollback_mode": "service",
+        "rollback_patience": 1,
+        "rollback_lr_factor": 0.5,
+        "beta_concentration_start": 20.0,
+        "beta_concentration_end": 80.0
+      }
+    },
+    {
+      "id": "equal4_rb_anneal80_seed3701",
+      "label": "Equal4 + rollback + Beta 20->80 \u2014 seed 3701",
+      "hypothesis": "Combine feasible-basin retention with moderate train/deploy exploration alignment.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.25,
+        "schedule_fairness": 0.25,
+        "service": 0.25
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "environment_seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ],
+        "rollback_mode": "service",
+        "rollback_patience": 1,
+        "rollback_lr_factor": 0.5,
+        "beta_concentration_start": 20.0,
+        "beta_concentration_end": 80.0
+      }
+    }
+  ]
+}

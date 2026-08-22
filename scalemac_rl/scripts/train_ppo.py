@@ -899,6 +899,9 @@ def _validate(
     csi_report_error_std: float,
     observation_include_csi_age: bool,
     observation_include_reported_cqi_trend: bool,
+    observation_include_time_since_schedule: bool,
+    observation_include_schedule_rate_deficit: bool,
+    observation_include_schedule_rate_rank: bool,
     link_adaptation_mode: str,
     link_adaptation_cqi_backoff: int,
     bler_mismatch_slope: float,
@@ -948,6 +951,9 @@ def _validate(
         csi_report_error_std=csi_report_error_std,
         observation_include_csi_age=observation_include_csi_age,
         observation_include_reported_cqi_trend=observation_include_reported_cqi_trend,
+        observation_include_time_since_schedule=observation_include_time_since_schedule,
+        observation_include_schedule_rate_deficit=observation_include_schedule_rate_deficit,
+        observation_include_schedule_rate_rank=observation_include_schedule_rate_rank,
         link_adaptation_mode=link_adaptation_mode,
         link_adaptation_cqi_backoff=link_adaptation_cqi_backoff,
         bler_mismatch_slope=bler_mismatch_slope,
@@ -1147,6 +1153,9 @@ def main() -> None:
     parser.add_argument("--csi-report-error-std", type=float, default=0.0)
     parser.add_argument("--observation-include-csi-age", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--observation-include-reported-cqi-trend", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--observation-include-time-since-schedule", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--observation-include-schedule-rate-deficit", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--observation-include-schedule-rate-rank", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument(
         "--baseline-compatible-feature-init",
         action=argparse.BooleanOptionalAction,
@@ -1550,6 +1559,9 @@ def main() -> None:
         OBSERVATION_FEATURES
         + int(args.observation_include_csi_age)
         + int(args.observation_include_reported_cqi_trend)
+        + int(args.observation_include_time_since_schedule)
+        + int(args.observation_include_schedule_rate_deficit)
+        + int(args.observation_include_schedule_rate_rank)
     )
     model: PolicyModel
     if args.policy_architecture == "recurrent":
@@ -1607,6 +1619,9 @@ def main() -> None:
                     "csi_report_error_std": args.csi_report_error_std,
                     "observation_include_csi_age": args.observation_include_csi_age,
                     "observation_include_reported_cqi_trend": args.observation_include_reported_cqi_trend,
+                    "observation_include_time_since_schedule": args.observation_include_time_since_schedule,
+                    "observation_include_schedule_rate_deficit": args.observation_include_schedule_rate_deficit,
+                    "observation_include_schedule_rate_rank": args.observation_include_schedule_rate_rank,
                     "observation_features_per_ue": observation_input_dim,
                     "baseline_compatible_feature_init": args.baseline_compatible_feature_init,
                     "separate_critic_encoder": args.separate_critic_encoder,
@@ -1750,6 +1765,9 @@ def main() -> None:
             csi_report_error_std=args.csi_report_error_std,
             observation_include_csi_age=args.observation_include_csi_age,
             observation_include_reported_cqi_trend=args.observation_include_reported_cqi_trend,
+            observation_include_time_since_schedule=args.observation_include_time_since_schedule,
+            observation_include_schedule_rate_deficit=args.observation_include_schedule_rate_deficit,
+            observation_include_schedule_rate_rank=args.observation_include_schedule_rate_rank,
             link_adaptation_mode=args.link_adaptation_mode,
             link_adaptation_cqi_backoff=args.link_adaptation_cqi_backoff,
             bler_mismatch_slope=args.bler_mismatch_slope,
@@ -2390,6 +2408,9 @@ def main() -> None:
                     csi_report_error_std=config.csi_report_error_std,
                     observation_include_csi_age=config.observation_include_csi_age,
                     observation_include_reported_cqi_trend=config.observation_include_reported_cqi_trend,
+                    observation_include_time_since_schedule=config.observation_include_time_since_schedule,
+                    observation_include_schedule_rate_deficit=config.observation_include_schedule_rate_deficit,
+                    observation_include_schedule_rate_rank=config.observation_include_schedule_rate_rank,
                     link_adaptation_mode=config.link_adaptation_mode,
                     link_adaptation_cqi_backoff=config.link_adaptation_cqi_backoff,
                     bler_mismatch_slope=config.bler_mismatch_slope,

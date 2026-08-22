@@ -148,6 +148,15 @@ def _config_from_run_config(
         observation_include_reported_cqi_trend=bool(
             common.get("observation_include_reported_cqi_trend", False)
         ),
+        observation_include_time_since_schedule=bool(
+            common.get("observation_include_time_since_schedule", False)
+        ),
+        observation_include_schedule_rate_deficit=bool(
+            common.get("observation_include_schedule_rate_deficit", False)
+        ),
+        observation_include_schedule_rate_rank=bool(
+            common.get("observation_include_schedule_rate_rank", False)
+        ),
         link_adaptation_mode=str(common.get("link_adaptation_mode", "legacy_fixed_bler")),
         link_adaptation_cqi_backoff=int(common.get("link_adaptation_cqi_backoff", 0)),
         bler_mismatch_slope=float(common.get("bler_mismatch_slope", 1.5)),
@@ -252,6 +261,8 @@ def evaluate_case_mode(
     reward_values: list[float] = []
     goodput_values: list[float] = []
     starvation_values: list[float] = []
+    schedule_fairness_values: list[float] = []
+    scheduling_starvation_values: list[float] = []
     p99_values: list[float] = []
     max_wait_values: list[float] = []
     overlap_values: list[float] = []
@@ -317,6 +328,8 @@ def evaluate_case_mode(
             reward_values.append(float(reward))
             goodput_values.append(float(final_info["cell_goodput_bits"]))
             starvation_values.append(float(final_info["starvation_rate"]))
+            schedule_fairness_values.append(float(final_info.get("schedule_fairness_score", 0.0)))
+            scheduling_starvation_values.append(float(final_info.get("scheduling_starvation_rate", 0.0)))
             p99_values.append(float(final_info["p99_wait_slots"]))
             max_wait_values.append(float(final_info["max_wait_slots"]))
 
@@ -406,6 +419,9 @@ def evaluate_case_mode(
         "final_jain_fairness": float(final_info["jain_fairness"]),
         "mean_starvation_rate": mean(starvation_values),
         "max_starvation_rate": max(starvation_values),
+        "mean_schedule_fairness_score": mean(schedule_fairness_values),
+        "final_schedule_fairness": float(final_info.get("cumulative_schedule_fairness", 0.0)),
+        "max_scheduling_starvation_rate": max(scheduling_starvation_values),
         "max_p99_wait_slots": max(p99_values),
         "max_wait_slots": max(max_wait_values),
         "unique_selected_ues_episode": int(np.count_nonzero(selected_counts)),

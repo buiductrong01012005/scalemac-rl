@@ -134,6 +134,15 @@ def _common_command(
         "--observation-include-reported-cqi-trend"
         if bool(common.get("observation_include_reported_cqi_trend", False))
         else "--no-observation-include-reported-cqi-trend",
+        "--observation-include-time-since-schedule"
+        if bool(common.get("observation_include_time_since_schedule", False))
+        else "--no-observation-include-time-since-schedule",
+        "--observation-include-schedule-rate-deficit"
+        if bool(common.get("observation_include_schedule_rate_deficit", False))
+        else "--no-observation-include-schedule-rate-deficit",
+        "--observation-include-schedule-rate-rank"
+        if bool(common.get("observation_include_schedule_rate_rank", False))
+        else "--no-observation-include-schedule-rate-rank",
         "--baseline-compatible-feature-init"
         if bool(common.get("baseline_compatible_feature_init", False))
         else "--no-baseline-compatible-feature-init",
@@ -405,12 +414,24 @@ def main() -> None:
                         16
                         + int(bool(effective_common.get("observation_include_csi_age", False)))
                         + int(bool(effective_common.get("observation_include_reported_cqi_trend", False)))
+                        + int(bool(effective_common.get("observation_include_time_since_schedule", False)))
+                        + int(bool(effective_common.get("observation_include_schedule_rate_deficit", False)))
+                        + int(bool(effective_common.get("observation_include_schedule_rate_rank", False)))
                     ),
                     "observation_include_csi_age": bool(
                         effective_common.get("observation_include_csi_age", False)
                     ),
                     "observation_include_reported_cqi_trend": bool(
                         effective_common.get("observation_include_reported_cqi_trend", False)
+                    ),
+                    "observation_include_time_since_schedule": bool(
+                        effective_common.get("observation_include_time_since_schedule", False)
+                    ),
+                    "observation_include_schedule_rate_deficit": bool(
+                        effective_common.get("observation_include_schedule_rate_deficit", False)
+                    ),
+                    "observation_include_schedule_rate_rank": bool(
+                        effective_common.get("observation_include_schedule_rate_rank", False)
                     ),
                     "baseline_compatible_feature_init": bool(
                         effective_common.get("baseline_compatible_feature_init", False)

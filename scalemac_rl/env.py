@@ -48,6 +48,9 @@ def observation_feature_count(config: ScaleMacConfig) -> int:
         OBSERVATION_FEATURES
         + int(config.observation_include_csi_age)
         + int(config.observation_include_reported_cqi_trend)
+        + int(config.observation_include_time_since_schedule)
+        + int(config.observation_include_schedule_rate_deficit)
+        + int(config.observation_include_schedule_rate_rank)
     )
 
 
@@ -513,6 +516,32 @@ class ScaleMacDownlinkEnv:
                 np.clip(self._reported_cqi_trend / 14.0, -1.0, 1.0)
                 .astype(np.float32)[:, None]
             )
+        if self.config.observation_include_time_since_schedule:
+            extras.append(
+                np.clip(
+                    self.time_since_schedule
+                    / max(self.config.starvation_threshold_slots, 1),
+                    0.0,
+                    2.0,
+                ).astype(np.float32)[:, None]
+            )
+        if self.config.observation_include_schedule_rate_deficit:
+            expected_schedule_rate = min(
+                self.config.max_selected_ues / max(self.config.num_ues, 1),
+                1.0,
+            )
+            schedule_rate_deficit = np.clip(
+                (expected_schedule_rate - self.ewma_schedule_rate)
+                / max(expected_schedule_rate, 1e-9),
+                0.0,
+                1.0,
+            )
+            extras.append(schedule_rate_deficit.astype(np.float32)[:, None])
+        if self.config.observation_include_schedule_rate_rank:
+            # High value means relatively under-scheduled in the recent EWMA
+            # window. Rank is scale-invariant across different UE counts.
+            schedule_rate_rank = 1.0 - self._percentile_rank(self.ewma_schedule_rate)
+            extras.append(schedule_rate_rank.astype(np.float32)[:, None])
         if extras:
             return np.concatenate([base, *extras], axis=1).astype(np.float32, copy=False)
         return base
