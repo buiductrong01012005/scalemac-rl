@@ -62,6 +62,7 @@ def checkpoint_reward_signature(checkpoint: dict[str, Any]) -> str:
     keys = (
         "reward_throughput_weight",
         "reward_fairness_weight",
+        "reward_schedule_fairness_weight",
         "reward_service_weight",
         "reward_deficit_service_weight",
         "reward_pf_utility_weight",

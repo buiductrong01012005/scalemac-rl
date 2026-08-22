@@ -95,6 +95,7 @@ def main() -> None:
     starvation_threshold_slots = int(training.get("starvation_threshold_slots", 64))
     reward_throughput_weight = float(training.get("reward_throughput_weight", 0.50))
     reward_fairness_weight = float(training.get("reward_fairness_weight", 0.35))
+    reward_schedule_fairness_weight = float(training.get("reward_schedule_fairness_weight", 0.0))
     reward_service_weight = float(training.get("reward_service_weight", 0.15))
     reward_deficit_service_weight = float(training.get("reward_deficit_service_weight", 0.0))
     reward_fairness_delta_weight = float(training.get("reward_fairness_delta_weight", 0.0))
@@ -126,6 +127,7 @@ def main() -> None:
         starvation_threshold_slots=starvation_threshold_slots,
         reward_throughput_weight=reward_throughput_weight,
         reward_fairness_weight=reward_fairness_weight,
+        reward_schedule_fairness_weight=reward_schedule_fairness_weight,
         reward_service_weight=reward_service_weight,
         reward_deficit_service_weight=reward_deficit_service_weight,
         reward_fairness_delta_weight=reward_fairness_delta_weight,

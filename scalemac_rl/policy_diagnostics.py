@@ -117,6 +117,7 @@ def _config_from_run_config(
         reward_positive_scale=float(case.get("positive_scale", 1.0)),
         reward_throughput_weight=float(positive.get("throughput", 0.0)),
         reward_fairness_weight=float(positive.get("fairness", 0.0)),
+        reward_schedule_fairness_weight=float(positive.get("schedule_fairness", 0.0)),
         reward_service_weight=float(positive.get("service", 0.0)),
         reward_deficit_service_weight=float(positive.get("deficit_service", 0.0)),
         reward_pf_utility_weight=float(positive.get("pf_utility", 0.0)),

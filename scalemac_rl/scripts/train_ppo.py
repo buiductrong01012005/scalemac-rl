@@ -180,7 +180,7 @@ def _ppo_ratio_terms(
         )
         log_ratio = current_per_ue - old_log_probs
         mask = candidate_masks.bool()
-    elif ratio_mode in {"dimension", "ue_group"}:
+    elif ratio_mode in {"dimension", "ue_group", "ue_group_sum"}:
         if not isinstance(model, SharedSetActorCritic):
             raise TypeError("dimension/group-wise PPO currently supports feed-forward PPO only")
         current_per_dimension = model.action_log_prob_per_dimension(
@@ -252,6 +252,7 @@ def _ppo_update(
         "actor_grad_norm_probe": [],
         "critic_grad_norm_probe": [],
         "disc_is_loss": [],
+        "disc_is_penalty": [],
     }
     parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
     minibatches_processed = 0
@@ -303,6 +304,7 @@ def _ppo_update(
 
             mb_adv = advantages[mb]
             disc_is_loss = torch.zeros((), device=observations.device)
+            disc_is_penalty = torch.zeros((), device=observations.device)
             if hyper.ratio_mode == "per_ue":
                 adv = mb_adv.unsqueeze(-1)
                 unclipped = -adv * ratio
@@ -310,13 +312,10 @@ def _ppo_update(
                     ratio, 1.0 - hyper.clip_coef, 1.0 + hyper.clip_coef
                 )
                 policy_loss = _masked_mean(torch.maximum(unclipped, clipped), ratio_mask)
-            elif hyper.ratio_mode == "ue_group":
-                # Scale-aware UE-group objective.  Each UE owns exactly two
-                # continuous action factors [priority, demand].  We clip the
-                # importance ratio per action dimension, aggregate the two
-                # clipped surrogate terms within each UE, then average over
-                # active UEs.  This keeps actor-loss scale independent of the
-                # number of UEs while preserving the natural 2-D UE group.
+            elif hyper.ratio_mode in {"ue_group", "ue_group_sum"}:
+                # Each UE owns exactly two continuous action factors
+                # [priority, demand].  Ratios are clipped per action dimension
+                # before the two terms are grouped at UE level.
                 adv = mb_adv.view(-1, 1, 1)
                 clipped_ratio = torch.clamp(
                     ratio, 1.0 - hyper.clip_coef, 1.0 + hyper.clip_coef
@@ -325,15 +324,34 @@ def _ppo_update(
                 assert ratio_mask is not None
                 dim_weights = ratio_mask.to(surrogate.dtype)
                 ue_mask = ratio_mask[..., 0]
+                ue_weights = ue_mask.to(surrogate.dtype)
                 ue_surrogate = (surrogate * dim_weights).sum(dim=-1)
-                surrogate_objective = _masked_mean(ue_surrogate, ue_mask)
 
-                # J_IS is controlled per UE rather than over the full ~2400-D
-                # joint action.  For UE i, log rho_i is the sum of its two
-                # factorized log-ratios.  We then average J_IS over active UEs.
+                if hyper.ratio_mode == "ue_group_sum":
+                    # Round 19B scale correction: sum UE surrogate terms inside
+                    # each transition, then mean only across the minibatch.
+                    # This matches the factorized log-policy-gradient scale
+                    # (sum_i grad log pi_i) instead of dividing the actor by N_UE.
+                    surrogate_objective = (ue_surrogate * ue_weights).sum(dim=-1).mean()
+                else:
+                    # Round 19A reference: average over UEs.  This was found to
+                    # shrink the actor by approximately N_UE relative to critic.
+                    surrogate_objective = _masked_mean(ue_surrogate, ue_mask)
+
+                # J_IS control remains scale-free: compute a 2-D group log-ratio
+                # for every UE and control the MEAN per-UE J_IS against target.
                 ue_log_ratio = (log_ratio * dim_weights).sum(dim=-1)
-                disc_is_loss = 0.5 * _masked_mean(ue_log_ratio.square(), ue_mask)
-                policy_loss = -surrogate_objective + hyper.disc_is_alpha * disc_is_loss
+                per_ue_is = 0.5 * ue_log_ratio.square()
+                disc_is_loss = _masked_mean(per_ue_is, ue_mask)
+
+                if hyper.ratio_mode == "ue_group_sum":
+                    # The penalty placed in the actor objective must use the
+                    # same UE-sum scale as the surrogate.  The adaptive alpha
+                    # controller still observes disc_is_loss (mean per UE).
+                    disc_is_penalty = (per_ue_is * ue_weights).sum(dim=-1).mean()
+                else:
+                    disc_is_penalty = disc_is_loss
+                policy_loss = -surrogate_objective + hyper.disc_is_alpha * disc_is_penalty
             elif hyper.ratio_mode == "dimension":
                 # On-policy DISC-core objective from Han & Sung (ICML 2019):
                 # clip each factorized action-dimension IS weight before aggregation.
@@ -360,7 +378,8 @@ def _ppo_update(
                 else:
                     controlled_log_ratio = joint_log_ratio
                 disc_is_loss = 0.5 * torch.mean(controlled_log_ratio.square())
-                policy_loss = -surrogate_objective + hyper.disc_is_alpha * disc_is_loss
+                disc_is_penalty = disc_is_loss
+                policy_loss = -surrogate_objective + hyper.disc_is_alpha * disc_is_penalty
             else:
                 policy_loss = torch.maximum(
                     -mb_adv * ratio,
@@ -455,6 +474,7 @@ def _ppo_update(
             )
             losses["grad_norm_preclip"].append(float(grad_norm.item()))
             losses["disc_is_loss"].append(float(disc_is_loss.item()))
+            losses["disc_is_penalty"].append(float(disc_is_penalty.item()))
             minibatches_processed += 1
 
             if (not hyper.strict_kl_guard) and hyper.target_kl > 0.0 and float(approx_kl.item()) > hyper.target_kl:
@@ -498,7 +518,7 @@ def _ppo_update(
         critic_probe / max(actor_probe, 1e-12) if hyper.audit_gradients else 0.0
     )
     result["disc_is_alpha_before"] = float(hyper.disc_is_alpha)
-    if hyper.ratio_mode in {"dimension", "ue_group"} and hyper.disc_is_target > 0.0 and losses["disc_is_loss"]:
+    if hyper.ratio_mode in {"dimension", "ue_group", "ue_group_sum"} and hyper.disc_is_target > 0.0 and losses["disc_is_loss"]:
         mean_is = float(result["disc_is_loss"])
         if mean_is < hyper.disc_is_target / 1.5:
             hyper.disc_is_alpha = max(hyper.disc_is_alpha / 2.0, 1e-8)
@@ -715,6 +735,7 @@ def _checkpoint_payload(
             "reward_positive_scale": args.reward_positive_scale,
             "reward_throughput_weight": args.reward_throughput_weight,
             "reward_fairness_weight": args.reward_fairness_weight,
+            "reward_schedule_fairness_weight": args.reward_schedule_fairness_weight,
             "reward_service_weight": args.reward_service_weight,
             "reward_deficit_service_weight": args.reward_deficit_service_weight,
             "reward_pf_utility_weight": args.reward_pf_utility_weight,
@@ -888,6 +909,7 @@ def _validate(
     reward_positive_scale: float,
     reward_throughput_weight: float,
     reward_fairness_weight: float,
+    reward_schedule_fairness_weight: float,
     reward_service_weight: float,
     reward_deficit_service_weight: float,
     reward_pf_utility_weight: float,
@@ -937,6 +959,7 @@ def _validate(
         reward_positive_scale=reward_positive_scale,
         reward_throughput_weight=reward_throughput_weight,
         reward_fairness_weight=reward_fairness_weight,
+        reward_schedule_fairness_weight=reward_schedule_fairness_weight,
         reward_service_weight=reward_service_weight,
         reward_deficit_service_weight=reward_deficit_service_weight,
         reward_pf_utility_weight=reward_pf_utility_weight,
@@ -1151,6 +1174,7 @@ def main() -> None:
     parser.add_argument("--reward-positive-scale", type=float, default=1.0)
     parser.add_argument("--reward-throughput-weight", type=float, default=0.45)
     parser.add_argument("--reward-fairness-weight", type=float, default=0.35)
+    parser.add_argument("--reward-schedule-fairness-weight", type=float, default=0.0)
     parser.add_argument("--reward-service-weight", type=float, default=0.15)
     parser.add_argument("--reward-deficit-service-weight", type=float, default=0.05)
     parser.add_argument("--reward-pf-utility-weight", type=float, default=0.0)
@@ -1240,11 +1264,11 @@ def main() -> None:
     parser.add_argument("--target-kl", type=float, default=0.03)
     parser.add_argument(
         "--ppo-ratio-mode",
-        choices=["joint", "per_ue", "dimension", "ue_group"],
+        choices=["joint", "per_ue", "dimension", "ue_group", "ue_group_sum"],
         default="joint",
         help=(
             "PPO probability-ratio geometry: joint, legacy per-UE ratio, "
-            "factorized dimension-wise DISC, or UE-group dimension clipping/J_IS"
+            "factorized dimension-wise DISC, UE-group mean clipping/J_IS, or UE-group SUM clipping/J_IS"
         ),
     )
     parser.add_argument("--disc-is-alpha-start", type=float, default=1.0, help="initial adaptive J_IS coefficient for dimension-wise PPO")
@@ -1433,6 +1457,7 @@ def main() -> None:
     reward_weight_sum = (
         args.reward_throughput_weight
         + args.reward_fairness_weight
+        + args.reward_schedule_fairness_weight
         + args.reward_service_weight
         + args.reward_deficit_service_weight
         + args.reward_pf_utility_weight
@@ -1442,6 +1467,7 @@ def main() -> None:
     if abs(reward_weight_sum - 1.0) > 1e-6:
         parser.error("positive reward weights must sum to 1")
     for name in (
+        "reward_schedule_fairness_weight",
         "reward_pf_utility_weight",
         "reward_low_throughput_weight",
         "reward_urgency_service_weight",
@@ -1736,6 +1762,7 @@ def main() -> None:
             reward_positive_scale=args.reward_positive_scale,
             reward_throughput_weight=args.reward_throughput_weight,
             reward_fairness_weight=args.reward_fairness_weight,
+            reward_schedule_fairness_weight=args.reward_schedule_fairness_weight,
             reward_service_weight=args.reward_service_weight,
             reward_deficit_service_weight=args.reward_deficit_service_weight,
             reward_pf_utility_weight=args.reward_pf_utility_weight,
@@ -1847,6 +1874,8 @@ def main() -> None:
                     "reference_deadline_risk", "max_wait_risk", "population_wait_risk",
                     "tail_mean_wait",
                     "throughput", "fairness", "jain_fairness", "short_fairness",
+                    "schedule_fairness", "schedule_fairness_cumulative",
+                    "schedule_fairness_short",
                     "deficit_service", "urgency_service", "low_throughput",
                     "pf_utility_score", "fairness_progress", "pf_utility_progress",
                     "service", "starvation", "scheduling_starvation",
@@ -1949,6 +1978,13 @@ def main() -> None:
                         "fairness": float(info["fairness_score"]),
                         "jain_fairness": float(info["jain_fairness"]),
                         "short_fairness": float(info["short_term_jain_fairness"]),
+                        "schedule_fairness": float(info["schedule_fairness_score"]),
+                        "schedule_fairness_cumulative": float(
+                            info["cumulative_schedule_fairness"]
+                        ),
+                        "schedule_fairness_short": float(
+                            info["short_term_schedule_fairness"]
+                        ),
                         "deficit_service": float(info["deficit_service_score"]),
                         "urgency_service": float(info["urgency_service_score"]),
                         "low_throughput": float(info["low_throughput_score"]),
@@ -2023,7 +2059,7 @@ def main() -> None:
                             obs_tensor, mask_tensor, output.action
                         )
                     logprob_buffer.append(per_ue_log_prob.cpu().numpy())
-                elif args.ppo_ratio_mode in {"dimension", "ue_group"}:
+                elif args.ppo_ratio_mode in {"dimension", "ue_group", "ue_group_sum"}:
                     if not isinstance(model, SharedSetActorCritic):
                         raise TypeError("dimension/group-wise PPO requires feed-forward model")
                     with torch.no_grad():
@@ -2128,7 +2164,7 @@ def main() -> None:
                     flat_logprobs = torch.from_numpy(
                         logprob_array.reshape(-1, candidate_count)
                     ).to(device)
-                elif args.ppo_ratio_mode in {"dimension", "ue_group"}:
+                elif args.ppo_ratio_mode in {"dimension", "ue_group", "ue_group_sum"}:
                     flat_logprobs = torch.from_numpy(
                         logprob_array.reshape(-1, candidate_count, 2)
                     ).to(device)
@@ -2218,6 +2254,13 @@ def main() -> None:
                 "mean_fairness_score": mean(metric_window["fairness"]),
                 "mean_jain_fairness": mean(metric_window["jain_fairness"]),
                 "mean_short_term_jain_fairness": mean(metric_window["short_fairness"]),
+                "mean_schedule_fairness_score": mean(metric_window["schedule_fairness"]),
+                "mean_cumulative_schedule_fairness": mean(
+                    metric_window["schedule_fairness_cumulative"]
+                ),
+                "mean_short_term_schedule_fairness": mean(
+                    metric_window["schedule_fairness_short"]
+                ),
                 "mean_deficit_service_score": mean(metric_window["deficit_service"]),
                 "mean_urgency_service_score": mean(metric_window["urgency_service"]),
                 "mean_low_throughput_score": mean(metric_window["low_throughput"]),
@@ -2357,6 +2400,7 @@ def main() -> None:
                     reward_positive_scale=args.reward_positive_scale,
                     reward_throughput_weight=args.reward_throughput_weight,
                     reward_fairness_weight=args.reward_fairness_weight,
+                    reward_schedule_fairness_weight=args.reward_schedule_fairness_weight,
                     reward_service_weight=args.reward_service_weight,
                     reward_deficit_service_weight=args.reward_deficit_service_weight,
                     reward_pf_utility_weight=args.reward_pf_utility_weight,

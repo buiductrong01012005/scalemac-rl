@@ -1,0 +1,302 @@
+{
+  "study_id": "schedule_fairness_dose",
+  "round_id": "round_20a_schedule_fairness_dose",
+  "description": "Round 20A: single-axis schedule-frequency fairness dose plus equal four-way mixture.",
+  "common": {
+    "environment_steps": 98304,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "value_coef": 0.5,
+    "value_clip_coef": 0.0,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 2.5e-05,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "beta_concentration_start": 20.0,
+    "beta_concentration_end": 20.0,
+    "freeze_beta_concentration": false,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "audit_ppo_diagnostics": true,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64,
+    "cqi_mode": "correlated",
+    "cqi_temporal_correlation": 0.97,
+    "cqi_innovation_std": 0.35,
+    "cqi_update_interval_slots": 1,
+    "cqi_max_delta_per_update": 1,
+    "csi_report_mode": "periodic",
+    "csi_report_period_slots": 4,
+    "csi_report_delay_slots": 2,
+    "csi_report_error_std": 0.0,
+    "link_adaptation_mode": "cqi_mcs_bler",
+    "link_adaptation_cqi_backoff": 0,
+    "bler_mismatch_slope": 1.5,
+    "policy_architecture": "feedforward",
+    "observation_include_csi_age": false,
+    "observation_include_reported_cqi_trend": false,
+    "baseline_compatible_feature_init": false,
+    "strict_kl_guard": false,
+    "strict_kl_limit": 0.02,
+    "separate_critic_encoder": false,
+    "rollback_mode": "service",
+    "rollback_patience": 1000000,
+    "rollback_lr_factor": 1.0,
+    "ppo_ratio_mode": "joint",
+    "disc_is_alpha_start": 0.0,
+    "disc_is_target": 0.0,
+    "disc_normalize_dimensions": false
+  },
+  "analysis": {},
+  "cases": [
+    {
+      "id": "baseline_t30_b30_f00_s40_seed1701",
+      "label": "Baseline T30/B30/F0/S40 \u2014 seed 1701",
+      "hypothesis": "Current Service40 anchor; no schedule-frequency fairness.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "schedule_fairness": 0.0,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "environment_seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "baseline_t30_b30_f00_s40_seed2701",
+      "label": "Baseline T30/B30/F0/S40 \u2014 seed 2701",
+      "hypothesis": "Current Service40 anchor; no schedule-frequency fairness.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "schedule_fairness": 0.0,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "environment_seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "baseline_t30_b30_f00_s40_seed3701",
+      "label": "Baseline T30/B30/F0/S40 \u2014 seed 3701",
+      "hypothesis": "Current Service40 anchor; no schedule-frequency fairness.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "schedule_fairness": 0.0,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "environment_seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    },
+    {
+      "id": "sched10_prop_seed1701",
+      "label": "Schedule F10 proportional \u2014 seed 1701",
+      "hypothesis": "Introduce 0.10 schedule fairness while shrinking the three existing terms proportionally.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.27,
+        "fairness": 0.27,
+        "schedule_fairness": 0.1,
+        "service": 0.36
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "environment_seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "sched10_prop_seed2701",
+      "label": "Schedule F10 proportional \u2014 seed 2701",
+      "hypothesis": "Introduce 0.10 schedule fairness while shrinking the three existing terms proportionally.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.27,
+        "fairness": 0.27,
+        "schedule_fairness": 0.1,
+        "service": 0.36
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "environment_seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "sched10_prop_seed3701",
+      "label": "Schedule F10 proportional \u2014 seed 3701",
+      "hypothesis": "Introduce 0.10 schedule fairness while shrinking the three existing terms proportionally.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.27,
+        "fairness": 0.27,
+        "schedule_fairness": 0.1,
+        "service": 0.36
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "environment_seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    },
+    {
+      "id": "sched20_prop_seed1701",
+      "label": "Schedule F20 proportional \u2014 seed 1701",
+      "hypothesis": "Increase schedule fairness to 0.20 while preserving the baseline T:B:S ratio among the remaining 0.80.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.24,
+        "fairness": 0.24,
+        "schedule_fairness": 0.2,
+        "service": 0.32
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "environment_seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "sched20_prop_seed2701",
+      "label": "Schedule F20 proportional \u2014 seed 2701",
+      "hypothesis": "Increase schedule fairness to 0.20 while preserving the baseline T:B:S ratio among the remaining 0.80.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.24,
+        "fairness": 0.24,
+        "schedule_fairness": 0.2,
+        "service": 0.32
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "environment_seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "sched20_prop_seed3701",
+      "label": "Schedule F20 proportional \u2014 seed 3701",
+      "hypothesis": "Increase schedule fairness to 0.20 while preserving the baseline T:B:S ratio among the remaining 0.80.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.24,
+        "fairness": 0.24,
+        "schedule_fairness": 0.2,
+        "service": 0.32
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "environment_seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    },
+    {
+      "id": "equal4_seed1701",
+      "label": "Equal four-way \u2014 seed 1701",
+      "hypothesis": "Equalize throughput, throughput fairness, schedule-frequency fairness, and service.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.25,
+        "schedule_fairness": 0.25,
+        "service": 0.25
+      },
+      "common_overrides": {
+        "seed": 1701,
+        "environment_seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "equal4_seed2701",
+      "label": "Equal four-way \u2014 seed 2701",
+      "hypothesis": "Equalize throughput, throughput fairness, schedule-frequency fairness, and service.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.25,
+        "schedule_fairness": 0.25,
+        "service": 0.25
+      },
+      "common_overrides": {
+        "seed": 2701,
+        "environment_seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "equal4_seed3701",
+      "label": "Equal four-way \u2014 seed 3701",
+      "hypothesis": "Equalize throughput, throughput fairness, schedule-frequency fairness, and service.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.25,
+        "fairness": 0.25,
+        "schedule_fairness": 0.25,
+        "service": 0.25
+      },
+      "common_overrides": {
+        "seed": 3701,
+        "environment_seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    }
+  ]
+}

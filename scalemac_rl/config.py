@@ -96,6 +96,9 @@ class ScaleMacConfig:
     reward_positive_scale: float = 1.0
     reward_throughput_weight: float = 0.45
     reward_fairness_weight: float = 0.35
+    # Fairness of scheduling opportunities, distinct from throughput Jain fairness.
+    # This rewards balanced UE selection frequency even when channel quality differs.
+    reward_schedule_fairness_weight: float = 0.0
     reward_service_weight: float = 0.15
     reward_deficit_service_weight: float = 0.05
     # Optional v2 reward terms. Defaults are zero for legacy compatibility.
@@ -221,6 +224,7 @@ class ScaleMacConfig:
         reward_sum = (
             self.reward_throughput_weight
             + self.reward_fairness_weight
+            + self.reward_schedule_fairness_weight
             + self.reward_service_weight
             + self.reward_deficit_service_weight
             + self.reward_pf_utility_weight
@@ -230,6 +234,7 @@ class ScaleMacConfig:
         if abs(reward_sum - 1.0) > 1e-6:
             raise ValueError("positive reward weights must sum to 1")
         for name, value in (
+            ("reward_schedule_fairness_weight", self.reward_schedule_fairness_weight),
             ("reward_pf_utility_weight", self.reward_pf_utility_weight),
             ("reward_low_throughput_weight", self.reward_low_throughput_weight),
             ("reward_urgency_service_weight", self.reward_urgency_service_weight),

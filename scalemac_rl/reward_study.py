@@ -10,6 +10,7 @@ from typing import Any, Iterable, Mapping, Sequence
 POSITIVE_COMPONENTS: tuple[str, ...] = (
     "throughput",
     "fairness",
+    "schedule_fairness",
     "service",
     "deficit_service",
     "pf_utility",
@@ -27,6 +28,7 @@ PENALTY_COMPONENTS: tuple[str, ...] = (
 POSITIVE_CLI = {
     "throughput": "--reward-throughput-weight",
     "fairness": "--reward-fairness-weight",
+    "schedule_fairness": "--reward-schedule-fairness-weight",
     "service": "--reward-service-weight",
     "deficit_service": "--reward-deficit-service-weight",
     "pf_utility": "--reward-pf-utility-weight",

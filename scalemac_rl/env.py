@@ -123,6 +123,10 @@ class ScaleMacDownlinkEnv:
         self.queue_target_bytes = np.zeros(n, dtype=np.float64)
         self.ewma_throughput_bits = np.zeros(n, dtype=np.float64)
         self.cumulative_delivered_bits = np.zeros(n, dtype=np.float64)
+        # Separate scheduling-opportunity accounting from successful-delivery throughput.
+        # This lets the reward distinguish "was selected" from "delivered many bits".
+        self.ewma_schedule_rate = np.zeros(n, dtype=np.float64)
+        self.cumulative_schedule_count = np.zeros(n, dtype=np.float64)
         # Primary wait counter: slots since the last successful delivery.
         # A second counter records scheduling gaps even when HARQ transmission fails.
         self.time_since_service = np.zeros(n, dtype=np.int32)
@@ -208,6 +212,8 @@ class ScaleMacDownlinkEnv:
         self.queue_bytes = self.queue_target_bytes.copy()
         self.ewma_throughput_bits.fill(0.0)
         self.cumulative_delivered_bits.fill(0.0)
+        self.ewma_schedule_rate.fill(0.0)
+        self.cumulative_schedule_count.fill(0.0)
         self.time_since_service.fill(0)
         self.time_since_schedule.fill(0)
         self.harq_pending.fill(False)
@@ -702,6 +708,13 @@ class ScaleMacDownlinkEnv:
         )
         self.cumulative_delivered_bits += delivered_bits
 
+        scheduled_indicator = np.zeros(n, dtype=np.float64)
+        scheduled_indicator[selected] = 1.0
+        self.ewma_schedule_rate = (
+            (1.0 - alpha) * self.ewma_schedule_rate + alpha * scheduled_indicator
+        )
+        self.cumulative_schedule_count[selected] += 1.0
+
         cell_goodput_bits = float(delivered_bits.sum())
         oracle_goodput = self._slot_oracle_expected_goodput_bits()
         throughput_score = clip01(cell_goodput_bits / max(oracle_goodput, 1.0))
@@ -710,6 +723,13 @@ class ScaleMacDownlinkEnv:
         # The cumulative KPI remains visible, while the reward receives a more
         # responsive fairness signal that can change within an episode.
         fairness_score = clip01(0.60 * cumulative_fairness + 0.40 * short_term_fairness)
+        cumulative_schedule_fairness = jain_fairness(self.cumulative_schedule_count)
+        short_term_schedule_fairness = jain_fairness(self.ewma_schedule_rate)
+        # Same cumulative/short-term blend as throughput fairness, but over UE
+        # scheduling frequency rather than delivered bits.
+        schedule_fairness_score = clip01(
+            0.60 * cumulative_schedule_fairness + 0.40 * short_term_schedule_fairness
+        )
         fairness_delta = cumulative_fairness - self._previous_cumulative_fairness
         fairness_progress = float(
             np.tanh(self.config.fairness_delta_scale * fairness_delta)
@@ -844,6 +864,9 @@ class ScaleMacDownlinkEnv:
             "jain_fairness": cumulative_fairness,
             "short_term_jain_fairness": short_term_fairness,
             "fairness_score": fairness_score,
+            "cumulative_schedule_fairness": cumulative_schedule_fairness,
+            "short_term_schedule_fairness": short_term_schedule_fairness,
+            "schedule_fairness_score": schedule_fairness_score,
             "throughput_deficit_mean": float(self._throughput_deficit().mean()),
             "deficit_service_score": deficit_service_score,
             "urgency_service_score": urgency_service_score,
@@ -905,6 +928,11 @@ class ScaleMacDownlinkEnv:
         fairness_component = (
             positive_scale * cfg.reward_fairness_weight * metrics["fairness_score"]
         )
+        schedule_fairness_component = (
+            positive_scale
+            * cfg.reward_schedule_fairness_weight
+            * metrics["schedule_fairness_score"]
+        )
         service_component = (
             positive_scale * cfg.reward_service_weight * metrics["service_score"]
         )
@@ -941,6 +969,7 @@ class ScaleMacDownlinkEnv:
         core_total = (
             throughput_component
             + fairness_component
+            + schedule_fairness_component
             + service_component
             + deficit_service_component
             + pf_utility_component
@@ -985,6 +1014,7 @@ class ScaleMacDownlinkEnv:
             "reward_final_target_total": float(final_target_total),
             "reward_throughput_component": float(throughput_component),
             "reward_fairness_component": float(fairness_component),
+            "reward_schedule_fairness_component": float(schedule_fairness_component),
             "reward_service_component": float(service_component),
             "reward_deficit_service_component": float(deficit_service_component),
             "reward_pf_utility_component": float(pf_utility_component),

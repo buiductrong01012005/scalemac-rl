@@ -1,0 +1,283 @@
+{
+  "study_id": "ue_group_sum_scale_correction",
+  "round_id": "round_19b_ue_group_sum_scale_correction",
+  "description": "Round 19B controlled actor-scale correction. Keep Service40 reward, 16-feature observation, environment, learned Beta exploration, R256/MB8 and 98,304-step budget fixed. Compare joint PPO with UE-group per-dimension clipping that SUMS active UE surrogate terms, with and without per-UE J_IS.",
+  "common": {
+    "environment_steps": 98304,
+    "rollout_steps": 256,
+    "episode_slots": 5000,
+    "validation_slots": 5000,
+    "validation_repeats": 1,
+    "validate_every": 64,
+    "checkpoint_every": 128,
+    "hidden_dim": 64,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "clip_coef": 0.1,
+    "value_coef": 0.5,
+    "value_clip_coef": 0.0,
+    "learning_rate_start": 0.0001,
+    "learning_rate_end": 2.5e-05,
+    "entropy_coef_start": 0.005,
+    "entropy_coef_end": 0.0005,
+    "beta_concentration_start": 20.0,
+    "beta_concentration_end": 20.0,
+    "freeze_beta_concentration": false,
+    "update_epochs": 4,
+    "minibatch_size": 8,
+    "target_kl": 0.02,
+    "audit_ppo_diagnostics": true,
+    "constraint_training": false,
+    "starvation_threshold_slots": 64,
+    "cqi_mode": "correlated",
+    "cqi_temporal_correlation": 0.97,
+    "cqi_innovation_std": 0.35,
+    "cqi_update_interval_slots": 1,
+    "cqi_max_delta_per_update": 1,
+    "csi_report_mode": "periodic",
+    "csi_report_period_slots": 4,
+    "csi_report_delay_slots": 2,
+    "csi_report_error_std": 0.0,
+    "link_adaptation_mode": "cqi_mcs_bler",
+    "link_adaptation_cqi_backoff": 0,
+    "bler_mismatch_slope": 1.5,
+    "policy_architecture": "feedforward",
+    "observation_include_csi_age": false,
+    "observation_include_reported_cqi_trend": false,
+    "baseline_compatible_feature_init": false,
+    "strict_kl_guard": false,
+    "strict_kl_limit": 0.02,
+    "separate_critic_encoder": false,
+    "rollback_mode": "service",
+    "rollback_patience": 1000000,
+    "rollback_lr_factor": 1.0
+  },
+  "analysis": {},
+  "cases": [
+    {
+      "id": "joint_seed1701",
+      "label": "legacy joint PPO \u2014 seed 1701",
+      "hypothesis": "Current joint PPO reference at the same runtime and environment.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "ppo_ratio_mode": "joint",
+        "clip_coef": 0.1,
+        "target_kl": 0.02,
+        "disc_is_alpha_start": 0.0,
+        "disc_is_target": 0.0,
+        "disc_normalize_dimensions": false,
+        "seed": 1701,
+        "environment_seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "joint_seed2701",
+      "label": "legacy joint PPO \u2014 seed 2701",
+      "hypothesis": "Current joint PPO reference at the same runtime and environment.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "ppo_ratio_mode": "joint",
+        "clip_coef": 0.1,
+        "target_kl": 0.02,
+        "disc_is_alpha_start": 0.0,
+        "disc_is_target": 0.0,
+        "disc_normalize_dimensions": false,
+        "seed": 2701,
+        "environment_seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "joint_seed3701",
+      "label": "legacy joint PPO \u2014 seed 3701",
+      "hypothesis": "Current joint PPO reference at the same runtime and environment.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "ppo_ratio_mode": "joint",
+        "clip_coef": 0.1,
+        "target_kl": 0.02,
+        "disc_is_alpha_start": 0.0,
+        "disc_is_target": 0.0,
+        "disc_normalize_dimensions": false,
+        "seed": 3701,
+        "environment_seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    },
+    {
+      "id": "uegroup_sum_seed1701",
+      "label": "UE-group SUM clipping, no J_IS \u2014 seed 1701",
+      "hypothesis": "Sum UE-level clipped surrogate terms before minibatch averaging to restore actor scale without reintroducing the joint ~2400-D ratio.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "ppo_ratio_mode": "ue_group_sum",
+        "clip_coef": 0.4,
+        "target_kl": 0.0,
+        "disc_is_alpha_start": 0.0,
+        "disc_is_target": 0.0,
+        "disc_normalize_dimensions": false,
+        "seed": 1701,
+        "environment_seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "uegroup_sum_seed2701",
+      "label": "UE-group SUM clipping, no J_IS \u2014 seed 2701",
+      "hypothesis": "Sum UE-level clipped surrogate terms before minibatch averaging to restore actor scale without reintroducing the joint ~2400-D ratio.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "ppo_ratio_mode": "ue_group_sum",
+        "clip_coef": 0.4,
+        "target_kl": 0.0,
+        "disc_is_alpha_start": 0.0,
+        "disc_is_target": 0.0,
+        "disc_normalize_dimensions": false,
+        "seed": 2701,
+        "environment_seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "uegroup_sum_seed3701",
+      "label": "UE-group SUM clipping, no J_IS \u2014 seed 3701",
+      "hypothesis": "Sum UE-level clipped surrogate terms before minibatch averaging to restore actor scale without reintroducing the joint ~2400-D ratio.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "ppo_ratio_mode": "ue_group_sum",
+        "clip_coef": 0.4,
+        "target_kl": 0.0,
+        "disc_is_alpha_start": 0.0,
+        "disc_is_target": 0.0,
+        "disc_normalize_dimensions": false,
+        "seed": 3701,
+        "environment_seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    },
+    {
+      "id": "uegroup_sum_jis_seed1701",
+      "label": "UE-group SUM clipping + per-UE J_IS \u2014 seed 1701",
+      "hypothesis": "Use UE-summed actor scaling while controlling mean 2-D per-UE J_IS; scale the J_IS penalty in the actor by the same UE sum.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "ppo_ratio_mode": "ue_group_sum",
+        "clip_coef": 0.4,
+        "target_kl": 0.0,
+        "disc_is_alpha_start": 1.0,
+        "disc_is_target": 0.001,
+        "disc_normalize_dimensions": false,
+        "seed": 1701,
+        "environment_seed": 1701,
+        "profile_seed": 1701,
+        "validation_seeds": [
+          1701
+        ]
+      }
+    },
+    {
+      "id": "uegroup_sum_jis_seed2701",
+      "label": "UE-group SUM clipping + per-UE J_IS \u2014 seed 2701",
+      "hypothesis": "Use UE-summed actor scaling while controlling mean 2-D per-UE J_IS; scale the J_IS penalty in the actor by the same UE sum.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "ppo_ratio_mode": "ue_group_sum",
+        "clip_coef": 0.4,
+        "target_kl": 0.0,
+        "disc_is_alpha_start": 1.0,
+        "disc_is_target": 0.001,
+        "disc_normalize_dimensions": false,
+        "seed": 2701,
+        "environment_seed": 2701,
+        "profile_seed": 2701,
+        "validation_seeds": [
+          2701
+        ]
+      }
+    },
+    {
+      "id": "uegroup_sum_jis_seed3701",
+      "label": "UE-group SUM clipping + per-UE J_IS \u2014 seed 3701",
+      "hypothesis": "Use UE-summed actor scaling while controlling mean 2-D per-UE J_IS; scale the J_IS penalty in the actor by the same UE sum.",
+      "positive_scale": 1.0,
+      "positive_weights": {
+        "throughput": 0.3,
+        "fairness": 0.3,
+        "service": 0.4
+      },
+      "common_overrides": {
+        "ppo_ratio_mode": "ue_group_sum",
+        "clip_coef": 0.4,
+        "target_kl": 0.0,
+        "disc_is_alpha_start": 1.0,
+        "disc_is_target": 0.001,
+        "disc_normalize_dimensions": false,
+        "seed": 3701,
+        "environment_seed": 3701,
+        "profile_seed": 3701,
+        "validation_seeds": [
+          3701
+        ]
+      }
+    }
+  ]
+}

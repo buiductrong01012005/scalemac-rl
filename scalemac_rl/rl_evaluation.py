@@ -49,6 +49,9 @@ _METRIC_KEYS = (
     "throughput_score",
     "fairness_score",
     "short_term_jain_fairness",
+    "cumulative_schedule_fairness",
+    "short_term_schedule_fairness",
+    "schedule_fairness_score",
     "throughput_deficit_mean",
     "deficit_service_score",
     "urgency_service_score",
@@ -71,6 +74,7 @@ _METRIC_KEYS = (
     "population_wait_risk",
     "reward_throughput_component",
     "reward_fairness_component",
+    "reward_schedule_fairness_component",
     "reward_service_component",
     "reward_deficit_service_component",
     "reward_pf_utility_component",
@@ -149,6 +153,11 @@ def summarize_episode(
         "final_jain_fairness": float(final_info["jain_fairness"]),
         "mean_fairness_score": mean(metrics["fairness_score"]),
         "mean_short_term_jain_fairness": mean(metrics["short_term_jain_fairness"]),
+        "final_schedule_fairness": float(final_info["cumulative_schedule_fairness"]),
+        "mean_schedule_fairness_score": mean(metrics["schedule_fairness_score"]),
+        "mean_short_term_schedule_fairness": mean(
+            metrics["short_term_schedule_fairness"]
+        ),
         "mean_throughput_deficit": mean(metrics["throughput_deficit_mean"]),
         "mean_deficit_service_score": mean(metrics["deficit_service_score"]),
         "mean_urgency_service_score": mean(metrics["urgency_service_score"]),
@@ -174,6 +183,9 @@ def summarize_episode(
         "mean_population_wait_risk": mean(metrics["population_wait_risk"]),
         "mean_reward_throughput_component": mean(metrics["reward_throughput_component"]),
         "mean_reward_fairness_component": mean(metrics["reward_fairness_component"]),
+        "mean_reward_schedule_fairness_component": mean(
+            metrics["reward_schedule_fairness_component"]
+        ),
         "mean_reward_service_component": mean(metrics["reward_service_component"]),
         "mean_reward_deficit_service_component": mean(
             metrics["reward_deficit_service_component"]

@@ -16,8 +16,13 @@ COMPONENT_GUIDE: dict[str, dict[str, str]] = {
     },
     "fairness": {
         "name": "Jain fairness",
-        "meaning": "Thưởng khi throughput được phân phối đồng đều hơn giữa 1.200 UE.",
-        "expected": "Hạn chế việc chỉ phục vụ một nhóm UE nhỏ.",
+        "meaning": "Thưởng khi delivered throughput được phân phối đồng đều hơn giữa 1.200 UE.",
+        "expected": "Hạn chế chênh lệch throughput dài hạn giữa các UE.",
+    },
+    "schedule_fairness": {
+        "name": "Schedule-frequency fairness",
+        "meaning": "Thưởng khi số cơ hội được scheduler chọn được phân phối đều giữa các UE, tách biệt với CQI và số bit thực sự truyền thành công.",
+        "expected": "Giảm việc một nhóm UE được chọn lặp lại quá thường xuyên trong khi UE khác hiếm khi được schedule.",
     },
     "service": {
         "name": "Service",
